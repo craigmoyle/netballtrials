@@ -58,3 +58,16 @@ export interface PublicEventDTO {
   courts: number;
   status: EventStatus;
 }
+
+export type RegistrationStatus =
+  | 'PENDING'
+  | 'PAID'
+  | 'EXPIRED'
+  | 'FAILED'
+  | 'WITHDRAWN';
+
+export interface TicketDTO {
+  playerName: string;
+  event: { name: string; eventDate?: string; venue?: string; firstWhistle?: string };
+  bibNumber?: number | null;
+}

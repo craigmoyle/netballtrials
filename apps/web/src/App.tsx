@@ -1,13 +1,37 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient } from './api/client';
 import { AdminLayout } from './AdminLayout';
 import { LoginPage } from './routes/LoginPage';
 import { VerifyPage } from './routes/VerifyPage';
 import { EventsPage } from './routes/EventsPage';
 import { EventFormPage } from './routes/EventFormPage';
+import { RegisterPage } from './routes/RegisterPage';
+import { RegistrationPendingPage } from './routes/RegistrationPendingPage';
+import { TicketPage } from './routes/TicketPage';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? 'http://localhost:3000');
+
+type Client = ReturnType<typeof apiClient>;
+
+function RegisterRoute({ client }: { client: Client }) {
+  const { eventId } = useParams();
+  if (!eventId) return <Navigate to="/" replace />;
+  return <RegisterPage client={client} eventId={eventId} />;
+}
+
+function PendingRoute({ client }: { client: Client }) {
+  const [params] = useSearchParams();
+  const registrationId = params.get('registration');
+  if (!registrationId) return <Navigate to="/" replace />;
+  return <RegistrationPendingPage client={client} registrationId={registrationId} />;
+}
+
+function TicketRoute({ client }: { client: Client }) {
+  const { token } = useParams();
+  if (!token) return <Navigate to="/" replace />;
+  return <TicketPage client={client} token={token} />;
+}
 
 export function App() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -33,6 +57,9 @@ export function App() {
 
   return (
     <Routes>
+      <Route path="/register/:eventId" element={<RegisterRoute client={client} />} />
+      <Route path="/register/:eventId/pending" element={<PendingRoute client={client} />} />
+      <Route path="/ticket/:token" element={<TicketRoute client={client} />} />
       <Route path="/admin/login" element={<LoginPage client={client} />} />
       <Route
         path="/admin/verify"
