@@ -1,4 +1,4 @@
-import type { AuthUser, EventDTO, EventInput, MemberAssociationDTO, PublicEventDTO, RegistrationStatus, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, CheckInResult, CheckInSummary, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PublicEventDTO, RegistrationStatus, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -73,5 +73,22 @@ export function apiClient(baseUrl: string) {
       request<{ status: RegistrationStatus }>(baseUrl, `/api/public/registrations/${id}`),
     getTicket: (token: string) =>
       request<TicketDTO>(baseUrl, `/api/public/ticket/${token}`),
+    openCheckIn: (eventId: string, pin: string) =>
+      request<{ eventName: string }>(baseUrl, '/api/check-in/session', {
+        method: 'POST',
+        body: JSON.stringify({ eventId, pin }),
+      }),
+    checkInSummary: () => request<CheckInSummary>(baseUrl, '/api/check-in/session'),
+    lookup: (query: string) =>
+      request<LookupResult[]>(baseUrl, `/api/check-in/lookup?q=${encodeURIComponent(query)}`),
+    scan: (token: string) =>
+      request<CheckInResult>(baseUrl, '/api/check-in/scan', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+    manualCheckIn: (id: string) =>
+      request<CheckInResult>(baseUrl, `/api/check-in/registrations/${id}`, { method: 'POST' }),
+    undoCheckIn: (id: string) =>
+      request<unknown>(baseUrl, `/api/check-in/registrations/${id}/undo`, { method: 'POST' }),
   };
 }

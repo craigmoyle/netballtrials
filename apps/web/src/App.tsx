@@ -9,6 +9,10 @@ import { EventFormPage } from './routes/EventFormPage';
 import { RegisterPage } from './routes/RegisterPage';
 import { RegistrationPendingPage } from './routes/RegistrationPendingPage';
 import { TicketPage } from './routes/TicketPage';
+import { CheckInPage } from './checkin/CheckInPage';
+import { CheckInLayout } from './checkin/CheckInLayout';
+import { ScanPage } from './checkin/ScanPage';
+import { LookupPanel } from './checkin/LookupPanel';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? 'http://localhost:3000');
 
@@ -32,6 +36,7 @@ function TicketRoute({ client }: { client: Client }) {
   if (!token) return <Navigate to="/" replace />;
   return <TicketPage client={client} token={token} />;
 }
+
 
 export function App() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -60,6 +65,25 @@ export function App() {
       <Route path="/register/:eventId" element={<RegisterRoute client={client} />} />
       <Route path="/register/:eventId/pending" element={<PendingRoute client={client} />} />
       <Route path="/ticket/:token" element={<TicketRoute client={client} />} />
+      <Route path="/check-in" element={<CheckInPage client={client} />} />
+      <Route
+        path="/check-in/scan"
+        element={
+          <>
+            <CheckInLayout client={client} />
+            <ScanPage client={client} />
+          </>
+        }
+      />
+      <Route
+        path="/check-in/lookup"
+        element={
+          <>
+            <CheckInLayout client={client} />
+            <LookupPanel client={client} />
+          </>
+        }
+      />
       <Route path="/admin/login" element={<LoginPage client={client} />} />
       <Route
         path="/admin/verify"

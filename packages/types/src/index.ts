@@ -73,3 +73,26 @@ export interface TicketDTO {
   event: { name: string; eventDate?: string; venue?: string; firstWhistle?: string };
   bibNumber?: number | null;
 }
+
+export interface CheckInResult {
+  result: 'checked_in' | 'already' | 'refused';
+  reason?: 'not_paid' | 'unknown';
+  playerName?: string;
+  bibNumber?: number;
+  referToCommittee: boolean;
+}
+
+export interface LookupResult {
+  id: string;
+  playerName: string;
+  bibNumber: number | null;
+  checkedIn: boolean;
+}
+
+export interface CheckInSummary {
+  eventId: string;
+  eventName: string;
+  registered: number;
+  checkedIn: number;
+  closed: boolean;
+}
