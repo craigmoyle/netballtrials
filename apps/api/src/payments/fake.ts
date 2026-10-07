@@ -21,7 +21,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
     },
     parseWebhook(rawBody: Buffer, signature: string): WebhookEvent {
       if (signature !== 'ok') {
-        return { kind: 'ignored' };
+        throw new Error('invalid signature');
       }
       try {
         const parsed = JSON.parse(rawBody.toString('utf8'));

@@ -1,3 +1,7 @@
+import type { EmailProvider } from '../mail/provider';
+import { buildIcs } from './ics';
+import { qrDataUrl } from './qr';
+
 export type ConfirmationInput = {
   playerName: string;
   event: {
@@ -57,4 +61,44 @@ export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
 </html>`;
 
   return { subject, text, html };
+}
+
+export async function sendConfirmation(
+  deps: { mailer: EmailProvider },
+  registration: {
+    id: string;
+    playerFirstName: string;
+    playerLastName: string;
+    parentEmail: string;
+    policyReference: string;
+    qrToken: string | null;
+  },
+  event: { name: string; eventDate: Date; venue: string; firstWhistle: string },
+  ticketUrl: string,
+): Promise<void> {
+  const eventDate = event.eventDate.toISOString().slice(0, 10);
+  const icsText = buildIcs({
+    uid: `${registration.id}@chisholmnetball.com`,
+    title: `${event.name} trials`,
+    start: new Date(`${eventDate}T${event.firstWhistle}:00.000Z`),
+    end: new Date(`${eventDate}T${event.firstWhistle}:00.000Z`),
+    location: event.venue,
+    description: 'Bring your QR code to check in. Bib numbers are issued at the door.',
+  });
+
+  const email = buildConfirmation({
+    playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
+    event: { name: event.name, eventDate, venue: event.venue, firstWhistle: event.firstWhistle },
+    ticketUrl,
+    qrDataUrl: await qrDataUrl(registration.qrToken ?? ''),
+    policyUrl: registration.policyReference,
+    icsText,
+  });
+
+  await deps.mailer.send({
+    to: registration.parentEmail,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
+  });
 }
