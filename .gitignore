@@ -10,6 +10,7 @@ coverage/
 
 # Superpowers working files
 .superpowers/
+docs/superpowers/
 
 # Project agent skills (installed tooling)
 .pi/
