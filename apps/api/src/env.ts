@@ -9,6 +9,8 @@ const envSchema = z.object({
   SESSION_COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
   MAIL_FROM: z.string().default('trials@chisholmnetball.com'),
   MAIL_REPLY_TO: z.string().default('chisholmnetball@gmail.com'),
+  STRIPE_SECRET_KEY: z.string().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().default(''),
   PORT: z.coerce.number().int().positive().default(3000),
 });
 
@@ -19,6 +21,8 @@ export type Env = {
   SESSION_COOKIE_SECURE: boolean;
   MAIL_FROM: string;
   MAIL_REPLY_TO: string;
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
   PORT: number;
 };
 
