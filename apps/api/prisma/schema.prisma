@@ -69,12 +69,17 @@ model Event {
   changeoverMinutes    Int         @default(2)
   minAge               Int         @default(5)
   maxAge               Int         @default(99)
+  checkInPinHash       String?
+  checkInPinUpdatedAt  DateTime?
+  nextBibNumber        Int         @default(1)
+  checkInClosedAt      DateTime?
   policyUrl            String?
   policyDocumentName   String?
   status               EventStatus @default(DRAFT)
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
   registrations        Registration[]
+  checkInSessions      CheckInSession[]
 }
 
 model MemberAssociation {
@@ -127,9 +132,22 @@ model Registration {
   paidAt                 DateTime?
   qrToken                String?            @unique
   bibNumber              Int?
+  checkedInAt            DateTime?
+  checkedInBy            String?
   expiresAt              DateTime
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
   @@index([eventId, status])
+}
+
+model CheckInSession {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([eventId])
 }
