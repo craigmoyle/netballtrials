@@ -7,7 +7,7 @@ import {
 } from '../registrations/service';
 import type { RegistrationInput } from '../registrations/schemas';
 import { registerStripeWebhookRoute } from '../payments/webhook';
-import { getPublicEvent } from './service';
+import { getPublicEvent, getTicket } from './service';
 
 export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void {
   registerStripeWebhookRoute(app, deps);
@@ -19,6 +19,24 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       return reply.code(404).send({ error: 'not_found' });
     }
     return event;
+  });
+
+  app.get('/api/public/registrations/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const registration = await deps.prisma.registration.findUnique({ where: { id } });
+    if (!registration) {
+      return reply.code(404).send({ error: 'not_found' });
+    }
+    return { status: registration.status };
+  });
+
+  app.get('/api/public/ticket/:token', async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const ticket = await getTicket(deps.prisma, token);
+    if (!ticket) {
+      return reply.code(404).send({ error: 'not_found' });
+    }
+    return ticket;
   });
 
   app.post('/api/public/events/:id/registrations', async (req, reply) => {

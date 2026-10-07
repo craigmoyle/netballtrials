@@ -17,6 +17,37 @@ export type PublicEvent = {
   status: string;
 };
 
+export type PublicTicket = {
+  playerName: string;
+  event: { name: string; eventDate: string; venue: string; firstWhistle: string };
+  bibNumber: number | null;
+};
+
+export async function getTicket(
+  prisma: PrismaClient,
+  token: string,
+): Promise<PublicTicket | null> {
+  const registration = await prisma.registration.findFirst({
+    where: { qrToken: token, status: 'PAID' },
+    include: { event: true },
+  });
+
+  if (!registration) {
+    return null;
+  }
+
+  return {
+    playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
+    event: {
+      name: registration.event.name,
+      eventDate: registration.event.eventDate.toISOString(),
+      venue: registration.event.venue,
+      firstWhistle: registration.event.firstWhistle,
+    },
+    bibNumber: registration.bibNumber,
+  };
+}
+
 export async function getPublicEvent(
   prisma: PrismaClient,
   id: string,
