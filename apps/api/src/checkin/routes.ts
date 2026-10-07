@@ -1,11 +1,32 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
+import { createPinLimiter } from './limiter';
 import { isValidPinFormat } from './pin';
-import { closeCheckIn, setCheckInPin } from './service';
+import {
+  CheckInClosedError,
+  CheckInUnavailableError,
+  PinInvalidError,
+  PinLockedError,
+  closeCheckIn,
+  getCheckInSummary,
+  openCheckInSession,
+  setCheckInPin,
+} from './service';
 
 const pinSchema = z.object({ pin: z.string() });
+const pinLimiter = createPinLimiter({ max: 10, windowMs: 10 * 60_000 });
+
+function nowFrom(request: FastifyRequest): Date {
+  if (process.env.NODE_ENV === 'test') {
+    const header = request.headers['x-test-now'];
+    if (typeof header === 'string') {
+      return new Date(header);
+    }
+  }
+  return new Date();
+}
 
 export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.put('/api/admin/events/:id/check-in-pin', { preHandler: requireAdmin(deps) }, async (req, reply) => {
@@ -38,5 +59,64 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(404).send({ error: 'not_found' });
     }
     return reply.code(204).send();
+  });
+
+  app.post('/api/check-in/session', async (req, reply) => {
+    const parsed = z
+      .object({ eventId: z.string().min(1), pin: z.string() })
+      .safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'validation_failed' });
+    }
+
+    const now = nowFrom(req);
+    const clientKey = req.ip ?? 'unknown';
+
+    try {
+      const session = await openCheckInSession(
+        deps,
+        { ...parsed.data, clientKey },
+        now,
+        pinLimiter,
+      );
+
+      reply.setCookie('nt_checkin', session.token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: deps.env.SESSION_COOKIE_SECURE,
+        maxAge: Math.max(60, Math.floor((session.expiresAt.getTime() - now.getTime()) / 1000)),
+      });
+
+      return reply.code(200).send({ eventName: session.eventName });
+    } catch (err) {
+      if (err instanceof PinInvalidError) {
+        return reply.code(401).send({ error: 'pin_invalid' });
+      }
+      if (err instanceof PinLockedError) {
+        return reply.code(429).send({ error: 'pin_locked' });
+      }
+      if (err instanceof CheckInClosedError) {
+        return reply.code(409).send({ error: 'check_in_closed' });
+      }
+      if (err instanceof CheckInUnavailableError) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      throw err;
+    }
+  });
+
+  app.get('/api/check-in/session', async (req, reply) => {
+    const token = req.cookies?.nt_checkin;
+    if (!token) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+
+    const summary = await getCheckInSummary(deps.prisma, token, nowFrom(req));
+    if (!summary) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+
+    return summary;
   });
 }
