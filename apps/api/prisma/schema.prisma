@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StaffRole {
+  ADMIN
+}
+
+model StaffUser {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  role        StaffRole    @default(ADMIN)
+  createdAt   DateTime     @default(now())
+  loginTokens LoginToken[]
+  sessions    Session[]
+}
+
+model LoginToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  user      StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum EventStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+model Event {
+  id                   String      @id @default(cuid())
+  name                 String
+  competitionYear      Int
+  division             String
+  section              String
+  eventDate            DateTime    @db.Date
+  venue                String
+  startTime            String
+  endTime              String
+  firstWhistle         String
+  lastWhistle          String
+  registrationFeeCents Int
+  courts               Int
+  rank1Min             Int
+  rank2Min             Int
+  rank3Min             Int
+  playMinutes          Int         @default(8)
+  changeoverMinutes    Int         @default(2)
+  policyUrl            String?
+  policyDocumentName   String?
+  status               EventStatus @default(DRAFT)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+}
+
+model MemberAssociation {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  active Boolean @default(true)
+}
