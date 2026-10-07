@@ -29,6 +29,8 @@ export interface EventDTO {
   rank3Min: number;
   playMinutes: number;
   changeoverMinutes: number;
+  minAge: number;
+  maxAge: number;
   policyUrl: string | null;
   policyDocumentName: string | null;
   status: EventStatus;

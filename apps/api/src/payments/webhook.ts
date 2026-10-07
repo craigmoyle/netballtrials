@@ -76,7 +76,12 @@ export function registerStripeWebhookRoute(app: FastifyInstance, deps: AppDeps):
 
       if (registration?.qrToken) {
         const ticketUrl = `${deps.env.API_PUBLIC_URL}/api/public/ticket/${registration.qrToken}`;
-        await sendConfirmation(deps, registration, registration.event, ticketUrl);
+        try {
+          await sendConfirmation(deps, registration, registration.event, ticketUrl);
+        } catch {
+          // The payment is recorded; a failed confirmation must not make Stripe
+          // retry and re-mark a paid registration. A later plan logs the failure.
+        }
       }
 
       return reply.code(200).send({ status: 'ok' });

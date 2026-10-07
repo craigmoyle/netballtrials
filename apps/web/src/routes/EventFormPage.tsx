@@ -23,6 +23,8 @@ const EMPTY: FormState = {
   rank3Min: '1',
   playMinutes: '8',
   changeoverMinutes: '2',
+  minAge: '5',
+  maxAge: '99',
   policyUrl: '',
 };
 
@@ -35,6 +37,8 @@ const NUMERIC = new Set([
   'rank3Min',
   'playMinutes',
   'changeoverMinutes',
+  'minAge',
+  'maxAge',
 ]);
 
 const FIELDS: { name: string; label: string; type: string }[] = [
@@ -55,6 +59,8 @@ const FIELDS: { name: string; label: string; type: string }[] = [
   { name: 'rank3Min', label: 'Minimum games in third choice', type: 'number' },
   { name: 'playMinutes', label: 'Playing minutes', type: 'number' },
   { name: 'changeoverMinutes', label: 'Changeover minutes', type: 'number' },
+  { name: 'minAge', label: 'Minimum age at 31 December', type: 'number' },
+  { name: 'maxAge', label: 'Maximum age at 31 December', type: 'number' },
   { name: 'policyUrl', label: 'Selection policy URL', type: 'url' },
 ];
 
@@ -92,6 +98,8 @@ export function EventFormPage({ client }: { client: Client }) {
           rank3Min: String(event.rank3Min),
           playMinutes: String(event.playMinutes),
           changeoverMinutes: String(event.changeoverMinutes),
+          minAge: String(event.minAge),
+          maxAge: String(event.maxAge),
           policyUrl: event.policyUrl ?? '',
         });
       })
