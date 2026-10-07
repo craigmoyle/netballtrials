@@ -7,6 +7,8 @@ import { prisma as defaultPrisma } from './db';
 import { createDevMailer } from './mail/dev-mailer';
 import type { EmailProvider } from './mail/provider';
 import { registerAuthRoutes } from './auth/routes';
+import { registerEventRoutes } from './events/routes';
+import { registerAssociationRoutes } from './associations/routes';
 
 export type AppDeps = {
   prisma: PrismaClient;
@@ -37,6 +39,8 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   app.get('/health', async () => ({ status: 'ok' }));
 
   registerAuthRoutes(app, deps);
+  registerEventRoutes(app, deps);
+  registerAssociationRoutes(app, deps);
 
   return app;
 }
