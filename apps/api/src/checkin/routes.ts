@@ -11,8 +11,13 @@ import {
   PinLockedError,
   closeCheckIn,
   getCheckInSummary,
+  lookupRegistrations,
+  manualCheckIn,
+  checkInByToken,
   openCheckInSession,
+  resolveCheckInEvent,
   setCheckInPin,
+  undoCheckIn,
 } from './service';
 
 const pinSchema = z.object({ pin: z.string() });
@@ -26,6 +31,11 @@ function nowFrom(request: FastifyRequest): Date {
     }
   }
   return new Date();
+}
+
+function labelFrom(request: FastifyRequest): string {
+  const label = request.headers['x-checkin-label'];
+  return typeof label === 'string' && label ? label : 'Volunteer';
 }
 
 export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -118,5 +128,48 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
     }
 
     return summary;
+  });
+
+  app.get('/api/check-in/lookup', async (req, reply) => {
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    if (!eventId) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const query = String((req.query as { q?: string }).q ?? '');
+    return lookupRegistrations(deps.prisma, eventId, query);
+  });
+
+  app.post('/api/check-in/scan', async (req, reply) => {
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    if (!eventId) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const parsed = z.object({ token: z.string().min(10) }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'validation_failed' });
+    }
+    return checkInByToken(deps.prisma, eventId, parsed.data.token, labelFrom(req), nowFrom(req));
+  });
+
+  app.post('/api/check-in/registrations/:id', async (req, reply) => {
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    if (!eventId) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    return manualCheckIn(deps.prisma, eventId, id, labelFrom(req), nowFrom(req));
+  });
+
+  app.post('/api/check-in/registrations/:id/undo', async (req, reply) => {
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    if (!eventId) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const undone = await undoCheckIn(deps.prisma, eventId, id);
+    if (!undone) {
+      return reply.code(404).send({ error: 'not_found' });
+    }
+    return reply.code(204).send();
   });
 }
