@@ -1,3 +1,16 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Superpowers working files
+.superpowers/
+
 # impeccable-ignore-start
 # Ephemeral output, runtime state, and per-dev overrides.
 # The **/ prefix covers .impeccable at the repo root or in a nested workspace.

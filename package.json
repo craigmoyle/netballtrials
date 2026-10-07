@@ -1,0 +1,24 @@
+{
+  "name": "netball-trials",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Netball trials registration, check-in, and round planning",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:api": "npm run dev --workspace @netball-trials/api",
+    "dev:web": "npm run dev --workspace @netball-trials/web",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "allowScripts": {
+    "prisma@7.10.0": true,
+    "@prisma/engines@7.10.0": true,
+    "esbuild@0.28.2": true
+  }
+}
