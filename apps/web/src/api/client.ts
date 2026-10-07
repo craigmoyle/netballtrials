@@ -49,6 +49,7 @@ export function apiClient(baseUrl: string) {
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
     listEvents: () => request<EventDTO[]>(baseUrl, '/api/admin/events'),
+    getEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}`),
     createEvent: (input: EventInput) =>
       request<EventDTO>(baseUrl, '/api/admin/events', {
         method: 'POST',
