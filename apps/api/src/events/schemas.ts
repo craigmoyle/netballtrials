@@ -22,6 +22,8 @@ export const eventInputSchema = z.object({
   rank3Min: z.number().int().min(0).max(20),
   playMinutes: z.number().int().min(1).max(60).default(8),
   changeoverMinutes: z.number().int().min(0).max(10).default(2),
+  minAge: z.number().int().min(5).max(99).default(5),
+  maxAge: z.number().int().min(5).max(99).default(99),
   policyUrl: z.url().max(500).optional(),
 });
 

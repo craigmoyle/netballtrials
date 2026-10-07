@@ -27,6 +27,8 @@ function toEventData(input: EventInput) {
     rank3Min: input.rank3Min,
     playMinutes: input.playMinutes,
     changeoverMinutes: input.changeoverMinutes,
+    minAge: input.minAge,
+    maxAge: input.maxAge,
     policyUrl: input.policyUrl ?? null,
   };
 }
@@ -40,6 +42,10 @@ function assertValid(input: EventInput): EventInput {
   const windowErrors = validateWindow(parsed.data);
   if (windowErrors.length > 0) {
     throw new EventValidationError(windowErrors);
+  }
+
+  if (parsed.data.minAge > parsed.data.maxAge) {
+    throw new EventValidationError(['maxAge']);
   }
 
   return parsed.data;
@@ -86,6 +92,8 @@ export async function updateEvent(
     rank3Min: existing.rank3Min,
     playMinutes: existing.playMinutes,
     changeoverMinutes: existing.changeoverMinutes,
+    minAge: existing.minAge,
+    maxAge: existing.maxAge,
     policyUrl: existing.policyUrl ?? undefined,
     ...patch,
   };

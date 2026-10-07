@@ -67,15 +67,69 @@ model Event {
   rank3Min             Int
   playMinutes          Int         @default(8)
   changeoverMinutes    Int         @default(2)
+  minAge               Int         @default(5)
+  maxAge               Int         @default(99)
   policyUrl            String?
   policyDocumentName   String?
   status               EventStatus @default(DRAFT)
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
+  registrations        Registration[]
 }
 
 model MemberAssociation {
   id     String  @id @default(cuid())
   name   String  @unique
   active Boolean @default(true)
+}
+
+enum Position {
+  GS
+  GA
+  WA
+  C
+  WD
+  GD
+  GK
+}
+
+enum RegistrationStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  WITHDRAWN
+}
+
+model Registration {
+  id                     String             @id @default(cuid())
+  eventId                String
+  event                  Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  playerFirstName        String
+  playerLastName         String
+  playerNameNormalized   String
+  dateOfBirth            DateTime           @db.Date
+  parentName             String
+  parentEmail            String
+  parentMobile           String
+  memberAssociation      String
+  rank1Position          Position
+  rank2Position          Position?
+  rank3Position          Position?
+  optInExtraPositions    Boolean            @default(false)
+  eligibilityConfirmedAt DateTime
+  policyReference        String
+  status                 RegistrationStatus @default(PENDING)
+  ageFlagged             Boolean            @default(false)
+  amountCents            Int
+  currency               String             @default("aud")
+  paymentRef             String?
+  paidAt                 DateTime?
+  qrToken                String?            @unique
+  bibNumber              Int?
+  expiresAt              DateTime
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([eventId, status])
 }

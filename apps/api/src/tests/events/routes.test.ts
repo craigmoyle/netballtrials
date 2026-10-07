@@ -11,7 +11,7 @@ beforeEach(async () => {
   cookie = await signInAsNewAdmin(app, 'admin@example.com');
 });
 
-const payload = { name: '17/U', competitionYear: 2027, division: '17/U', section: 'Ladies', eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00', firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 4, rank1Min: 2, rank2Min: 1, rank3Min: 1 };
+const payload = { name: '17/U', competitionYear: 2027, division: '17/U', section: 'Ladies', eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00', firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 4, rank1Min: 2, rank2Min: 1, rank3Min: 1, minAge: 14, maxAge: 17 };
 
 describe('event admin routes', () => {
   it('requires an admin session', async () => {
