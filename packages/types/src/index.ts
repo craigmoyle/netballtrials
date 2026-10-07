@@ -41,3 +41,20 @@ export interface MemberAssociationDTO {
 }
 
 export type EventInput = Omit<EventDTO, 'id' | 'status' | 'policyDocumentName'>;
+
+export interface PublicEventDTO {
+  id: string;
+  name: string;
+  division: string;
+  section: string;
+  eventDate: string;
+  venue: string;
+  firstWhistle: string;
+  registrationFeeCents: number;
+  currency: string;
+  policyUrl: string | null;
+  minAge: number;
+  maxAge: number;
+  courts: number;
+  status: EventStatus;
+}

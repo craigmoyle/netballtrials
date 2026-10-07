@@ -9,6 +9,7 @@ import type { EmailProvider } from './mail/provider';
 import { registerAuthRoutes } from './auth/routes';
 import { registerEventRoutes } from './events/routes';
 import { registerAssociationRoutes } from './associations/routes';
+import { registerPublicRoutes } from './public/routes';
 
 export type AppDeps = {
   prisma: PrismaClient;
@@ -41,6 +42,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   registerAuthRoutes(app, deps);
   registerEventRoutes(app, deps);
   registerAssociationRoutes(app, deps);
+  registerPublicRoutes(app, deps);
 
   return app;
 }
