@@ -14,9 +14,13 @@ export type AppDeps = {
   env: Env;
 };
 
-export function createApp(
-  overrides: Partial<AppDeps> = {},
-): FastifyInstance & { testDeps: AppDeps } {
+declare module 'fastify' {
+  interface FastifyInstance {
+    testDeps: AppDeps;
+  }
+}
+
+export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   const env = overrides.env ?? loadEnv();
   const deps: AppDeps = {
     env,
@@ -34,5 +38,5 @@ export function createApp(
 
   registerAuthRoutes(app, deps);
 
-  return app as FastifyInstance & { testDeps: AppDeps };
+  return app;
 }
