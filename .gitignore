@@ -11,6 +11,9 @@ coverage/
 # Superpowers working files
 .superpowers/
 
+# Project agent skills (installed tooling)
+.pi/
+
 # impeccable-ignore-start
 # Ephemeral output, runtime state, and per-dev overrides.
 # The **/ prefix covers .impeccable at the repo root or in a nested workspace.
