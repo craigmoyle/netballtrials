@@ -40,4 +40,5 @@ export const registrationInputSchema = z
     path: ['rank2Position'],
   });
 
-export type RegistrationInput = z.output<typeof registrationInputSchema>;
+export type RegistrationInput = z.input<typeof registrationInputSchema>;
+export type RegistrationValues = z.output<typeof registrationInputSchema>;
