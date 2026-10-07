@@ -39,6 +39,16 @@ describe('auth routes', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('link_invalid');
   });
+  it('invalidates the server session on logout', async () => {
+    await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
+    const token = new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+    const verified = await app.inject({ method: 'POST', url: '/api/auth/verify', payload: { token } });
+    const cookieValue = verified.cookies.find((c) => c.name === 'nt_session')!.value;
+    const out = await app.inject({ method: 'POST', url: '/api/auth/logout', cookies: { nt_session: cookieValue } });
+    expect(out.statusCode).toBe(204);
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', cookies: { nt_session: cookieValue } });
+    expect(me.statusCode).toBe(401);
+  });
   it('returns 401 for a session whose admin was deleted', async () => {
     const user = await prisma.staffUser.create({ data: { email: 'gone@example.com' } });
     const { newSession, hashToken } = await import('../../auth/tokens');

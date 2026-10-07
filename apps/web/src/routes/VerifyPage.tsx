@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { apiClient } from '../api/client';
 
@@ -13,8 +13,12 @@ export function VerifyPage({
 }) {
   const [params] = useSearchParams();
   const [state, setState] = useState<'checking' | 'ok' | 'error'>('checking');
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+
     const token = params.get('token');
     if (!token) {
       setState('error');

@@ -39,3 +39,6 @@ coverage/
 # downloads the correct build for the machine on first run, so keep it out
 # of version control.
 **/.pi/skills/impeccable/scripts/bin/
+
+# TypeScript build info
+*.tsbuildinfo

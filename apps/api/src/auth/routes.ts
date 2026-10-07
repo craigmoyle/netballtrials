@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { consumeLoginToken, requestLoginLink } from './service';
+import { hashToken } from './tokens';
 import { requireAdmin } from './guard';
 
 export const SESSION_COOKIE = 'nt_session';
@@ -71,7 +72,11 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   });
 
-  app.post('/api/auth/logout', async (_req, reply) => {
+  app.post('/api/auth/logout', async (req, reply) => {
+    const token = req.cookies?.nt_session;
+    if (token) {
+      await deps.prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } });
+    }
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return reply.code(204).send();
   });
