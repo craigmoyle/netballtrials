@@ -1,8 +1,14 @@
 import { totalTimeMinutes } from './minimum';
-import type { PlannerGap, PlannerInput, PlannerPlan, PlannerPlayer, Position } from './types';
+import { COURT_POSITIONS } from './types';
+import type { PlannerGap, PlannerInput, PlannerPlan, PlannerPlayer } from './types';
+
+function noSolution(message: string, detail?: Record<string, unknown>): PlannerGap {
+  return { code: 'no_solution', message, ...(detail ? { detail } : {}) };
+}
 
 export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[] {
   const gaps: PlannerGap[] = [];
+  const playerIds = new Set(input.players.map((player) => player.registrationId));
   const playersById = new Map<string, PlannerPlayer>(
     input.players.map((player) => [player.registrationId, player]),
   );
@@ -16,13 +22,16 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     });
   }
 
+  if (!Number.isInteger(input.courts) || input.courts < 1 || !Number.isInteger(plan.rounds) || plan.rounds < 1) {
+    gaps.push(noSolution('court count and rounds must be positive integers'));
+  }
+
   const expectedSlots = plan.rounds * input.courts * 14;
   if (plan.slots.length !== expectedSlots) {
-    gaps.push({
-      code: 'no_solution',
-      message: `expected ${expectedSlots} places but the plan has ${plan.slots.length}`,
-      detail: { expected: expectedSlots, actual: plan.slots.length },
-    });
+    gaps.push(noSolution(`expected ${expectedSlots} places but the plan has ${plan.slots.length}`, {
+      expected: expectedSlots,
+      actual: plan.slots.length,
+    }));
   }
 
   const seenInRound = new Set<string>();
@@ -32,71 +41,86 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
   const positionCounts = new Map<string, number>();
 
   for (const slot of plan.slots) {
-    const roundKey = `${slot.registrationId}:${slot.round}`;
-    if (seenInRound.has(roundKey)) {
-      gaps.push({
-        code: 'no_solution',
-        message: `${slot.registrationId} appears twice in round ${slot.round}`,
-      });
+    if (
+      !Number.isInteger(slot.round) || slot.round < 1 || slot.round > plan.rounds ||
+      !Number.isInteger(slot.court) || slot.court < 1 || slot.court > input.courts ||
+      (slot.team !== 0 && slot.team !== 1) ||
+      !COURT_POSITIONS.includes(slot.position)
+    ) {
+      gaps.push(noSolution('slot contains an invalid round, court, team, or position', {
+        registrationId: slot.registrationId,
+        round: slot.round,
+        court: slot.court,
+        team: slot.team,
+        position: slot.position,
+      }));
+      continue;
     }
-    seenInRound.add(roundKey);
 
-    const placeKey = `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
-    if (seenPlace.has(placeKey)) {
-      gaps.push({ code: 'no_solution', message: `place ${placeKey} is filled more than once` });
+    if (!playerIds.has(slot.registrationId)) {
+      gaps.push(noSolution(`slot references unknown registration ${slot.registrationId}`, {
+        registrationId: slot.registrationId,
+      }));
+      continue;
     }
-    seenPlace.add(placeKey);
+
+    const playerRound = `${slot.registrationId}:${slot.round}`;
+    if (seenInRound.has(playerRound)) {
+      gaps.push(noSolution(`${slot.registrationId} appears twice in round ${slot.round}`));
+    }
+    seenInRound.add(playerRound);
+
+    const place = `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
+    if (seenPlace.has(place)) {
+      gaps.push(noSolution(`place ${place} is filled more than once`));
+    }
+    seenPlace.add(place);
 
     appearances.set(slot.registrationId, (appearances.get(slot.registrationId) ?? 0) + 1);
-    if (!courtsSeen.has(slot.registrationId)) {
-      courtsSeen.set(slot.registrationId, new Set());
-    }
+    if (!courtsSeen.has(slot.registrationId)) courtsSeen.set(slot.registrationId, new Set());
     courtsSeen.get(slot.registrationId)!.add(slot.court);
     const positionKey = `${slot.registrationId}:${slot.position}`;
     positionCounts.set(positionKey, (positionCounts.get(positionKey) ?? 0) + 1);
+
+    const player = playersById.get(slot.registrationId)!;
+    const selected = [player.rank1, player.rank2, player.rank3].filter(Boolean);
+    if (!player.optInExtra && !selected.includes(slot.position)) {
+      gaps.push(noSolution(`${player.name} is not opted in but is assigned ${slot.position}`));
+    }
   }
 
-  if (!gaps.some((gap) => gap.code === 'no_solution')) {
-    for (const player of input.players) {
-      const seen = courtsSeen.get(player.registrationId) ?? new Set<number>();
-      for (let court = 1; court <= input.courts; court++) {
-        if (!seen.has(court)) {
-          gaps.push({
-            code: 'missing_court_visit',
-            message: `${player.name} never plays on court ${court}`,
-            detail: { registrationId: player.registrationId, court },
-          });
+  for (let round = 1; round <= plan.rounds; round += 1) {
+    for (let court = 1; court <= input.courts; court += 1) {
+      for (const position of COURT_POSITIONS) {
+        for (const team of [0, 1]) {
+          const place = `${round}:${court}:${position}:${team}`;
+          if (!seenPlace.has(place)) {
+            gaps.push(noSolution(`round ${round}, court ${court}, team ${team} is missing ${position}`));
+          }
         }
-      }
-    }
-
-    for (const slot of plan.slots) {
-      const player = playersById.get(slot.registrationId);
-      if (!player) {
-        continue;
-      }
-      const selected = [player.rank1, player.rank2, player.rank3].filter(
-        (value): value is Position => Boolean(value),
-      );
-      if (!player.optInExtra && !selected.includes(slot.position)) {
-        gaps.push({
-          code: 'no_solution',
-          message: `${player.name} is not opted in but is assigned ${slot.position}`,
-        });
       }
     }
   }
 
   for (const player of input.players) {
-    const ranks: { position: Position | null; min: number }[] = [
+    const seen = courtsSeen.get(player.registrationId) ?? new Set<number>();
+    for (let court = 1; court <= input.courts; court += 1) {
+      if (!seen.has(court)) {
+        gaps.push({
+          code: 'missing_court_visit',
+          message: `${player.name} never plays on court ${court}`,
+          detail: { registrationId: player.registrationId, court },
+        });
+      }
+    }
+
+    const ranks = [
       { position: player.rank1, min: input.rank1Min },
       { position: player.rank2, min: input.rank2Min },
       { position: player.rank3, min: input.rank3Min },
     ];
     for (const rank of ranks) {
-      if (!rank.position || rank.min <= 0) {
-        continue;
-      }
+      if (!rank.position || rank.min <= 0) continue;
       const have = positionCounts.get(`${player.registrationId}:${rank.position}`) ?? 0;
       if (have < rank.min) {
         gaps.push({
@@ -109,15 +133,8 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
   }
 
   const counts = input.players.map((player) => appearances.get(player.registrationId) ?? 0);
-  if (counts.length > 0) {
-    const max = Math.max(...counts);
-    const min = Math.min(...counts);
-    if (max - min > 1) {
-      gaps.push({
-        code: 'no_solution',
-        message: `game counts range from ${min} to ${max}`,
-      });
-    }
+  if (counts.length > 0 && Math.max(...counts) - Math.min(...counts) > 1) {
+    gaps.push(noSolution(`game counts range from ${Math.min(...counts)} to ${Math.max(...counts)}`));
   }
 
   const timeMinutes = totalTimeMinutes(plan.rounds, input.playMinutes, input.changeoverMinutes);
