@@ -237,14 +237,45 @@ function buildPlan(input: PlannerInput, seed: number, rounds: number): PlannerRe
     }
 
     for (let court = 1; court <= input.courts; court++) {
-      const assigned = assignCourt(byCourt.get(court)!, input);
+      let courtPlayers = byCourt.get(court)!;
+      let assigned = assignCourt(courtPlayers, input);
+
+      // A court group can have 14 players but no legal position assignment (for
+      // example, three non-opted-in GS players competing for two GS slots).
+      // Try one deterministic swap with an unassigned player before rejecting.
+      if (!assigned) {
+        const replaceOrder = courtPlayers
+          .map((state, index) => ({ state, index }))
+          .sort((a, b) =>
+            owedPositions(a.state, input).length - owedPositions(b.state, input).length ||
+            b.state.appearances - a.state.appearances ||
+            a.index - b.index,
+          );
+        for (const { index: selectedIndex } of replaceOrder) {
+          if (assigned) break;
+          for (let alternateIndex = 0; alternateIndex < unselected.length; alternateIndex += 1) {
+            const trial = [...courtPlayers];
+            trial[selectedIndex] = unselected[alternateIndex];
+            const trialAssignment = assignCourt(trial, input);
+            if (!trialAssignment) continue;
+
+            const [incoming] = unselected.splice(alternateIndex, 1);
+            unselected.push(courtPlayers[selectedIndex]);
+            courtPlayers = trial;
+            byCourt.set(court, trial);
+            assigned = trialAssignment;
+            break;
+          }
+        }
+      }
+
       if (!assigned) {
         return {
           ok: false,
           gaps: [
             {
               code: 'no_solution',
-              message: `could not fill court ${court} in round ${round}`,
+              message: `could not fill court ${court} in round ${round} with legal positions`,
             },
           ],
         };

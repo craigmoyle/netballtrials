@@ -5,8 +5,7 @@ import { plannerInput } from '../helpers/planner';
 
 // Ruling: the plan's `{ courts: 2, players: 21 }` case is infeasible (21 players
 // cannot fill two courts of 14, and the gap test calls 20 players too few), so it
-// is replaced by a feasible 29-player case; the infeasible boundary is covered in
-// the too_few_players test below.
+// is replaced by a feasible 29-player case; the infeasible boundary is covered below.
 const cases = [
   { courts: 1, players: 14 },
   { courts: 2, players: 28 },
@@ -22,6 +21,7 @@ describe('generatePlan', () => {
     if (!result.ok) return;
     expect(verifyPlan(input, result.plan)).toEqual([]);
   });
+
   it('increases rounds when a position minimum is feasible only with more games', () => {
     const input = plannerInput({
       courts: 1,
@@ -79,12 +79,39 @@ describe('generatePlan', () => {
     }
   });
 
+  it('finds a feasible distribution with six fixed-GS players and rotating rests', () => {
+    const rankPositions = ['GS', 'GS', 'GS', 'GS', 'GS', 'GS', 'GA', 'GA', 'GA', 'GA', 'WA', 'WA', 'WA', 'WA', 'C', 'C', 'C', 'C', 'WD', 'WD', 'WD', 'WD', 'GD', 'GD', 'GD', 'GD', 'GK', 'GK', 'GK', 'GK'] as const;
+    const input = plannerInput({
+      courts: 2,
+      rounds: 3,
+      windowMinutes: 28,
+      rank1Min: 1,
+      rank2Min: 0,
+      rank3Min: 0,
+      players: rankPositions.map((rank1, index) => ({
+        registrationId: `position-${String(index).padStart(2, '0')}`,
+        name: `Player ${index}`,
+        bibNumber: index + 1,
+        rank1,
+        rank2: null,
+        rank3: null,
+        optInExtra: false,
+      })),
+    });
+    for (const seed of [1, 4, 19]) {
+      const result = generatePlan(input, seed);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(verifyPlan(input, result.plan)).toEqual([]);
+    }
+  });
+
   it('is deterministic for the same seed', () => {
     const input = plannerInput({ courts: 2, players: 28 });
     const a = generatePlan(input, 1);
     const b = generatePlan(input, 1);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
+
   it('keeps game counts within one of each other', () => {
     const input = plannerInput({ courts: 2, players: 30 });
     const result = generatePlan(input, 3);
@@ -96,6 +123,7 @@ describe('generatePlan', () => {
     const values = [...counts.values()];
     expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(1);
   });
+
   it('refuses to fill more courts than there are players', () => {
     const result = generatePlan(plannerInput({ courts: 2, players: 21 }), 1);
     expect(result.ok).toBe(false);
