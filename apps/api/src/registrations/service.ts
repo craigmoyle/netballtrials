@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient, Registration } from '@prisma/client';
+import { Prisma, type PrismaClient, type Registration } from '@prisma/client';
 import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibility';
 import { DEFAULT_POLICY_URL } from '../policy';
 import { registrationInputSchema, type RegistrationInput } from './schemas';
@@ -132,12 +132,16 @@ export async function withdrawRegistration(
   registrationId: string,
   _now: Date,
 ): Promise<Registration | null> {
-  const result = await prisma.registration.updateMany({
-    where: { id: registrationId, eventId },
-    data: { status: 'WITHDRAWN', checkedInAt: null, bibNumber: null },
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE
+    `);
+    if (event.length === 0) return null;
+    const result = await tx.registration.updateMany({
+      where: { id: registrationId, eventId },
+      data: { status: 'WITHDRAWN', checkedInAt: null, checkedInBy: null, bibNumber: null },
+    });
+    if (result.count === 0) return null;
+    return tx.registration.findUnique({ where: { id: registrationId } });
   });
-  if (result.count === 0) {
-    return null;
-  }
-  return prisma.registration.findUnique({ where: { id: registrationId } });
 }

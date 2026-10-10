@@ -24,6 +24,8 @@ export interface PlannerInput {
   rank2Min: number;
   rank3Min: number;
   players: PlannerPlayer[];
+  inactiveRegistrationIds?: string[];
+  frozenThroughRound?: number;
 }
 
 export interface PlanSlot {
