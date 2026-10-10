@@ -144,6 +144,9 @@ model Registration {
   eligibilityConfirmedAt DateTime
   policyReference        String
   status                 RegistrationStatus @default(PENDING)
+  statusBeforeAnonymization RegistrationStatus?
+  anonymizedAt           DateTime?
+  anonymizedRef          String?            @unique
   ageFlagged             Boolean            @default(false)
   amountCents            Int
   currency               String             @default("aud")
@@ -284,6 +287,7 @@ enum EmailDeliveryState {
   SENT
   FAILED
   AMBIGUOUS
+  ANONYMIZED
 }
 
 model EmailLog {

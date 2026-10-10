@@ -169,6 +169,37 @@ export interface ReviewItemDTO {
   };
 }
 
+export interface RosterRegistrationDTO {
+  id: string;
+  playerName: string;
+  dateOfBirth: string;
+  parentName: string;
+  parentEmail: string;
+  parentMobile: string;
+  memberAssociation: string;
+  rank1Position: Position;
+  rank2Position: Position | null;
+  rank3Position: Position | null;
+  optInExtraPositions: boolean;
+  ageFlagged: boolean;
+  status: RegistrationStatus;
+  amountCents: number;
+  currency: string;
+  bibNumber: number | null;
+  checkedInAt: string | null;
+}
+
+export interface RosterDTO {
+  eventId: string;
+  registrations: RosterRegistrationDTO[];
+  positionCounts: {
+    rank1: Partial<Record<Position, number>>;
+    rank2: Partial<Record<Position, number>>;
+    rank3: Partial<Record<Position, number>>;
+    extraOptIn: number;
+  };
+}
+
 export interface EmailLogDTO {
   id: string;
   registrationId: string | null;
@@ -178,7 +209,7 @@ export interface EmailLogDTO {
   subject: string;
   body: string;
   kind: string;
-  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'AMBIGUOUS';
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'AMBIGUOUS' | 'ANONYMIZED';
   attempts: number;
   createdAt: string;
   lastAttemptAt: string | null;

@@ -1,0 +1,1 @@
+ALTER TYPE "EmailDeliveryState" ADD VALUE 'ANONYMIZED';
