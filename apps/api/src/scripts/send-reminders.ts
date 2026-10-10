@@ -1,19 +1,32 @@
+import 'dotenv/config';
 import { prisma } from '../db';
-import { createDevMailer } from '../mail/dev-mailer';
+import { createApp } from '../app';
 import { sendDueReminders } from '../messages/reminders';
 
 async function main(): Promise<void> {
-  // No production mail provider exists yet, so this mirrors createApp's default.
-  const mailer = createDevMailer([]);
-  const result = await sendDueReminders({ prisma, mailer }, new Date());
-  console.log(
-    `reminders: ${result.sent} sent, ${result.failed} failed, ${result.events} events due`,
-  );
+  const dryRun = process.argv.includes('--dry-run');
+  const app = createApp();
+  try {
+    if (app.testDeps.env.NODE_ENV !== 'production' && !dryRun) {
+      throw new Error('Non-production reminder runs require --dry-run');
+    }
+    const result = await sendDueReminders(
+      { prisma, mailer: app.testDeps.mailer },
+      new Date(),
+      { dryRun },
+    );
+    console.log(
+      `reminders${dryRun ? ' (dry run)' : ''}: ${result.sent} sent, ${result.failed} failed, ${result.ambiguous} ambiguous, ${result.events} events due`,
+    );
+  } finally {
+    await app.close();
+  }
 }
 
 main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
+  .then(() => prisma.$disconnect())
+  .catch(async (error) => {
+    console.error(error instanceof Error ? error.message : 'Reminder job failed');
+    await prisma.$disconnect();
+    process.exitCode = 1;
   });

@@ -10,6 +10,9 @@ export type DeliverySummary = {
   ambiguous: number;
   pending: number;
   deliveryIds: string[];
+  sentThisRun: number;
+  failedThisRun: number;
+  ambiguousThisRun: number;
 };
 
 export class EmailBatchConflictError extends Error {
@@ -153,7 +156,7 @@ async function dispatchOne(
   row: DeliveryRow,
   now: Date,
   allowAmbiguous = false,
-): Promise<void> {
+): Promise<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> {
   const retryable: EmailDeliveryState[] = allowAmbiguous
     ? ['PENDING', 'FAILED', 'AMBIGUOUS']
     : ['PENDING', 'FAILED'];
@@ -161,7 +164,7 @@ async function dispatchOne(
     where: { id: row.id, status: { in: retryable } },
     data: { status: 'SENDING', attempts: { increment: 1 }, lastAttemptAt: now, failedAt: null, error: null },
   });
-  if (claim.count !== 1) return;
+  if (claim.count !== 1) return 'SKIPPED';
 
   try {
     await deps.mailer.send(restoreMessage(row));
@@ -171,7 +174,7 @@ async function dispatchOne(
       where: { id: row.id, status: 'SENDING' },
       data: { status: outcome.status, failedAt: now, error: outcome.message },
     });
-    return;
+    return outcome.status;
   }
 
   try {
@@ -184,7 +187,9 @@ async function dispatchOne(
         where: { id: row.id, status: 'SENDING' },
         data: { status: 'AMBIGUOUS', failedAt: now, error: 'provider_accepted_log_update_failed' },
       });
+      return 'AMBIGUOUS';
     }
+    return 'SENT';
   } catch {
     try {
       await deps.prisma.emailLog.updateMany({
@@ -194,6 +199,7 @@ async function dispatchOne(
     } catch {
       // A later stale-lease reconciliation marks an unresolved SENDING row ambiguous.
     }
+    return 'AMBIGUOUS';
   }
 }
 
@@ -221,6 +227,9 @@ export async function getDeliverySummary(prisma: PrismaClient, batchId: string):
     ambiguous: rows.filter((row) => row.status === 'AMBIGUOUS').length,
     pending: rows.filter((row) => row.status === 'PENDING' || row.status === 'SENDING').length,
     deliveryIds: rows.map((row) => row.id),
+    sentThisRun: 0,
+    failedThisRun: 0,
+    ambiguousThisRun: 0,
   };
 }
 
@@ -229,8 +238,16 @@ async function dispatchBatch(
   rows: DeliveryRow[],
   now: Date,
   allowAmbiguous = false,
-): Promise<void> {
-  await Promise.all(rows.map((row) => dispatchOne(deps, row, now, allowAmbiguous)));
+): Promise<Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>> {
+  return Promise.all(rows.map((row) => dispatchOne(deps, row, now, allowAmbiguous)));
+}
+
+function runCounts(results: Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>) {
+  return {
+    sentThisRun: results.filter((result) => result === 'SENT').length,
+    failedThisRun: results.filter((result) => result === 'FAILED').length,
+    ambiguousThisRun: results.filter((result) => result === 'AMBIGUOUS').length,
+  };
 }
 
 async function sendBatch(
@@ -245,8 +262,8 @@ async function sendBatch(
   const batchId = options.batchId ?? randomUUID();
   await expireSendingLease(deps.prisma, batchId, now);
   const rows = await prepareBatch(deps.prisma, eventId, message, kind, batchId, options.senderUserId, recipient);
-  await dispatchBatch(deps, rows, now);
-  return getDeliverySummary(deps.prisma, batchId);
+  const outcomes = await dispatchBatch(deps, rows, now);
+  return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
 }
 
 export async function deliverEventMessage(
@@ -304,6 +321,8 @@ export async function retryFailedDeliveries(
       status: { in: options.includeAmbiguous ? ['PENDING', 'FAILED', 'AMBIGUOUS'] : ['PENDING', 'FAILED'] },
     },
   });
-  if (rows.length) await dispatchBatch(deps, rows, now, options.includeAmbiguous ?? false);
-  return getDeliverySummary(deps.prisma, batchId);
+  const outcomes = rows.length
+    ? await dispatchBatch(deps, rows, now, options.includeAmbiguous ?? false)
+    : [];
+  return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
 }
