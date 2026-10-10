@@ -35,6 +35,11 @@ describe('sendEventMessage delivery batches', () => {
       { batchId: 'batch-one', senderUserId: admin.id },
     );
     expect(sent).toMatchObject({ sent: 2, failed: 0, ambiguous: 0, batchId: 'batch-one' });
+    const replay = await sendEventMessage(
+      { prisma, mailer }, event.id, { subject: 'Venue change', text: 'New court' }, new Date(),
+      { batchId: 'batch-one', senderUserId: admin.id },
+    );
+    expect(replay.sentThisRun).toBe(0);
     expect(mailer.sent.map((message) => message.to).sort()).toEqual(['anne@example.com', 'bo@example.com']);
     const rows = await prisma.emailLog.findMany({ where: { eventId: event.id }, orderBy: { to: 'asc' } });
     expect(rows).toHaveLength(2);
