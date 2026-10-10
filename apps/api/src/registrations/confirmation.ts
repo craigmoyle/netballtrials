@@ -1,6 +1,9 @@
+import type { PrismaClient } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
+import { sendEmailToRecipient } from '../messages/service';
+import { localDateTimeToUtc } from '../time/melbourne';
 import { buildIcs } from './ics';
-import { qrDataUrl } from './qr';
+import { qrPng } from './qr';
 
 export type ConfirmationInput = {
   playerName: string;
@@ -11,9 +14,8 @@ export type ConfirmationInput = {
     firstWhistle: string;
   };
   ticketUrl: string;
-  qrDataUrl: string;
+  qrCid: string;
   policyUrl: string;
-  icsText: string;
 };
 
 export type ConfirmationEmail = {
@@ -23,19 +25,19 @@ export type ConfirmationEmail = {
 };
 
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]!);
 }
 
 export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
-  const { playerName, event, ticketUrl, qrDataUrl, policyUrl } = input;
+  const { playerName, event, ticketUrl, qrCid, policyUrl } = input;
   const when = `${event.eventDate} at ${event.firstWhistle}`;
-
   const subject = `Trial registration confirmed: ${playerName} (${event.name})`;
-
   const text = [
     `${playerName} is registered for ${event.name}.`,
     `When: ${when}`,
@@ -46,25 +48,23 @@ export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
     '',
     'A calendar file is attached so you can add the trial to your calendar.',
   ].join('\n');
-
   const html = `<!doctype html>
 <html lang="en">
   <body>
     <h1>Registration confirmed</h1>
     <p>${escapeHtml(playerName)} is registered for ${escapeHtml(event.name)}.</p>
     <p>When: ${escapeHtml(when)}<br />Where: ${escapeHtml(event.venue)}</p>
-    <p><img src="${qrDataUrl}" alt="Check-in QR code" width="240" height="240" /></p>
-    <p><a href="${ticketUrl}">Your QR ticket</a></p>
-    <p><a href="${policyUrl}">Selection policy</a></p>
+    <p><img src="cid:${escapeHtml(qrCid)}" alt="Check-in QR code" width="240" height="240" /></p>
+    <p><a href="${escapeHtml(ticketUrl)}">Your QR ticket</a></p>
+    <p><a href="${escapeHtml(policyUrl)}">Selection policy</a></p>
     <p>A calendar file is attached so you can add the trial to your calendar.</p>
   </body>
 </html>`;
-
   return { subject, text, html };
 }
 
 export async function sendConfirmation(
-  deps: { mailer: EmailProvider },
+  deps: { mailer: EmailProvider; prisma?: PrismaClient },
   registration: {
     id: string;
     playerFirstName: string;
@@ -73,32 +73,68 @@ export async function sendConfirmation(
     policyReference: string;
     qrToken: string | null;
   },
-  event: { name: string; eventDate: Date; venue: string; firstWhistle: string },
+  event: {
+    id: string;
+    name: string;
+    eventDate: Date;
+    venue: string;
+    startTime: string;
+    endTime: string;
+    firstWhistle: string;
+  },
   ticketUrl: string,
+  options: { batchId?: string } = {},
 ): Promise<void> {
   const eventDate = event.eventDate.toISOString().slice(0, 10);
-  const icsText = buildIcs({
+  const calendar = buildIcs({
     uid: `${registration.id}@chisholmnetball.com`,
     title: `${event.name} trials`,
-    start: new Date(`${eventDate}T${event.firstWhistle}:00.000Z`),
-    end: new Date(`${eventDate}T${event.firstWhistle}:00.000Z`),
+    start: localDateTimeToUtc(event.eventDate, event.startTime),
+    end: localDateTimeToUtc(event.eventDate, event.endTime),
     location: event.venue,
     description: 'Bring your QR code to check in. Bib numbers are issued at the door.',
+    stamp: new Date(),
   });
-
   const email = buildConfirmation({
     playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
     event: { name: event.name, eventDate, venue: event.venue, firstWhistle: event.firstWhistle },
     ticketUrl,
-    qrDataUrl: await qrDataUrl(registration.qrToken ?? ''),
+    qrCid: 'ticket-qr',
     policyUrl: registration.policyReference,
-    icsText,
   });
+  const token = registration.qrToken;
+  if (!token) throw new Error('Cannot email a ticket without a paid QR token');
 
-  await deps.mailer.send({
-    to: registration.parentEmail,
+  const message = {
     subject: email.subject,
     text: email.text,
     html: email.html,
-  });
+    inlineImages: [{
+      cid: 'ticket-qr',
+      filename: 'check-in.png',
+      contentType: 'image/png',
+      content: await qrPng(token),
+    }],
+    attachments: [{
+      filename: `${registration.id}.ics`,
+      contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
+      content: Buffer.from(calendar, 'utf8'),
+    }],
+  };
+  if (deps.prisma) {
+    await sendEmailToRecipient(
+      { prisma: deps.prisma, mailer: deps.mailer },
+      {
+        eventId: event.id,
+        registrationId: registration.id,
+        to: registration.parentEmail,
+        kind: 'confirmation',
+        batchId: options.batchId ?? `confirmation:${registration.id}`,
+      },
+      message,
+      new Date(),
+    );
+    return;
+  }
+  await deps.mailer.send({ to: registration.parentEmail, ...message });
 }

@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { withdrawRegistration } from '../registrations/service';
+import { sendConfirmation } from '../registrations/confirmation';
 import { ensureReviewItems, listReviewQueue, resolveReviewItem } from './service';
-import { EmailBatchConflictError, reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../messages/service';
+import { EmailBatchConflictError, getDeliverySummary, reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../messages/service';
 
 const resolveSchema = z.object({ note: z.string().max(2000).optional() });
 const messageSchema = z.object({
@@ -87,14 +89,43 @@ export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void 
     const parsed = retrySchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id, batchId } = req.params as { id: string; batchId: string };
-    return retryFailedDeliveries(
-      { prisma: deps.prisma, mailer: deps.mailer },
-      id,
-      batchId,
-      parsed.data.deliveryIds,
-      new Date(),
-      { includeAmbiguous: parsed.data.includeAmbiguous },
-    );
+    const now = new Date();
+    const pendingConfirmations = await deps.prisma.emailLog.findMany({
+      where: {
+        eventId: id,
+        batchId,
+        id: { in: parsed.data.deliveryIds },
+        kind: 'confirmation',
+        status: 'PENDING',
+        messagePayload: { equals: Prisma.DbNull },
+      },
+      include: { registration: { include: { event: true } } },
+    });
+    for (const delivery of pendingConfirmations) {
+      const registration = delivery.registration;
+      if (!registration?.qrToken) continue;
+      await sendConfirmation(
+        { prisma: deps.prisma, mailer: deps.mailer },
+        registration,
+        registration.event,
+        `${deps.env.WEB_ORIGIN}/ticket/${registration.qrToken}`,
+        { batchId },
+      );
+    }
+
+    const hydratedIds = new Set(pendingConfirmations.map((delivery) => delivery.id));
+    const retryIds = parsed.data.deliveryIds.filter((deliveryId) => !hydratedIds.has(deliveryId));
+    if (retryIds.length) {
+      await retryFailedDeliveries(
+        { prisma: deps.prisma, mailer: deps.mailer },
+        id,
+        batchId,
+        retryIds,
+        now,
+        { includeAmbiguous: parsed.data.includeAmbiguous },
+      );
+    }
+    return getDeliverySummary(deps.prisma, batchId);
   });
 
   app.get('/api/admin/events/:id/email-log', { preHandler: requireAdmin(deps) }, async (req) => {

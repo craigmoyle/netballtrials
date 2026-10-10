@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { AppDeps } from '../app';
 import { generateToken } from '../auth/tokens';
 import { sendConfirmation } from '../registrations/confirmation';
+import { deliveryIdempotencyKey } from '../messages/service';
 import type { WebhookEvent } from './provider';
 
 export type PaymentOutcome = 'paid' | 'already_paid' | 'expired' | 'failed' | 'ignored';
@@ -80,6 +81,21 @@ export async function confirmPayment(
               },
             });
             if (claimedRegistration.count === 1) {
+              const batchId = `confirmation:${registration.id}`;
+              await tx.emailLog.createMany({
+                skipDuplicates: true,
+                data: [{
+                  eventId: registration.eventId,
+                  registrationId: registration.id,
+                  batchId,
+                  idempotencyKey: deliveryIdempotencyKey(batchId, registration.parentEmail),
+                  to: registration.parentEmail,
+                  subject: 'Registration confirmation',
+                  body: '',
+                  kind: 'confirmation',
+                  status: 'PENDING',
+                }],
+              });
               outcome = 'paid';
             }
           }
@@ -171,7 +187,7 @@ export function registerStripeWebhookRoute(app: FastifyInstance, deps: AppDeps):
       });
 
       if (registration?.qrToken) {
-        const ticketUrl = `${deps.env.API_PUBLIC_URL}/api/public/ticket/${registration.qrToken}`;
+        const ticketUrl = `${deps.env.WEB_ORIGIN}/ticket/${registration.qrToken}`;
         try {
           await sendConfirmation(deps, registration, registration.event, ticketUrl);
         } catch {

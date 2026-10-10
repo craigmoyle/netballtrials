@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app';
 import { sendConfirmation } from '../registrations/confirmation';
+import { sendEmailToRecipient } from '../messages/service';
 import {
   RegistrationConflictError,
   RegistrationValidationError,
@@ -35,9 +36,6 @@ async function sendCheckoutContinuation(
   },
 ): Promise<void> {
   try {
-    const event = await deps.prisma.event.findUnique({ where: { id: registration.eventId } });
-    if (!event) return;
-
     const checkout = await deps.payment.createCheckout({
       registrationId: registration.id,
       amountCents: registration.amountCents,
@@ -65,11 +63,21 @@ async function sendCheckoutContinuation(
       if (current?.status !== 'PENDING' || current.checkoutSessionId !== checkout.sessionId) return;
     }
 
-    await deps.mailer.send({
-      to: registration.parentEmail,
-      subject: 'Continue your Netball Trials registration',
-      text: `Use this secure link to continue checkout for the Netball Trials registration: ${checkout.url}\n\nIf you did not request this, contact the club.`,
-    });
+    await sendEmailToRecipient(
+      { prisma: deps.prisma, mailer: deps.mailer },
+      {
+        eventId: registration.eventId,
+        registrationId: registration.id,
+        to: registration.parentEmail,
+        kind: 'checkout',
+        batchId: `checkout:${registration.id}:${randomUUID()}`,
+      },
+      {
+        subject: 'Continue your Netball Trials registration',
+        text: `Use this secure link to continue checkout for the Netball Trials registration: ${checkout.url}\n\nIf you did not request this, contact the club.`,
+      },
+      new Date(),
+    );
   } catch {
     // The request can be retried with the same registration/idempotency key.
     // Durable delivery diagnostics/retries are added by the Gmail delivery workstream.
@@ -93,10 +101,11 @@ async function sendDuplicateGuidance(
     const event = await deps.prisma.event.findUnique({ where: { id: registration.eventId } });
     if (registration.status === 'PAID' && registration.qrToken && event) {
       await sendConfirmation(
-        { mailer: deps.mailer },
+        { prisma: deps.prisma, mailer: deps.mailer },
         registration,
         event,
         `${deps.env.WEB_ORIGIN}/ticket/${registration.qrToken}`,
+        { batchId: `confirmation-resend:${registration.id}:${randomUUID()}` },
       );
       return;
     }

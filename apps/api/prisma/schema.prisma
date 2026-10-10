@@ -300,6 +300,7 @@ model EmailLog {
   subject        String
   kind           String
   body           String
+  messagePayload Json?
   status         EmailDeliveryState  @default(PENDING)
   attempts       Int                 @default(0)
   lastAttemptAt  DateTime?

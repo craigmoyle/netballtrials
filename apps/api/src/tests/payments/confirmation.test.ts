@@ -37,6 +37,16 @@ function completed(registrationId: string, overrides: Record<string, unknown> = 
 }
 
 describe('confirmPayment', () => {
+  it('creates a confirmation outbox row in the same payment transaction', async () => {
+    const registration = await pending();
+    const result = await confirmPayment(prisma, completed(registration.id), now);
+    expect(result?.outcome).toBe('paid');
+    const delivery = await prisma.emailLog.findFirstOrThrow({ where: { registrationId: registration.id, kind: 'confirmation' } });
+    expect(delivery.status).toBe('PENDING');
+    expect(delivery.batchId).toBe(`confirmation:${registration.id}`);
+    expect(delivery.messagePayload).toBeNull();
+  });
+
   it.each([
     ['wrong checkout session', { sessionId: 'cs_other' }],
     ['wrong currency', { currency: 'usd' }],
