@@ -21,8 +21,11 @@ function env(overrides: Record<string, string> = {}) {
     API_PUBLIC_URL: 'http://localhost:3000',
     TRUST_PROXY: '',
     SESSION_COOKIE_SECURE: 'false',
-    MAIL_FROM: 'test@example.com',
-    MAIL_REPLY_TO: 'test@example.com',
+    MAIL_FROM: 'chisholmnetball@gmail.com',
+    MAIL_REPLY_TO: 'chisholmnetball@gmail.com',
+    GMAIL_CLIENT_ID: 'gmail-client-id',
+    GMAIL_CLIENT_SECRET: 'gmail-client-secret',
+    GMAIL_REFRESH_TOKEN: 'gmail-refresh-token',
     STRIPE_SECRET_KEY: '',
     STRIPE_WEBHOOK_SECRET: '',
     PORT: '3000',
@@ -73,7 +76,7 @@ describe('production runtime boundary', () => {
     expect(() => createApp({ env: env({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'fake', SESSION_COOKIE_SECURE: 'true', WEB_ORIGIN: 'https://trials.example', API_PUBLIC_URL: 'https://api.example' }), payment: fake })).toThrow(/fake.*production|production.*fake/i);
   });
 
-  it('refuses the development mailer in production', () => {
+  it('selects Gmail in production and rejects an injected development mailer', async () => {
     const productionEnv = env({
       NODE_ENV: 'production',
       PAYMENT_PROVIDER: 'stripe',
@@ -83,8 +86,26 @@ describe('production runtime boundary', () => {
       STRIPE_SECRET_KEY: 'sk_test_configured',
       STRIPE_WEBHOOK_SECRET: 'whsec_configured',
     });
-    expect(() => createApp({ env: productionEnv })).toThrow(/Gmail|production.*mail/i);
+    const app = createApp({ env: productionEnv });
+    expect('provider' in app.testDeps.mailer && app.testDeps.mailer.provider).toBe('gmail-api');
+    await app.close();
     expect(() => createApp({ env: productionEnv, mailer: createDevMailer([]) })).toThrow(/Gmail|production.*mail/i);
+    expect(() => createApp({ env: productionEnv, mailer: { send: async () => undefined } })).toThrow(/Gmail API/i);
+    expect(() => loadEnv({
+      ...process.env,
+      NODE_ENV: 'production',
+      PAYMENT_PROVIDER: 'stripe',
+      SESSION_COOKIE_SECURE: 'true',
+      WEB_ORIGIN: 'https://trials.example',
+      API_PUBLIC_URL: 'https://api.example',
+      STRIPE_SECRET_KEY: 'sk_test_configured',
+      STRIPE_WEBHOOK_SECRET: 'whsec_configured',
+      MAIL_FROM: 'chisholmnetball@gmail.com',
+      MAIL_REPLY_TO: 'chisholmnetball@gmail.com',
+      GMAIL_CLIENT_ID: 'client-id',
+      GMAIL_CLIENT_SECRET: 'client-secret',
+      GMAIL_REFRESH_TOKEN: '',
+    })).toThrow(/Gmail OAuth/i);
   });
 
   it('loads the production server entrypoint and fails before listening without Stripe', () => {
@@ -103,6 +124,11 @@ describe('production runtime boundary', () => {
           STRIPE_SECRET_KEY: '',
           STRIPE_WEBHOOK_SECRET: '',
           SESSION_COOKIE_SECURE: 'true',
+          MAIL_FROM: 'chisholmnetball@gmail.com',
+          MAIL_REPLY_TO: 'chisholmnetball@gmail.com',
+          GMAIL_CLIENT_ID: 'gmail-client-id',
+          GMAIL_CLIENT_SECRET: 'gmail-client-secret',
+          GMAIL_REFRESH_TOKEN: 'gmail-refresh-token',
           DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
         },
       },

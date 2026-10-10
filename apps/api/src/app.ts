@@ -5,6 +5,7 @@ import type { PrismaClient } from '@prisma/client';
 import { loadEnv, type Env } from './env';
 import { prisma as defaultPrisma } from './db';
 import { createDevMailer } from './mail/dev-mailer';
+import { createGmailMailer } from './mail/gmail-mailer';
 import type { EmailProvider } from './mail/provider';
 import type { PaymentProvider } from './payments/provider';
 import { createFakePaymentProvider } from './payments/fake';
@@ -44,6 +45,9 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
     if (!env.SESSION_COOKIE_SECURE) {
       throw new Error('SESSION_COOKIE_SECURE must be true in production');
     }
+    if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+      throw new Error('Production requires configured Gmail OAuth credentials');
+    }
     if (overrides.payment && 'checkouts' in overrides.payment) {
       throw new Error('The fake payment provider is forbidden in production');
     }
@@ -56,9 +60,15 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
           webhookSecret: env.STRIPE_WEBHOOK_SECRET,
         })
       : createFakePaymentProvider());
-  const mailer = overrides.mailer ?? createDevMailer([]);
-  if (env.NODE_ENV === 'production' && 'sent' in mailer) {
-    throw new Error('Production requires a configured Gmail mail provider');
+  const mailer = overrides.mailer ?? (env.NODE_ENV === 'production'
+    ? createGmailMailer({
+        clientId: env.GMAIL_CLIENT_ID,
+        clientSecret: env.GMAIL_CLIENT_SECRET,
+        refreshToken: env.GMAIL_REFRESH_TOKEN,
+      })
+    : createDevMailer([]));
+  if (env.NODE_ENV === 'production' && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
+    throw new Error('Production requires the Gmail API mail provider');
   }
 
   const deps: AppDeps = {

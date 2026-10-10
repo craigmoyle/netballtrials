@@ -11,8 +11,11 @@ const envSchema = z
     API_PUBLIC_URL: z.url().default('http://localhost:3000'),
     TRUST_PROXY: z.string().default(''),
     SESSION_COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
-    MAIL_FROM: z.string().default('chisholmnetball@gmail.com'),
-    MAIL_REPLY_TO: z.string().default('chisholmnetball@gmail.com'),
+    MAIL_FROM: z.literal('chisholmnetball@gmail.com').default('chisholmnetball@gmail.com'),
+    MAIL_REPLY_TO: z.literal('chisholmnetball@gmail.com').default('chisholmnetball@gmail.com'),
+    GMAIL_CLIENT_ID: z.string().default(''),
+    GMAIL_CLIENT_SECRET: z.string().default(''),
+    GMAIL_REFRESH_TOKEN: z.string().default(''),
     STRIPE_SECRET_KEY: z.string().default(''),
     STRIPE_WEBHOOK_SECRET: z.string().default(''),
     PORT: z.coerce.number().int().positive().default(3000),
@@ -57,6 +60,9 @@ const envSchema = z
         message: 'API_PUBLIC_URL must use HTTPS in production',
       });
     }
+    if (env.NODE_ENV === 'production' && (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN)) {
+      context.addIssue({ code: 'custom', path: ['GMAIL_REFRESH_TOKEN'], message: 'Production requires Gmail OAuth client ID, client secret, and refresh token' });
+    }
     if (env.NODE_ENV === 'production' && env.SESSION_COOKIE_SECURE !== 'true') {
       context.addIssue({
         code: 'custom',
@@ -76,6 +82,9 @@ export type Env = {
   SESSION_COOKIE_SECURE: boolean;
   MAIL_FROM: string;
   MAIL_REPLY_TO: string;
+  GMAIL_CLIENT_ID: string;
+  GMAIL_CLIENT_SECRET: string;
+  GMAIL_REFRESH_TOKEN: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   PORT: number;
