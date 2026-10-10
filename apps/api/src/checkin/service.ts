@@ -172,6 +172,7 @@ export async function resolveCheckInEvent(
 export type CheckInResult = {
   result: 'checked_in' | 'already' | 'refused';
   reason?: 'not_paid' | 'unknown';
+  registrationId?: string;
   playerName?: string;
   bibNumber?: number;
   referToCommittee: boolean;
@@ -209,6 +210,7 @@ async function freshResult(prisma: PrismaClient, registrationId: string): Promis
   if (fresh.status !== 'PAID') return { result: 'refused', reason: 'not_paid', referToCommittee: false };
   return {
     result: 'already',
+    registrationId: fresh.id,
     playerName: displayName(fresh),
     bibNumber: fresh.bibNumber ?? undefined,
     referToCommittee: await hasOpenReview(prisma, fresh),
@@ -229,6 +231,7 @@ async function checkInRegistration(
   if (registration.checkedInAt) {
     return {
       result: 'already',
+      registrationId: registration.id,
       playerName: displayName(registration),
       bibNumber: registration.bibNumber ?? undefined,
       referToCommittee,
@@ -272,6 +275,7 @@ async function checkInRegistration(
 
     return {
       result: 'checked_in',
+      registrationId: registration.id,
       playerName: displayName(registration),
       bibNumber,
       referToCommittee,

@@ -5,7 +5,7 @@ import type { RoundPlanDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { generateDraftPlan, publishPlan, regenerateFromRound } from './service';
-import { renderSelectorSheet } from './sheets';
+import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
 
 const POSITION_ORDER: Record<string, number> = {
@@ -146,53 +146,35 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
   app.get('/api/admin/events/:id/sheets', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const plan = await loadPlan(deps, id, undefined, true);
-    const event = await deps.prisma.event.findUnique({ where: { id } });
-    if (!plan || !event) {
+    if (!plan || plan.status !== 'PUBLISHED') {
       return reply.code(404).send({ error: 'not_found' });
     }
 
-    const registrations = await deps.prisma.registration.findMany({ where: { eventId: id } });
-    const players = registrations.map((registration) => ({
-      registrationId: registration.id,
-      name: `${registration.playerFirstName} ${registration.playerLastName}`,
-      bibNumber: registration.bibNumber ?? 0,
-      rank1: registration.rank1Position,
-      rank2: registration.rank2Position,
-      rank3: registration.rank3Position,
-      optInExtra: registration.optInExtraPositions,
+    const players = plan.players.map((player) => ({
+      registrationId: player.registrationId,
+      name: player.playerName,
+      bibNumber: player.bibNumber ?? 0,
+      rank1: player.rank1Position,
+      rank2: player.rank2Position,
+      rank3: player.rank3Position,
+      optInExtra: player.optInExtraPositions,
     }));
-
-    const rounds = [...new Set(plan.slots.map((slot) => slot.round))].sort((a, b) => a - b);
-    const courts = [...new Set(plan.slots.map((slot) => slot.court))].sort((a, b) => a - b);
-    const sheets: string[] = [];
-    for (const round of rounds) {
-      for (const court of courts) {
-        const slots = plan.slots.filter((slot) => slot.round === round && slot.court === court);
-        if (slots.length === 0) {
-          continue;
-        }
-        const sheetSlots: PlanSlot[] = slots.map((slot) => ({
-          round: slot.round,
-          court: slot.court,
-          position: slot.position,
-          team: slot.team === 0 ? 0 : 1,
-          registrationId: slot.registrationId,
-        }));
-        sheets.push(
-          renderSelectorSheet({
-            event: {
-              name: event.name,
-              eventDate: event.eventDate.toISOString().slice(0, 10),
-              venue: event.venue,
-            },
-            round,
-            court,
-            slots: sheetSlots,
-            players,
-          }),
-        );
-      }
-    }
-    return reply.type('text/html').send(sheets.join('\n'));
+    const slots: PlanSlot[] = plan.slots.map((slot) => ({
+      round: slot.round,
+      court: slot.court,
+      position: slot.position,
+      team: slot.team === 0 ? 0 : 1,
+      registrationId: slot.registrationId,
+    }));
+    const html = renderSelectorSheets({
+      event: {
+        name: plan.eventName,
+        eventDate: plan.eventDate.toISOString().slice(0, 10),
+        venue: plan.venue,
+      },
+      slots,
+      players,
+    });
+    return reply.type('text/html; charset=utf-8').send(html);
   });
 }

@@ -32,6 +32,7 @@ describe('check-in', () => {
     await paid('t'.repeat(43));
     const res = await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 't'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header });
     expect(res.json().result).toBe('checked_in');
+    expect(res.json().registrationId).toBeTruthy();
     expect(res.json().bibNumber).toBe(1);
   });
   it('does not allocate bib gaps for simultaneous duplicate scans', async () => {

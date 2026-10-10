@@ -92,6 +92,7 @@ export interface TicketDTO {
 export interface CheckInResult {
   result: 'checked_in' | 'already' | 'refused';
   reason?: 'not_paid' | 'unknown';
+  registrationId?: string;
   playerName?: string;
   bibNumber?: number;
   referToCommittee: boolean;
