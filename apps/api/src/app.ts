@@ -14,6 +14,7 @@ import { registerEventRoutes } from './events/routes';
 import { registerAssociationRoutes } from './associations/routes';
 import { registerPublicRoutes } from './public/routes';
 import { registerCheckInRoutes } from './checkin/routes';
+import { registerPlannerRoutes } from './planner/routes';
 
 export type AppDeps = {
   prisma: PrismaClient;
@@ -58,6 +59,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   registerAssociationRoutes(app, deps);
   registerPublicRoutes(app, deps);
   registerCheckInRoutes(app, deps);
+  registerPlannerRoutes(app, deps);
 
   return app;
 }

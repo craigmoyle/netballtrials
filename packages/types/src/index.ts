@@ -96,3 +96,25 @@ export interface CheckInSummary {
   checkedIn: number;
   closed: boolean;
 }
+
+export interface RoundSlotDTO {
+  id: string;
+  round: number;
+  court: number;
+  position: Position;
+  team: number;
+  registrationId: string;
+}
+
+export interface RoundPlanDTO {
+  id: string;
+  eventId: string;
+  status: 'DRAFT' | 'PUBLISHED';
+  seed: number;
+  rounds: number;
+  playMinutes: number;
+  changeoverMinutes: number;
+  createdAt: string;
+  publishedAt: string | null;
+  slots: RoundSlotDTO[];
+}
