@@ -2,7 +2,10 @@ import type { CheckInResult } from '@netball-trials/types';
 
 export function resultLabel(result: CheckInResult): { tone: 'ok' | 'warn' | 'error'; text: string } {
   if (result.referToCommittee) {
-    return { tone: 'warn', text: 'Refer to committee' };
+    const player = result.playerName
+      ? `${result.playerName}, bib ${result.bibNumber ?? '?'}`
+      : result.bibNumber !== undefined ? `Bib ${result.bibNumber}` : '';
+    return { tone: 'warn', text: player ? `${player} — Refer to committee` : 'Refer to committee' };
   }
   if (result.result === 'checked_in') {
     return { tone: 'ok', text: `${result.playerName ?? 'Player'}, bib ${result.bibNumber ?? '?'}` };

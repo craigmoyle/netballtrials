@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { CheckInSummary } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
+import { CHECK_IN_UPDATED_EVENT } from './refresh';
 
 type Client = ReturnType<typeof apiClient>;
 
@@ -11,16 +12,17 @@ export function CheckInLayout({ client }: { client: Client }) {
 
   useEffect(() => {
     let active = true;
-    client
-      .checkInSummary()
-      .then((loaded) => {
-        if (active) setSummary(loaded);
-      })
-      .catch(() => {
-        if (active) navigate('/check-in', { replace: true });
-      });
+    const load = () => {
+      client
+        .checkInSummary()
+        .then((loaded) => { if (active) setSummary(loaded); })
+        .catch(() => { if (active) navigate('/check-in', { replace: true }); });
+    };
+    load();
+    window.addEventListener(CHECK_IN_UPDATED_EVENT, load);
     return () => {
       active = false;
+      window.removeEventListener(CHECK_IN_UPDATED_EVENT, load);
     };
   }, [client, navigate]);
 

@@ -8,6 +8,11 @@ describe('check-in feedback', () => {
     expect(resultLabel({ result: 'refused', reason: 'not_paid', referToCommittee: false }).text).toMatch(/not paid/i);
     expect(resultLabel({ result: 'checked_in', bibNumber: 4, playerName: 'Ada', referToCommittee: true }).text).toMatch(/committee/i);
   });
+  it('keeps the player name and bib visible when referring to committee', () => {
+    expect(resultLabel({ result: 'checked_in', playerName: 'Ada Lovelace', bibNumber: 4, referToCommittee: true })).toEqual({
+      tone: 'warn', text: 'Ada Lovelace, bib 4 — Refer to committee',
+    });
+  });
   it('beeps and vibrates', () => {
     const beep = vi.fn();
     const vibrate = vi.fn();

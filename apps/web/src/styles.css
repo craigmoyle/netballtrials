@@ -161,6 +161,13 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid #b8afb8; vertical-align: top; }
 thead { background: #eee8ee; }
 
+.scan-panel { max-width: 48rem; margin-inline: auto; padding: 1rem; }
+.scan-panel video { display: block; width: 100%; max-width: 40rem; aspect-ratio: 4 / 3; background: #161216; object-fit: cover; }
+.scan-result { margin-block: 1rem; padding: 1rem; font-size: clamp(1.5rem, 5vw, 2.5rem); font-weight: 800; line-height: 1.2; }
+.scan-result[data-tone="ok"] { color: #103f2b; background: #dff2e8; }
+.scan-result[data-tone="warn"] { color: #4d3500; background: #fff0bf; }
+.scan-result[data-tone="error"] { color: #721a20; background: #fde9e9; }
+
 @media (max-width: 38rem) {
   .position-counts { grid-template-columns: repeat(2, minmax(7rem, 1fr)); }
   th, td { padding: 0.55rem; }
