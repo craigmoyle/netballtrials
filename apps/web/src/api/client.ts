@@ -1,4 +1,4 @@
-import type { AuthUser, CheckInResult, CheckInSummary, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, RoundPlanDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RoundPlanDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -140,5 +140,33 @@ export function apiClient(baseUrl: string) {
       }
       return response.text();
     },
+    listReview: (eventId: string) =>
+      request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/review`),
+    resolveReview: (eventId: string, itemId: string, note: string) =>
+      request<ReviewItemDTO>(baseUrl, `/api/admin/events/${eventId}/review/${itemId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note }),
+      }),
+    withdrawRegistration: (eventId: string, registrationId: string) =>
+      request<{ id: string; status: string }>(
+        baseUrl,
+        `/api/admin/events/${eventId}/registrations/${registrationId}/withdraw`,
+        { method: 'POST' },
+      ),
+    sendMessage: async (eventId: string, message: { subject: string; text: string }) => {
+      const response = await fetch(`${baseUrl}/api/admin/events/${eventId}/messages`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(message),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new ApiError(response.status, body?.error ?? 'request_failed');
+      }
+      return body as { sent: number; failed: number };
+    },
+    listEmailLog: (eventId: string) =>
+      request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/email-log`),
   };
 }

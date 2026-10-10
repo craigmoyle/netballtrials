@@ -138,3 +138,14 @@ export interface ReviewItemDTO {
     ageFlagged: boolean;
   };
 }
+
+export interface EmailLogDTO {
+  id: string;
+  registrationId: string | null;
+  to: string;
+  subject: string;
+  kind: string;
+  sentAt: string;
+  failedAt: string | null;
+  error: string | null;
+}
