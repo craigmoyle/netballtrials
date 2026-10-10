@@ -4,7 +4,7 @@ import type { RoundPlan, RoundPlanPlayer, RoundSlot } from '@prisma/client';
 import type { RoundPlanDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { generateDraftPlan, publishPlan, regenerateFromRound } from './service';
+import { generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
 import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
 
@@ -102,9 +102,17 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     },
   );
 
+  app.get('/api/admin/events/:id/plan/preview', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const preview = await getPlanPreview(deps.prisma, id);
+    if (!preview) return reply.code(404).send({ error: 'not_found' });
+    return preview;
+  });
+
   app.get('/api/admin/events/:id/plan', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const plan = await loadPlan(deps, id);
+    const publishedOnly = (req.query as { published?: string }).published === 'true';
+    const plan = await loadPlan(deps, id, undefined, publishedOnly);
     if (!plan) {
       return reply.code(404).send({ error: 'not_found' });
     }

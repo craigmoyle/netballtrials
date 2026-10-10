@@ -16,6 +16,22 @@ describe('planner routes', () => {
       (await app.inject({ method: 'POST', url: '/api/admin/events/x/plan/generate' })).statusCode,
     ).toBe(401);
   });
+  it('previews the lower bound and exposes a published-only plan for printing', async () => {
+    const cookie = await signInAsNewAdmin(app, 'admin@example.com');
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const preview = await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/plan/preview`, cookies: { nt_session: cookie } });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({ checkedInPlayers: 28, minimumRounds: 2, requiredMinutes: 18, windowMinutes: 150, fitsTimeWindow: true });
+    expect((await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/plan?published=true`, cookies: { nt_session: cookie } })).statusCode).toBe(404);
+    const generated = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/generate`, cookies: { nt_session: cookie } });
+    expect(generated.statusCode).toBe(201);
+    const published = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/publish`, cookies: { nt_session: cookie } });
+    expect(published.statusCode).toBe(200);
+    const publishedOnly = await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/plan?published=true`, cookies: { nt_session: cookie } });
+    expect(publishedOnly.statusCode).toBe(200);
+    expect(publishedOnly.json()).toMatchObject({ id: published.json().id, status: 'PUBLISHED' });
+  });
+
   it('generates, reads, and publishes a plan', async () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });

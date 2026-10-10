@@ -177,4 +177,21 @@ thead { background: #eee8ee; }
   .app-header button { margin-left: auto; }
 }
 
+.sheets-page { width: min(100% - 2rem, 80rem); margin-inline: auto; padding-block: 1rem; }
+.sheets-page > header { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.sheet-preview { width: 100%; overflow-x: auto; }
+
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  html, body { width: 100%; min-width: 0; margin: 0; background: #fff; }
+  body * { visibility: hidden !important; }
+  .sheet-preview, .sheet-preview * { visibility: visible !important; }
+  .sheets-page { position: static; width: 100%; margin: 0; padding: 0; }
+  .sheet-preview { position: absolute; inset: 0; width: 100%; overflow: visible; }
+  .no-print { display: none !important; }
+  .sheet-preview .selector-print { color: #111; }
+  .sheet-preview .sheet { min-height: 180mm; break-inside: avoid; page-break-inside: avoid; }
+  .sheet-preview .sheet:not(:last-child) { break-after: page; page-break-after: always; }
+}
+
 ::selection { color: #fff; background: var(--plum); }

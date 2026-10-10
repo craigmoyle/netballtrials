@@ -152,6 +152,14 @@ export interface RoundPlanDTO {
   slots: RoundSlotDTO[];
 }
 
+export interface PlannerPreviewDTO {
+  checkedInPlayers: number;
+  minimumRounds: number;
+  requiredMinutes: number;
+  windowMinutes: number;
+  fitsTimeWindow: boolean;
+}
+
 export interface PlannerGapDTO {
   code: string;
   message: string;

@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient, type RoundPlan } from '@prisma/client';
-import { computeMinimumRounds } from './minimum';
+import { computeMinimumRounds, totalTimeMinutes } from './minimum';
 import { generatePlan, generatePlanFromPrefix } from './generate';
 import { verifyPlan } from './verify';
 import type { PlannerGap, PlannerInput, PlannerPlayer, PlannerPlan, PlanSlot } from './types';
@@ -44,6 +44,23 @@ async function buildInput(prisma: Database, eventId: string): Promise<BuiltInput
   } satisfies PlannerInput;
   input.rounds = computeMinimumRounds(input);
   return { event, input };
+}
+
+export async function getPlanPreview(
+  prisma: PrismaClient,
+  eventId: string,
+): Promise<{ checkedInPlayers: number; minimumRounds: number; requiredMinutes: number; windowMinutes: number; fitsTimeWindow: boolean } | null> {
+  const built = await buildInput(prisma, eventId);
+  if (!built) return null;
+  const minimumRounds = computeMinimumRounds(built.input);
+  const requiredMinutes = totalTimeMinutes(minimumRounds, built.input.playMinutes, built.input.changeoverMinutes);
+  return {
+    checkedInPlayers: built.input.players.length,
+    minimumRounds,
+    requiredMinutes,
+    windowMinutes: built.input.windowMinutes,
+    fitsTimeWindow: requiredMinutes <= built.input.windowMinutes,
+  };
 }
 
 function planSlots(plan: PlannerPlan) {

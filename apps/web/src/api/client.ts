@@ -1,4 +1,4 @@
-import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -143,18 +143,23 @@ export function apiClient(baseUrl: string) {
       try {
         return await request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan`);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          return null;
-        }
+        if (error instanceof ApiError && error.status === 404) return null;
         throw error;
       }
     },
+    getPublishedPlan: async (eventId: string) => {
+      try {
+        return await request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan?published=true`);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    getPlanPreview: (eventId: string) => request<PlannerPreviewDTO>(baseUrl, `/api/admin/events/${eventId}/plan/preview`),
     generatePlan: (eventId: string) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
     publishPlan: (eventId: string) =>
-      request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan/publish`, {
-        method: 'POST',
-      }),
+      planAction(baseUrl, `/api/admin/events/${eventId}/plan/publish`, { method: 'POST' }),
     regeneratePlan: (eventId: string, fromRound: number) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/regenerate`, {
         method: 'POST',
