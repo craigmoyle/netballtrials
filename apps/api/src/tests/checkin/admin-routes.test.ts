@@ -16,6 +16,20 @@ beforeEach(async () => {
 });
 
 describe('admin check-in pin', () => {
+  it('returns safe check-in settings for event controls without exposing the pin hash', async () => {
+    const denied = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/check-in-settings` });
+    expect(denied.statusCode).toBe(401);
+    const initial = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/check-in-settings`, cookies: { nt_session: cookie } });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toEqual({ pinConfigured: false, checkInClosedAt: null });
+    await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '4821' }, cookies: { nt_session: cookie } });
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie } });
+    const configured = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/check-in-settings`, cookies: { nt_session: cookie } });
+    expect(configured.json()).toMatchObject({ pinConfigured: true });
+    expect(configured.json().checkInClosedAt).toBeTruthy();
+    expect(configured.json()).not.toHaveProperty('checkInPinHash');
+  });
+
   it('sets and clears a pin, storing only a hash', async () => {
     const set = await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '4821' }, cookies: { nt_session: cookie } });
     expect(set.statusCode).toBe(204);

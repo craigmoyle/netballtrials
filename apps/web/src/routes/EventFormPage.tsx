@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { defaultAgeRange } from '@netball-trials/types';
+import { defaultAgeRange, type EventStatus } from '@netball-trials/types';
+import { EventControls } from '../admin/EventControls';
 import { ApiError, type apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
@@ -48,6 +49,7 @@ export function EventFormPage({ client }: { client: Client }) {
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [eventStatus, setEventStatus] = useState<EventStatus | null>(null);
   const errorSummary = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export function EventFormPage({ client }: { client: Client }) {
       .getEvent(id)
       .then((event) => {
         if (!active) return;
+        setEventStatus(event.status);
         setForm({
           name: event.name,
           competitionYear: String(event.competitionYear),
@@ -139,6 +142,7 @@ export function EventFormPage({ client }: { client: Client }) {
         </div>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
+      {id && eventStatus ? <EventControls client={client} eventId={id} status={eventStatus} onStatusChange={setEventStatus} /> : null}
       <form onSubmit={onSubmit} noValidate>
         {FIELDS.map((field) => {
           const invalid = fieldErrors.includes(field.name);

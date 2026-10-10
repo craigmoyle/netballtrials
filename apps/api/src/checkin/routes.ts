@@ -37,6 +37,19 @@ function labelFrom(request: FastifyRequest): string {
 }
 
 export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void {
+  app.get('/api/admin/events/:id/check-in-settings', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const event = await deps.prisma.event.findUnique({
+      where: { id },
+      select: { checkInPinHash: true, checkInClosedAt: true },
+    });
+    if (!event) return reply.code(404).send({ error: 'not_found' });
+    return {
+      pinConfigured: event.checkInPinHash !== null,
+      checkInClosedAt: event.checkInClosedAt?.toISOString() ?? null,
+    };
+  });
+
   app.put('/api/admin/events/:id/check-in-pin', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = pinSchema.safeParse(req.body ?? {});
     if (!parsed.success || !isValidPinFormat(parsed.data.pin)) {

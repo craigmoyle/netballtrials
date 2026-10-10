@@ -10,6 +10,7 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
         <Link className="app-brand" to="/admin/events">Chisholm Netball Region</Link>
         <nav className="app-nav" aria-label="Administration">
           <Link to="/admin/events">Events</Link>
+          <Link to="/admin/associations">Member associations</Link>
         </nav>
         <button
           type="button"

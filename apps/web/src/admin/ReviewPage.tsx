@@ -43,6 +43,7 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
   }
 
   async function withdraw(item: ReviewItemDTO) {
+    if (!window.confirm(`Withdraw ${item.registration.playerName} from this event?`)) return;
     setBusy(true);
     setError(null);
     try {

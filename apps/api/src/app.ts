@@ -88,7 +88,11 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   });
   app.decorate('testDeps', deps);
 
-  app.register(cors, { origin: webOrigin, credentials: true });
+  app.register(cors, {
+    origin: webOrigin,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  });
   app.register(cookie);
 
   app.addHook('preHandler', async (request, reply) => {

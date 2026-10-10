@@ -17,6 +17,8 @@ import { PlannerPage } from './planner/PlannerPage';
 import { SheetsPage } from './planner/SheetsPage';
 import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
+import { RosterPage } from './admin/RosterPage';
+import { AssociationsPage } from './admin/AssociationsPage';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? '');
 type Client = ReturnType<typeof apiClient>;
@@ -31,6 +33,8 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/login$/, 'Staff sign in'],
   [/^\/admin\/verify$/, 'Verify staff sign in'],
   [/^\/admin\/events\/new$/, 'New event'],
+  [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
+  [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
   [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
@@ -103,6 +107,12 @@ function MessagesRoute({ client }: { client: Client }) {
   return <MessagesPage client={client} eventId={id} />;
 }
 
+function RosterRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <RosterPage client={client} eventId={id} />;
+}
+
 export function App() {
   const location = useLocation();
   useEffect(() => {
@@ -130,10 +140,12 @@ export function App() {
         <Route path="events" element={<EventsPage client={client} />} />
         <Route path="events/new" element={<EventFormPage client={client} />} />
         <Route path="events/:id" element={<EventFormPage client={client} />} />
+        <Route path="events/:id/roster" element={<RosterRoute client={client} />} />
         <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
         <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
         <Route path="events/:id/review" element={<ReviewRoute client={client} />} />
         <Route path="events/:id/messages" element={<MessagesRoute client={client} />} />
+        <Route path="associations" element={<AssociationsPage client={client} />} />
       </Route>
       <Route path="*" element={<main className="app-main"><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></main>} />
     </Routes>

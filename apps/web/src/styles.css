@@ -137,7 +137,33 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: #9c1c26;
   background: #fff;
 }
 
+.workflow-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  margin-block: 1.25rem;
+}
+
+.position-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  gap: 0.5rem 1.5rem;
+  align-items: start;
+}
+
+.position-counts ul { padding-left: 1.2rem; margin-block: 0.5rem 1rem; }
+.position-counts section h3 { margin-block: 0.5rem; }
+.position-counts > p { font-weight: 650; }
+
+.table-scroll { width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid #b8afb8; vertical-align: top; }
+thead { background: #eee8ee; }
+
 @media (max-width: 38rem) {
+  .position-counts { grid-template-columns: repeat(2, minmax(7rem, 1fr)); }
+  th, td { padding: 0.55rem; }
+
   .app-header { align-items: flex-start; flex-wrap: wrap; gap: 0.75rem 1rem; }
   .app-nav { order: 3; width: 100%; }
   .app-header button { margin-left: auto; }

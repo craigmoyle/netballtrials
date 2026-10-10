@@ -6,6 +6,10 @@ import { App } from './App';
 const apiMocks = vi.hoisted(() => ({
   me: vi.fn(),
   listEvents: vi.fn(),
+  getEvent: vi.fn(),
+  checkInSettings: vi.fn(),
+  getRoster: vi.fn(),
+  downloadRoster: vi.fn(),
   getPublicEvent: vi.fn(),
   listPublicAssociations: vi.fn(),
   getTicket: vi.fn(),
@@ -76,6 +80,25 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/new');
     await waitFor(() => expect(document.title).toBe('New event | Chisholm Netball Trials'));
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('navigates from events to the connected event roster without a document reload', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.listEvents.mockResolvedValue([{ id: 'event-1', name: '15/U Ladies', eventDate: '2027-09-12', courts: 1, status: 'OPEN' }]);
+    apiMocks.getEvent.mockResolvedValue({
+      id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+      eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
+      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+      minAge: 12, maxAge: 15, policyUrl: null, status: 'OPEN',
+    });
+    apiMocks.checkInSettings.mockResolvedValue({ pinConfigured: false, checkInClosedAt: null });
+    apiMocks.getRoster.mockResolvedValue({ eventId: 'event-1', registrations: [], positionCounts: { rank1: {}, rank2: {}, rank3: {}, extraOptIn: 0 } });
+    renderApp('/admin/events');
+    fireEvent.click(await screen.findByRole('link', { name: '15/U Ladies' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Roster and export' }));
+    expect(await screen.findByRole('heading', { name: /roster/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/event-1/roster');
   });
 
   it('loads the volunteer PIN screen without calling the admin session endpoint', async () => {

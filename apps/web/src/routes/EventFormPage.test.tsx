@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { EventFormPage } from './EventFormPage';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function renderForm(client: Record<string, unknown>) {
   return render(<MemoryRouter><EventFormPage client={client as any} /></MemoryRouter>);
@@ -18,6 +21,42 @@ describe('EventFormPage', () => {
     expect(screen.getByLabelText(/maximum age/i)).toHaveValue(15);
     fireEvent.change(screen.getByLabelText('Division'), { target: { value: 'All Abilities' } });
     expect(screen.getByLabelText(/minimum age/i)).toHaveValue(10);
+  });
+
+  it('connects event lifecycle, check-in controls and links to the other workflows', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const event = {
+      id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+      eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
+      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'DRAFT',
+    };
+    const client = {
+      getEvent: vi.fn().mockResolvedValue(event),
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
+      openEvent: vi.fn().mockResolvedValue({ ...event, status: 'OPEN' }),
+      closeEvent: vi.fn().mockResolvedValue({ ...event, status: 'CLOSED' }),
+      setCheckInPin: vi.fn().mockResolvedValue(undefined),
+      clearCheckInPin: vi.fn().mockResolvedValue(undefined),
+      closeCheckIn: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
+    expect(await screen.findByText(/status: draft/i)).toBeInTheDocument();
+    for (const name of ['Roster and export', 'Review queue', 'Plan rounds', 'Messages', 'Print selector sheets', 'Member associations']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: /open registration/i }));
+    await waitFor(() => expect(client.openEvent).toHaveBeenCalledWith('e1'));
+    fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '4821' } });
+    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
+    await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
+    expect(screen.getByLabelText(/check-in pin/i)).toHaveValue('4821');
+    fireEvent.click(screen.getByRole('button', { name: /close check-in/i }));
+    await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
+    fireEvent.click(screen.getByRole('button', { name: /close event/i }));
+    await waitFor(() => expect(client.closeEvent).toHaveBeenCalledWith('e1'));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
   it('shows fees in dollars, submits cents, and focuses a server-error summary', async () => {

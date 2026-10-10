@@ -46,7 +46,7 @@ export function EventsPage({ client }: { client: Client }) {
             <li key={event.id}>
               <Link to={`/admin/events/${event.id}`}>{event.name}</Link>
               <p>
-                {event.eventDate.slice(0, 10)} · {event.division} {event.section} · {event.courts} courts
+                {event.eventDate.slice(0, 10)} · {event.division} {event.section} · {event.courts} courts · {event.status?.toLowerCase() ?? 'draft'}
               </p>
             </li>
           ))}

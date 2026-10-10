@@ -1,4 +1,4 @@
-import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RoundPlanDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -18,7 +18,7 @@ async function request<T>(baseUrl: string, path: string, init?: RequestInit): Pr
     response = await fetch(`${baseUrl}${path}`, {
       credentials: 'include',
       ...init,
-      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+      headers: { ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(init?.headers ?? {}) },
     });
   } catch {
     throw new ApiError(0, 'network_error');
@@ -42,7 +42,7 @@ async function planAction(
   const response = await fetch(`${baseUrl}${path}`, {
     credentials: 'include',
     ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    headers: { ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(init?.headers ?? {}) },
   });
   const body = await response.json().catch(() => null);
   if (response.status === 422) {
@@ -80,7 +80,29 @@ export function apiClient(baseUrl: string) {
         method: 'PATCH',
         body: JSON.stringify(patch),
       }),
+    openEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/open`, { method: 'POST' }),
+    closeEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/close`, { method: 'POST' }),
+    checkInSettings: (id: string) => request<{ pinConfigured: boolean; checkInClosedAt: string | null }>(baseUrl, `/api/admin/events/${id}/check-in-settings`),
+    setCheckInPin: (id: string, pin: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'PUT', body: JSON.stringify({ pin }) }),
+    clearCheckInPin: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'DELETE' }),
+    closeCheckIn: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in/close`, { method: 'POST' }),
+    getRoster: (id: string) => request<RosterDTO>(baseUrl, `/api/admin/events/${id}/roster`),
+    downloadRoster: async (id: string) => {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/api/admin/events/${id}/roster/export`, { credentials: 'include' });
+      } catch {
+        throw new ApiError(0, 'network_error');
+      }
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(response.status, body?.error ?? 'request_failed');
+      }
+      return response.blob();
+    },
     listAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/admin/associations'),
+    createAssociation: (name: string) => request<MemberAssociationDTO>(baseUrl, '/api/admin/associations', { method: 'POST', body: JSON.stringify({ name }) }),
+    setAssociationActive: (id: string, active: boolean) => request<MemberAssociationDTO>(baseUrl, `/api/admin/associations/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
     listPublicAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/public/associations'),
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),

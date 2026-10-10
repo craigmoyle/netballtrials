@@ -154,6 +154,28 @@ describe('browser security headers and origin policy', () => {
     }
   });
 
+  it('allows credentialed preflight for admin PUT/PATCH/DELETE controls', async () => {
+    const app = createApp({ env: env() });
+    try {
+      for (const method of ['PUT', 'PATCH', 'DELETE']) {
+        const response = await app.inject({
+          method: 'OPTIONS', url: '/api/admin/events/event-1/check-in-pin',
+          headers: {
+            origin: 'http://localhost:5173',
+            'access-control-request-method': method,
+            'access-control-request-headers': 'content-type',
+          },
+        });
+        expect(response.statusCode).toBe(204);
+        expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+        expect(response.headers['access-control-allow-credentials']).toBe('true');
+        expect(response.headers['access-control-allow-methods']).toContain(method);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
   it('rejects a cross-origin cookie-authenticated mutation', async () => {
     const app = createApp({ env: env() });
     try {
