@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { RoundPlan, RoundSlot } from '@prisma/client';
+import type { RoundPlan, RoundPlanPlayer, RoundSlot } from '@prisma/client';
 import type { RoundPlanDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
@@ -18,7 +18,8 @@ const POSITION_ORDER: Record<string, number> = {
   GK: 6,
 };
 
-function serializePlan(plan: RoundPlan & { slots: RoundSlot[] }): RoundPlanDTO {
+function serializePlan(plan: RoundPlan & { slots: RoundSlot[]; players: RoundPlanPlayer[] }): RoundPlanDTO {
+  const playersById = new Map(plan.players.map((player) => [player.registrationId, player]));
   const slots = [...plan.slots]
     .sort(
       (a, b) =>
@@ -34,6 +35,8 @@ function serializePlan(plan: RoundPlan & { slots: RoundSlot[] }): RoundPlanDTO {
       position: slot.position,
       team: slot.team,
       registrationId: slot.registrationId,
+      playerName: playersById.get(slot.registrationId)?.playerName ?? 'Former participant',
+      bibNumber: playersById.get(slot.registrationId)?.bibNumber ?? null,
     }));
 
   return {
@@ -46,16 +49,42 @@ function serializePlan(plan: RoundPlan & { slots: RoundSlot[] }): RoundPlanDTO {
     changeoverMinutes: plan.changeoverMinutes,
     createdAt: plan.createdAt.toISOString(),
     publishedAt: plan.publishedAt ? plan.publishedAt.toISOString() : null,
+    revision: plan.revision,
+    sourcePlanId: plan.sourcePlanId,
+    frozenThroughRound: plan.frozenThroughRound,
+    eventName: plan.eventName,
+    eventDate: plan.eventDate.toISOString(),
+    venue: plan.venue,
+    firstWhistle: plan.firstWhistle,
+    courts: plan.courts,
+    windowMinutes: plan.windowMinutes,
+    rank1Min: plan.rank1Min,
+    rank2Min: plan.rank2Min,
+    rank3Min: plan.rank3Min,
     slots,
   };
 }
 
-async function loadPlan(deps: AppDeps, eventId: string) {
-  return deps.prisma.roundPlan.findFirst({
-    where: { eventId },
-    orderBy: { createdAt: 'desc' },
-    include: { slots: true },
+async function loadPlan(deps: AppDeps, eventId: string, planId?: string, publishedOnly = false) {
+  if (planId) {
+    return deps.prisma.roundPlan.findFirst({ where: { id: planId, eventId }, include: { slots: true, players: true } });
+  }
+  const event = await deps.prisma.event.findUnique({ where: { id: eventId }, select: { publishedPlanId: true } });
+  if (!event) return null;
+  if (publishedOnly) {
+    return event.publishedPlanId
+      ? deps.prisma.roundPlan.findUnique({ where: { id: event.publishedPlanId }, include: { slots: true, players: true } })
+      : null;
+  }
+  const draft = await deps.prisma.roundPlan.findFirst({
+    where: { eventId, status: 'DRAFT' },
+    orderBy: { revision: 'desc' },
+    include: { slots: true, players: true },
   });
+  if (draft) return draft;
+  return event.publishedPlanId
+    ? deps.prisma.roundPlan.findUnique({ where: { id: event.publishedPlanId }, include: { slots: true, players: true } })
+    : null;
 }
 
 export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -68,8 +97,8 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
       if (!result.ok) {
         return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
       }
-      const loaded = await loadPlan(deps, id);
-      return reply.code(201).send(serializePlan(loaded ?? { ...result.plan, slots: [] }));
+      const loaded = await loadPlan(deps, id, result.plan.id);
+      return reply.code(201).send(serializePlan(loaded!));
     },
   );
 
@@ -87,13 +116,12 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     { preHandler: requireAdmin(deps) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      try {
-        const plan = await publishPlan(deps.prisma, id);
-        const loaded = await loadPlan(deps, id);
-        return serializePlan(loaded ?? { ...plan, slots: [] });
-      } catch {
-        return reply.code(404).send({ error: 'not_found' });
-      }
+      const parsed = z.object({ planId: z.string().optional() }).safeParse(req.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+      const result = await publishPlan(deps.prisma, id, parsed.data.planId);
+      if (!result.ok) return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
+      const loaded = await loadPlan(deps, id, result.plan.id);
+      return reply.code(200).send(serializePlan(loaded!));
     },
   );
 
@@ -101,23 +129,23 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     '/api/admin/events/:id/plan/regenerate',
     { preHandler: requireAdmin(deps) },
     async (req, reply) => {
-      const parsed = z.object({ fromRound: z.number().int().min(1) }).safeParse(req.body ?? {});
+      const parsed = z.object({ fromRound: z.number().int().min(1), sourcePlanId: z.string().optional() }).safeParse(req.body ?? {});
       if (!parsed.success) {
         return reply.code(400).send({ error: 'validation_failed' });
       }
       const { id } = req.params as { id: string };
-      const result = await regenerateFromRound(deps.prisma, id, parsed.data.fromRound, new Date());
+      const result = await regenerateFromRound(deps.prisma, id, parsed.data.fromRound, new Date(), parsed.data.sourcePlanId);
       if (!result.ok) {
         return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
       }
-      const loaded = await loadPlan(deps, id);
-      return serializePlan(loaded ?? { ...result.plan, slots: [] });
+      const loaded = await loadPlan(deps, id, result.plan.id);
+      return serializePlan(loaded!);
     },
   );
 
   app.get('/api/admin/events/:id/sheets', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const plan = await loadPlan(deps, id);
+    const plan = await loadPlan(deps, id, undefined, true);
     const event = await deps.prisma.event.findUnique({ where: { id } });
     if (!plan || !event) {
       return reply.code(404).send({ error: 'not_found' });

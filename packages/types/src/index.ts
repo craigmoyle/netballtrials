@@ -119,16 +119,30 @@ export interface RoundSlotDTO {
   position: Position;
   team: number;
   registrationId: string;
+  playerName: string;
+  bibNumber: number | null;
 }
 
 export interface RoundPlanDTO {
   id: string;
   eventId: string;
   status: 'DRAFT' | 'PUBLISHED';
+  revision: number;
+  sourcePlanId: string | null;
+  frozenThroughRound: number;
   seed: number;
   rounds: number;
+  courts: number;
   playMinutes: number;
   changeoverMinutes: number;
+  windowMinutes: number;
+  rank1Min: number;
+  rank2Min: number;
+  rank3Min: number;
+  eventName: string;
+  eventDate: string;
+  venue: string;
+  firstWhistle: string;
   createdAt: string;
   publishedAt: string | null;
   slots: RoundSlotDTO[];

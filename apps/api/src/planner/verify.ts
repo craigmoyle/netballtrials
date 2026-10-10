@@ -8,20 +8,18 @@ function noSolution(message: string, detail?: Record<string, unknown>): PlannerG
 
 export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[] {
   const gaps: PlannerGap[] = [];
-  const playerIds = new Set(input.players.map((player) => player.registrationId));
-  const playersById = new Map<string, PlannerPlayer>(
-    input.players.map((player) => [player.registrationId, player]),
-  );
+  const playersById = new Map<string, PlannerPlayer>(input.players.map((player) => [player.registrationId, player]));
+  const inactive = new Set(input.inactiveRegistrationIds ?? []);
+  const activePlayers = input.players.filter((player) => !inactive.has(player.registrationId));
 
-  if (input.players.length < input.courts * 14) {
+  if (activePlayers.length < input.courts * 14) {
     const needed = input.courts * 14;
     gaps.push({
       code: 'too_few_players',
-      message: `${input.players.length} checked-in players cannot fill ${input.courts} courts (need ${needed})`,
-      detail: { players: input.players.length, courts: input.courts, needed },
+      message: `${activePlayers.length} checked-in players cannot fill ${input.courts} courts (need ${needed})`,
+      detail: { players: activePlayers.length, courts: input.courts, needed },
     });
   }
-
   if (!Number.isInteger(input.courts) || input.courts < 1 || !Number.isInteger(plan.rounds) || plan.rounds < 1) {
     gaps.push(noSolution('court count and rounds must be positive integers'));
   }
@@ -44,8 +42,7 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     if (
       !Number.isInteger(slot.round) || slot.round < 1 || slot.round > plan.rounds ||
       !Number.isInteger(slot.court) || slot.court < 1 || slot.court > input.courts ||
-      (slot.team !== 0 && slot.team !== 1) ||
-      !COURT_POSITIONS.includes(slot.position)
+      (slot.team !== 0 && slot.team !== 1) || !COURT_POSITIONS.includes(slot.position)
     ) {
       gaps.push(noSolution('slot contains an invalid round, court, team, or position', {
         registrationId: slot.registrationId,
@@ -57,23 +54,26 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
       continue;
     }
 
-    if (!playerIds.has(slot.registrationId)) {
+    const player = playersById.get(slot.registrationId);
+    if (!player) {
       gaps.push(noSolution(`slot references unknown registration ${slot.registrationId}`, {
         registrationId: slot.registrationId,
       }));
       continue;
     }
+    if (inactive.has(slot.registrationId) && slot.round > (input.frozenThroughRound ?? 0)) {
+      gaps.push(noSolution(`${slot.registrationId} is inactive but appears after the frozen prefix`, {
+        registrationId: slot.registrationId,
+        round: slot.round,
+      }));
+    }
 
     const playerRound = `${slot.registrationId}:${slot.round}`;
-    if (seenInRound.has(playerRound)) {
-      gaps.push(noSolution(`${slot.registrationId} appears twice in round ${slot.round}`));
-    }
+    if (seenInRound.has(playerRound)) gaps.push(noSolution(`${slot.registrationId} appears twice in round ${slot.round}`));
     seenInRound.add(playerRound);
 
     const place = `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
-    if (seenPlace.has(place)) {
-      gaps.push(noSolution(`place ${place} is filled more than once`));
-    }
+    if (seenPlace.has(place)) gaps.push(noSolution(`place ${place} is filled more than once`));
     seenPlace.add(place);
 
     appearances.set(slot.registrationId, (appearances.get(slot.registrationId) ?? 0) + 1);
@@ -82,9 +82,8 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     const positionKey = `${slot.registrationId}:${slot.position}`;
     positionCounts.set(positionKey, (positionCounts.get(positionKey) ?? 0) + 1);
 
-    const player = playersById.get(slot.registrationId)!;
     const selected = [player.rank1, player.rank2, player.rank3].filter(Boolean);
-    if (!player.optInExtra && !selected.includes(slot.position)) {
+    if (!inactive.has(player.registrationId) && !player.optInExtra && !selected.includes(slot.position)) {
       gaps.push(noSolution(`${player.name} is not opted in but is assigned ${slot.position}`));
     }
   }
@@ -93,8 +92,7 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     for (let court = 1; court <= input.courts; court += 1) {
       for (const position of COURT_POSITIONS) {
         for (const team of [0, 1]) {
-          const place = `${round}:${court}:${position}:${team}`;
-          if (!seenPlace.has(place)) {
+          if (!seenPlace.has(`${round}:${court}:${position}:${team}`)) {
             gaps.push(noSolution(`round ${round}, court ${court}, team ${team} is missing ${position}`));
           }
         }
@@ -102,7 +100,7 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     }
   }
 
-  for (const player of input.players) {
+  for (const player of activePlayers) {
     const seen = courtsSeen.get(player.registrationId) ?? new Set<number>();
     for (let court = 1; court <= input.courts; court += 1) {
       if (!seen.has(court)) {
@@ -113,13 +111,11 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
         });
       }
     }
-
-    const ranks = [
+    for (const rank of [
       { position: player.rank1, min: input.rank1Min },
       { position: player.rank2, min: input.rank2Min },
       { position: player.rank3, min: input.rank3Min },
-    ];
-    for (const rank of ranks) {
+    ]) {
       if (!rank.position || rank.min <= 0) continue;
       const have = positionCounts.get(`${player.registrationId}:${rank.position}`) ?? 0;
       if (have < rank.min) {
@@ -132,7 +128,7 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     }
   }
 
-  const counts = input.players.map((player) => appearances.get(player.registrationId) ?? 0);
+  const counts = activePlayers.map((player) => appearances.get(player.registrationId) ?? 0);
   if (counts.length > 0 && Math.max(...counts) - Math.min(...counts) > 1) {
     gaps.push(noSolution(`game counts range from ${Math.min(...counts)} to ${Math.max(...counts)}`));
   }
@@ -145,6 +141,5 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
       detail: { needed: timeMinutes, window: input.windowMinutes },
     });
   }
-
   return gaps;
 }

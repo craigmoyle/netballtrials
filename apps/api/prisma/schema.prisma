@@ -88,6 +88,8 @@ model Event {
   reviewItems          ReviewItem[]
   emailLogs            EmailLog[]
   policyDocument       EventPolicyDocument?
+  publishedPlanId      String?
+  publishedPlan        RoundPlan?    @relation("PublishedPlan", fields: [publishedPlanId], references: [id], onDelete: SetNull)
 }
 
 model EventPolicyDocument {
@@ -198,19 +200,50 @@ enum PlanStatus {
 }
 
 model RoundPlan {
-  id                String      @id @default(cuid())
+  id                String            @id @default(cuid())
   eventId           String
-  event             Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event             Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activeForEvents   Event[]           @relation("PublishedPlan")
+  revision          Int               @default(1)
+  sourcePlanId      String?
+  frozenThroughRound Int              @default(0)
   seed              Int
-  status            PlanStatus  @default(DRAFT)
+  status            PlanStatus        @default(DRAFT)
   rounds            Int
+  courts            Int               @default(1)
   playMinutes       Int
   changeoverMinutes Int
-  createdAt         DateTime    @default(now())
+  windowMinutes     Int               @default(1)
+  rank1Min          Int               @default(0)
+  rank2Min          Int               @default(0)
+  rank3Min          Int               @default(0)
+  eventName         String            @default("")
+  eventDate         DateTime          @default(dbgenerated("'1900-01-01'::date")) @db.Date
+  venue             String            @default("")
+  firstWhistle      String            @default("00:00")
+  createdAt         DateTime          @default(now())
   publishedAt       DateTime?
   slots             RoundSlot[]
+  players           RoundPlanPlayer[]
 
+  @@unique([eventId, revision])
   @@index([eventId])
+}
+
+model RoundPlanPlayer {
+  planId               String
+  plan                 RoundPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  registrationId      String
+  playerName          String
+  bibNumber           Int?
+  rank1Position       Position
+  rank2Position       Position?
+  rank3Position       Position?
+  optInExtraPositions Boolean
+  active              Boolean   @default(true)
+
+  @@id([planId, registrationId])
+  @@index([registrationId])
 }
 
 model RoundSlot {
