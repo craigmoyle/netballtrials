@@ -13,7 +13,7 @@ export function createStripePaymentProvider(config: {
   const stripe = new Stripe(config.secretKey);
 
   return {
-    async createCheckout(request: CheckoutRequest): Promise<CheckoutSession> {
+    async createCheckout(request: CheckoutRequest, idempotencyKey: string): Promise<CheckoutSession> {
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
         client_reference_id: request.registrationId,
@@ -30,7 +30,7 @@ export function createStripePaymentProvider(config: {
             },
           },
         ],
-      });
+      }, { idempotencyKey });
 
       return { url: session.url ?? '', sessionId: session.id };
     },

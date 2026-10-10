@@ -6,10 +6,10 @@ type Client = ReturnType<typeof apiClient>;
 
 export function RegistrationPendingPage({
   client,
-  registrationId,
+  checkoutSessionId,
 }: {
   client: Client;
-  registrationId: string;
+  checkoutSessionId: string;
 }) {
   const [status, setStatus] = useState<RegistrationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +20,10 @@ export function RegistrationPendingPage({
 
     const poll = async () => {
       try {
-        const result = await client.getRegistrationStatus(registrationId);
+        const result = await client.getRegistrationStatus(checkoutSessionId);
         if (!active) return;
         setStatus(result.status);
-        if (result.status === 'PENDING' || result.status === 'EXPIRED') {
+        if (result.status === 'PENDING') {
           timer = setTimeout(poll, 3000);
         }
       } catch {
@@ -36,7 +36,7 @@ export function RegistrationPendingPage({
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [client, registrationId]);
+  }, [client, checkoutSessionId]);
 
   if (error) {
     return <p role="alert">{error}</p>;

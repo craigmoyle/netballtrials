@@ -84,13 +84,13 @@ export function apiClient(baseUrl: string) {
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),
     register: (id: string, input: Record<string, unknown>) =>
-      request<{ registrationId: string; checkoutUrl: string }>(
+      request<{ status: 'received' }>(
         baseUrl,
         `/api/public/events/${id}/registrations`,
         { method: 'POST', body: JSON.stringify(input) },
       ),
-    getRegistrationStatus: (id: string) =>
-      request<{ status: RegistrationStatus }>(baseUrl, `/api/public/registrations/${id}`),
+    getRegistrationStatus: (sessionId: string) =>
+      request<{ status: RegistrationStatus }>(baseUrl, `/api/public/checkout-sessions/${sessionId}/status`),
     getTicket: (token: string) =>
       request<TicketDTO>(baseUrl, `/api/public/ticket/${token}`),
     openCheckIn: (eventId: string, pin: string) =>

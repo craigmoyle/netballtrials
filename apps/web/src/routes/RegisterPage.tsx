@@ -24,7 +24,7 @@ const EMPTY = {
 export function RegisterPage({ client, eventId }: { client: Client; eventId: string }) {
   const [event, setEvent] = useState<PublicEventDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [duplicate, setDuplicate] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -52,20 +52,19 @@ export function RegisterPage({ client, eventId }: { client: Client; eventId: str
     submitEvent.preventDefault();
     setBusy(true);
     setError(null);
-    setDuplicate(false);
     setFieldErrors([]);
 
     try {
-      const response = await client.register(eventId, {
+      await client.register(eventId, {
         ...form,
         rank2Position: form.rank2Position || undefined,
         rank3Position: form.rank3Position || undefined,
       });
-      window.location.assign(response.checkoutUrl);
+      setSubmitted(true);
     } catch (err) {
       const status = (err as { status?: number }).status;
-      if (status === 409) {
-        setDuplicate(true);
+      if (status === 429) {
+        setError('Too many attempts. Wait a little while, then try again.');
       } else if (status === 400) {
         setFieldErrors((err as { fields?: string[] }).fields ?? []);
       } else {
@@ -76,11 +75,12 @@ export function RegisterPage({ client, eventId }: { client: Client; eventId: str
     }
   }
 
-  if (duplicate) {
+  if (submitted) {
     return (
-      <p role="alert">
-        Check your email or contact the club if you think this is a mistake.
-      </p>
+      <section>
+        <h1>Request received</h1>
+        <p>Check the parent or guardian email for secure next steps. If no message arrives, check junk mail or contact the club.</p>
+      </section>
     );
   }
 

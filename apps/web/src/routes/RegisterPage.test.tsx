@@ -3,8 +3,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { RegisterPage } from './RegisterPage';
 
 describe('RegisterPage', () => {
-  it('shows the duplicate guidance without confirming a registration exists', async () => {
-    const register = vi.fn().mockRejectedValue(Object.assign(new Error('dup'), { status: 409 }));
+  it('shows neutral next steps after a registration request', async () => {
+    const register = vi.fn().mockResolvedValue({ status: 'received' });
     render(
       <RegisterPage
         client={{ getPublicEvent: async () => publicEvent(), register } as any}
@@ -13,7 +13,8 @@ describe('RegisterPage', () => {
     );
     fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
     fireEvent.click(screen.getByRole('button', { name: /register and pay/i }));
-    expect(await screen.findByText(/check your email or contact the club/i)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /request received/i })).toBeTruthy();
+    expect(screen.getByText(/check the parent or guardian email/i)).toBeTruthy();
   });
 });
 

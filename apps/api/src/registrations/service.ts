@@ -1,4 +1,4 @@
-import type { PrismaClient, Registration } from '@prisma/client';
+import type { Prisma, PrismaClient, Registration } from '@prisma/client';
 import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibility';
 import { registrationInputSchema, type RegistrationInput } from './schemas';
 
@@ -17,11 +17,13 @@ export class RegistrationValidationError extends Error {
 
 export class RegistrationConflictError extends Error {
   readonly reason: 'duplicate' | 'closed';
+  readonly existing: Registration | null;
 
-  constructor(reason: 'duplicate' | 'closed') {
+  constructor(reason: 'duplicate' | 'closed', existing: Registration | null = null) {
     super(reason);
     this.name = 'RegistrationConflictError';
     this.reason = reason;
+    this.existing = existing;
   }
 }
 
@@ -69,6 +71,17 @@ export async function createPendingRegistration(
   const dateOfBirth = new Date(`${values.dateOfBirth}T00:00:00.000Z`);
   const age = ageAtDecember31(dateOfBirth, event.competitionYear);
   const ageFlagged = !isAgeInRange(age, event.minAge, event.maxAge);
+  const playerNameNormalized = normalizePlayerName(values.playerFirstName, values.playerLastName);
+  const duplicateWhere: Prisma.RegistrationWhereInput = {
+    eventId,
+    playerNameNormalized,
+    dateOfBirth,
+    status: { in: ['PENDING', 'PAID'] },
+  };
+  const existing = await prisma.registration.findFirst({ where: duplicateWhere });
+  if (existing) {
+    throw new RegistrationConflictError('duplicate', existing);
+  }
 
   try {
     return await prisma.registration.create({
@@ -76,7 +89,7 @@ export async function createPendingRegistration(
         eventId,
         playerFirstName: values.playerFirstName,
         playerLastName: values.playerLastName,
-        playerNameNormalized: normalizePlayerName(values.playerFirstName, values.playerLastName),
+        playerNameNormalized,
         dateOfBirth,
         parentName: values.parentName,
         parentEmail: values.parentEmail,
@@ -96,7 +109,8 @@ export async function createPendingRegistration(
     });
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw new RegistrationConflictError('duplicate');
+      const existing = await prisma.registration.findFirst({ where: duplicateWhere });
+      throw new RegistrationConflictError('duplicate', existing);
     }
     throw err;
   }

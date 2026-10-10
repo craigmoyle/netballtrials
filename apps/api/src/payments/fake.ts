@@ -9,15 +9,18 @@ export function createFakePaymentProvider(): PaymentProvider & {
   checkouts: CheckoutRequest[];
 } {
   const checkouts: CheckoutRequest[] = [];
+  const sessions = new Map<string, CheckoutSession>();
 
   return {
     checkouts,
-    async createCheckout(request: CheckoutRequest): Promise<CheckoutSession> {
+    async createCheckout(request: CheckoutRequest, idempotencyKey: string): Promise<CheckoutSession> {
+      const existing = sessions.get(idempotencyKey);
+      if (existing) return existing;
       checkouts.push(request);
-      return {
-        url: `https://checkout.test/${request.registrationId}`,
-        sessionId: `fake_${checkouts.length}`,
-      };
+      const sessionId = `fake_${sessions.size + 1}`;
+      const session = { url: `https://checkout.test/${sessionId}`, sessionId };
+      sessions.set(idempotencyKey, session);
+      return session;
     },
     parseWebhook(rawBody: Buffer, signature: string): WebhookEvent {
       if (signature !== 'ok') {

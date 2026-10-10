@@ -30,9 +30,9 @@ function RegisterRoute({ client }: { client: Client }) {
 
 function PendingRoute({ client }: { client: Client }) {
   const [params] = useSearchParams();
-  const registrationId = params.get('registration');
-  if (!registrationId) return <Navigate to="/" replace />;
-  return <RegistrationPendingPage client={client} registrationId={registrationId} />;
+  const checkoutSessionId = params.get('session');
+  if (!checkoutSessionId) return <Navigate to="/" replace />;
+  return <RegistrationPendingPage client={client} checkoutSessionId={checkoutSessionId} />;
 }
 
 function TicketRoute({ client }: { client: Client }) {

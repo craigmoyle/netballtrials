@@ -158,6 +158,15 @@ model ProcessedStripeEvent {
   @@index([createdAt])
 }
 
+model RequestRateLimitBucket {
+  key             String   @id
+  windowStartedAt DateTime
+  hits            Int
+  updatedAt       DateTime
+
+  @@index([updatedAt])
+}
+
 model CheckInSession {
   id        String   @id @default(cuid())
   eventId   String

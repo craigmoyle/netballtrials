@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createApp } from '../../app';
 import { loadEnv } from '../../env';
 import { createFakePaymentProvider } from '../../payments/fake';
+import { createDevMailer } from '../../mail/dev-mailer';
 
 const previousNodeEnv = process.env.NODE_ENV;
 afterEach(() => {
@@ -18,6 +19,7 @@ function env(overrides: Record<string, string> = {}) {
     PAYMENT_PROVIDER: 'fake',
     WEB_ORIGIN: 'http://localhost:5173',
     API_PUBLIC_URL: 'http://localhost:3000',
+    TRUST_PROXY: '',
     SESSION_COOKIE_SECURE: 'false',
     MAIL_FROM: 'test@example.com',
     MAIL_REPLY_TO: 'test@example.com',
@@ -69,6 +71,20 @@ describe('production runtime boundary', () => {
     const fake = createFakePaymentProvider();
     expect(createApp({ env: env(), payment: fake }).testDeps.payment).toBe(fake);
     expect(() => createApp({ env: env({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'fake', SESSION_COOKIE_SECURE: 'true', WEB_ORIGIN: 'https://trials.example', API_PUBLIC_URL: 'https://api.example' }), payment: fake })).toThrow(/fake.*production|production.*fake/i);
+  });
+
+  it('refuses the development mailer in production', () => {
+    const productionEnv = env({
+      NODE_ENV: 'production',
+      PAYMENT_PROVIDER: 'stripe',
+      SESSION_COOKIE_SECURE: 'true',
+      WEB_ORIGIN: 'https://trials.example',
+      API_PUBLIC_URL: 'https://api.example',
+      STRIPE_SECRET_KEY: 'sk_test_configured',
+      STRIPE_WEBHOOK_SECRET: 'whsec_configured',
+    });
+    expect(() => createApp({ env: productionEnv })).toThrow(/Gmail|production.*mail/i);
+    expect(() => createApp({ env: productionEnv, mailer: createDevMailer([]) })).toThrow(/Gmail|production.*mail/i);
   });
 
   it('loads the production server entrypoint and fails before listening without Stripe', () => {

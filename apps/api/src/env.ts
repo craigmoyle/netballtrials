@@ -9,6 +9,7 @@ const envSchema = z
     PAYMENT_PROVIDER: z.enum(['stripe', 'fake']).optional(),
     WEB_ORIGIN: z.url().default('http://localhost:5173'),
     API_PUBLIC_URL: z.url().default('http://localhost:3000'),
+    TRUST_PROXY: z.string().default(''),
     SESSION_COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
     MAIL_FROM: z.string().default('chisholmnetball@gmail.com'),
     MAIL_REPLY_TO: z.string().default('chisholmnetball@gmail.com'),
@@ -71,6 +72,7 @@ export type Env = {
   PAYMENT_PROVIDER: 'stripe' | 'fake';
   WEB_ORIGIN: string;
   API_PUBLIC_URL: string;
+  TRUST_PROXY: string;
   SESSION_COOKIE_SECURE: boolean;
   MAIL_FROM: string;
   MAIL_REPLY_TO: string;

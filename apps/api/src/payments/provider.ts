@@ -31,6 +31,6 @@ export type WebhookEvent =
   | { kind: 'ignored'; stripeEventId: string };
 
 export interface PaymentProvider {
-  createCheckout(request: CheckoutRequest): Promise<CheckoutSession>;
+  createCheckout(request: CheckoutRequest, idempotencyKey: string): Promise<CheckoutSession>;
   parseWebhook(rawBody: Buffer, signature: string): WebhookEvent;
 }

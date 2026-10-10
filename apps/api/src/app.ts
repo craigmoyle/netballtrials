@@ -56,15 +56,25 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
           webhookSecret: env.STRIPE_WEBHOOK_SECRET,
         })
       : createFakePaymentProvider());
+  const mailer = overrides.mailer ?? createDevMailer([]);
+  if (env.NODE_ENV === 'production' && 'sent' in mailer) {
+    throw new Error('Production requires a configured Gmail mail provider');
+  }
+
   const deps: AppDeps = {
     env,
     prisma: overrides.prisma ?? defaultPrisma,
-    mailer: overrides.mailer ?? createDevMailer([]),
+    mailer,
     payment,
   };
 
   const webOrigin = new URL(env.WEB_ORIGIN).origin;
-  const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
+  const trustedProxies = env.TRUST_PROXY.split(',').map((value) => value.trim()).filter(Boolean);
+  const app = Fastify({
+    logger: false,
+    bodyLimit: 1_048_576,
+    trustProxy: trustedProxies.length > 0 ? trustedProxies : false,
+  });
   app.decorate('testDeps', deps);
 
   app.register(cors, { origin: webOrigin, credentials: true });

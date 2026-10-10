@@ -14,7 +14,7 @@ In separate terminals run `npm run dev:api` and `npm run dev:web` from the repos
 
 ## Production API
 
-Provide environment variables through the deployment's secret/configuration system; do not commit `.env` or credentials. Set `NODE_ENV=production`, `PAYMENT_PROVIDER=stripe`, both `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, public `WEB_ORIGIN` and `API_PUBLIC_URL`, and `SESSION_COOKIE_SECURE=true`. `WEB_ORIGIN` must be the exact browser origin. Startup fails if Stripe settings are incomplete or insecure cookies are configured.
+Provide environment variables through the deployment's secret/configuration system; do not commit `.env` or credentials. Set `NODE_ENV=production`, `PAYMENT_PROVIDER=stripe`, both `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, public `WEB_ORIGIN` and `API_PUBLIC_URL`, and `SESSION_COOKIE_SECURE=true`. `WEB_ORIGIN` must be the exact browser origin. If deployed behind a reverse proxy, set `TRUST_PROXY` only to that proxy's exact IPs/CIDRs so request rate limits use the client address without trusting arbitrary forwarded headers. Startup fails if Stripe settings are incomplete or insecure cookies are configured.
 
 Apply database migrations with `cd apps/api && npx prisma migrate deploy`. Build/typecheck with `npm run build -w @netball-trials/api` and start with `npm run start -w @netball-trials/api`. The production runtime includes `tsx`; the build command currently performs a typecheck rather than emitting JavaScript. Set `PORT` as needed. Route the configured web origin to the web app and `/api` to the API, or configure the web build's `VITE_API_URL` with the matching API origin and CORS/cookie settings.
 
