@@ -172,10 +172,17 @@ export interface ReviewItemDTO {
 export interface EmailLogDTO {
   id: string;
   registrationId: string | null;
+  senderUserId: string | null;
+  batchId: string;
   to: string;
   subject: string;
+  body: string;
   kind: string;
-  sentAt: string;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'AMBIGUOUS';
+  attempts: number;
+  createdAt: string;
+  lastAttemptAt: string | null;
+  sentAt: string | null;
   failedAt: string | null;
   error: string | null;
 }

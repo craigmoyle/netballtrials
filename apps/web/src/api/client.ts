@@ -153,12 +153,12 @@ export function apiClient(baseUrl: string) {
         `/api/admin/events/${eventId}/registrations/${registrationId}/withdraw`,
         { method: 'POST' },
       ),
-    sendMessage: async (eventId: string, message: { subject: string; text: string }) => {
+    sendMessage: async (eventId: string, message: { subject: string; text: string; batchId?: string }) => {
       const response = await fetch(`${baseUrl}/api/admin/events/${eventId}/messages`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(message),
+        body: JSON.stringify({ ...message, batchId: message.batchId ?? crypto.randomUUID() }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
@@ -166,6 +166,12 @@ export function apiClient(baseUrl: string) {
       }
       return body as { sent: number; failed: number };
     },
+    retryMessage: (eventId: string, batchId: string, deliveryIds: string[], includeAmbiguous = false) =>
+      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(
+        baseUrl,
+        `/api/admin/events/${eventId}/messages/${batchId}/retry`,
+        { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) },
+      ),
     listEmailLog: (eventId: string) =>
       request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/email-log`),
   };

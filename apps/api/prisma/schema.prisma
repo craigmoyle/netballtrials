@@ -20,6 +20,7 @@ model StaffUser {
   createdAt         DateTime     @default(now())
   loginTokens       LoginToken[]
   sessions          Session[]
+  emailDeliveries   EmailLog[]    @relation("EmailLogSender")
 }
 
 model LoginToken {
@@ -277,19 +278,37 @@ model ReviewItem {
   @@index([registrationId])
 }
 
+enum EmailDeliveryState {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  AMBIGUOUS
+}
+
 model EmailLog {
-  id             String        @id @default(cuid())
+  id             String              @id @default(cuid())
   eventId        String
-  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event          Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   registrationId String?
-  registration   Registration? @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registration   Registration?       @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  senderUserId   String?
+  sender         StaffUser?          @relation("EmailLogSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  batchId        String
+  idempotencyKey String              @unique
   to             String
   subject        String
   kind           String
   body           String
-  sentAt         DateTime      @default(now())
+  status         EmailDeliveryState  @default(PENDING)
+  attempts       Int                 @default(0)
+  lastAttemptAt  DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @default(now()) @updatedAt
+  sentAt         DateTime?
   failedAt       DateTime?
   error          String?
 
-  @@index([eventId])
+  @@index([eventId, sentAt])
+  @@index([batchId, status])
 }

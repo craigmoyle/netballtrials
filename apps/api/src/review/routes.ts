@@ -4,10 +4,18 @@ import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { withdrawRegistration } from '../registrations/service';
 import { ensureReviewItems, listReviewQueue, resolveReviewItem } from './service';
-import { sendEventMessage } from '../messages/service';
+import { EmailBatchConflictError, reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../messages/service';
 
 const resolveSchema = z.object({ note: z.string().max(2000).optional() });
-const messageSchema = z.object({ subject: z.string().min(1).max(200), text: z.string().min(1).max(5000) });
+const messageSchema = z.object({
+  subject: z.string().trim().min(1).max(200),
+  text: z.string().min(1).max(5000),
+  batchId: z.uuid(),
+});
+const retrySchema = z.object({
+  deliveryIds: z.array(z.string().min(1).max(100)).min(1).max(500),
+  includeAmbiguous: z.boolean().default(false),
+});
 
 export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/admin/events/:id/review', { preHandler: requireAdmin(deps) }, async (req) => {
@@ -59,32 +67,57 @@ export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void 
 
   app.post('/api/admin/events/:id/messages', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = messageSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.code(400).send({ error: 'validation_failed' });
-    }
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id } = req.params as { id: string };
-    const result = await sendEventMessage(
+    try {
+      return await sendEventMessage(
+        { prisma: deps.prisma, mailer: deps.mailer },
+        id,
+        { subject: parsed.data.subject, text: parsed.data.text },
+        new Date(),
+        { batchId: parsed.data.batchId, senderUserId: req.adminUserId },
+      );
+    } catch (error) {
+      if (error instanceof EmailBatchConflictError) return reply.code(409).send({ error: 'idempotency_conflict' });
+      throw error;
+    }
+  });
+
+  app.post('/api/admin/events/:id/messages/:batchId/retry', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = retrySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const { id, batchId } = req.params as { id: string; batchId: string };
+    return retryFailedDeliveries(
       { prisma: deps.prisma, mailer: deps.mailer },
       id,
-      { subject: parsed.data.subject, text: parsed.data.text },
+      batchId,
+      parsed.data.deliveryIds,
       new Date(),
+      { includeAmbiguous: parsed.data.includeAmbiguous },
     );
-    return result;
   });
 
   app.get('/api/admin/events/:id/email-log', { preHandler: requireAdmin(deps) }, async (req) => {
     const { id } = req.params as { id: string };
+    await reconcileStaleDeliveries(deps.prisma, new Date());
     const logs = await deps.prisma.emailLog.findMany({
       where: { eventId: id },
-      orderBy: { sentAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
     return logs.map((log) => ({
       id: log.id,
       registrationId: log.registrationId,
+      senderUserId: log.senderUserId,
+      batchId: log.batchId,
       to: log.to,
       subject: log.subject,
+      body: log.body,
       kind: log.kind,
-      sentAt: log.sentAt.toISOString(),
+      status: log.status,
+      attempts: log.attempts,
+      createdAt: log.createdAt.toISOString(),
+      lastAttemptAt: log.lastAttemptAt?.toISOString() ?? null,
+      sentAt: log.sentAt?.toISOString() ?? null,
       failedAt: log.failedAt ? log.failedAt.toISOString() : null,
       error: log.error,
     }));

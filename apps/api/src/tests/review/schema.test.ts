@@ -35,6 +35,8 @@ describe('review and email log schema', () => {
       data: {
         eventId: event.id,
         registrationId: reg.id,
+        batchId: 'schema-test-batch',
+        idempotencyKey: 'schema-test-delivery',
         to: 'anne@example.com',
         subject: 'Reminder',
         kind: 'reminder',
