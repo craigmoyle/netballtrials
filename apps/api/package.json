@@ -13,6 +13,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "send-reminders": "tsx src/scripts/send-reminders.ts",
+    "e2e:server": "tsx src/scripts/e2e-server.ts",
     "retention": "tsx src/scripts/retention.ts",
     "admin:bootstrap": "tsx src/scripts/bootstrap-admin.ts"
   },

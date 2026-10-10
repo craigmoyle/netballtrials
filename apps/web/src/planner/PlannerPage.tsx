@@ -119,7 +119,7 @@ export function PlannerPage({ client, eventId }: { client: Client; eventId: stri
       {plan && plan.id !== publishedPlan?.id ? <p>Draft revision {plan.revision} · {plan.rounds} rounds</p> : !plan ? <p>No draft plan yet.</p> : null}
       {plan && plan.slots.length > 0 ? (
         <div className="table-scroll">
-          <table>
+          <table className="schedule-preview">
             <caption>Schedule preview — {plan.status.toLowerCase()} revision {plan.revision}</caption>
             <thead><tr><th scope="col">Round</th><th scope="col">Court</th><th scope="col">Team</th><th scope="col">Position</th><th scope="col">Bib</th><th scope="col">Player</th></tr></thead>
             <tbody>

@@ -13,46 +13,29 @@ export function VerifyPage({
 }) {
   const [params] = useSearchParams();
   const [state, setState] = useState<'checking' | 'ok' | 'error'>('checking');
-  const started = useRef(false);
+  const startedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
     const token = params.get('token');
     if (!token) {
       setState('error');
       return;
     }
+    if (startedFor.current === token) return;
+    startedFor.current = token;
 
-    let active = true;
     client
       .verify(token)
       .then(() => {
-        if (active) {
-          setState('ok');
-          onSignedIn();
-        }
+        setState('ok');
+        onSignedIn();
       })
-      .catch(() => {
-        if (active) setState('error');
-      });
+      .catch(() => setState('error'));
+  }, [client, onSignedIn, params]);
 
-    return () => {
-      active = false;
-    };
-  }, [client, params, onSignedIn]);
-
-  if (state === 'checking') {
-    return <p>Signing you in...</p>;
-  }
-
+  if (state === 'checking') return <p role="status">Signing you in...</p>;
   if (state === 'ok') {
-    return (
-      <p>
-        Signed in. <Link to="/admin/events">Go to events</Link>
-      </p>
-    );
+    return <p>Signed in. <Link to="/admin/events">Go to events</Link></p>;
   }
 
   return (

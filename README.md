@@ -30,3 +30,5 @@ npm audit
 ```
 
 API tests use `apps/api/.env.test` and refuse to run against a non-`_test` database. Never override that guard to point tests at production data.
+
+Browser acceptance tests run with `npm run test:e2e`. They require a local Google Chrome installation and use Playwright against the guarded `netballtrials_test` database; the E2E server applies migrations and resets that database between tests. The test API uses the in-memory mailer and fake checkout provider; no Gmail or Stripe requests are made, and the checkout return remains pending. A separately pre-seeded ticket fixture exercises ticket rendering without claiming a payment. The suite runs Chromium via Chrome (verified here with Chrome 155.0.8059.40) at 1280×900, 768×1024 and 390×844 viewports, with axe WCAG 2.2 AA checks. The volunteer camera test uses Chromium's synthetic camera stream and manual lookup; no physical QR/camera, outdoor-light or club-printer acceptance test has been run. The PDF check uses Chrome headless print-to-PDF, not a physical printer.

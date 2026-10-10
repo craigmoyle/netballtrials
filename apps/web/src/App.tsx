@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient } from './api/client';
 import { AdminLayout } from './AdminLayout';
@@ -83,6 +83,10 @@ function TicketRoute({ client }: { client: Client }) {
   return <TicketPage client={client} token={token} />;
 }
 
+function PageContent({ children }: { children: ReactNode }) {
+  return <main className="app-main">{children}</main>;
+}
+
 function PlannerRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -121,20 +125,20 @@ export function App() {
 
   return (
     <Routes>
-      <Route path="/register/:eventId" element={<RegisterRoute client={client} />} />
-      <Route path="/register/:eventId/pending" element={<PendingRoute client={client} />} />
-      <Route path="/ticket/:token" element={<TicketRoute client={client} />} />
-      <Route path="/check-in" element={<CheckInPage client={client} />} />
+      <Route path="/register/:eventId" element={<PageContent><RegisterRoute client={client} /></PageContent>} />
+      <Route path="/register/:eventId/pending" element={<PageContent><PendingRoute client={client} /></PageContent>} />
+      <Route path="/ticket/:token" element={<PageContent><TicketRoute client={client} /></PageContent>} />
+      <Route path="/check-in" element={<PageContent><CheckInPage client={client} /></PageContent>} />
       <Route
         path="/check-in/scan"
-        element={<><CheckInLayout client={client} /><ScanPage client={client} /></>}
+        element={<><CheckInLayout client={client} /><PageContent><ScanPage client={client} /></PageContent></>}
       />
       <Route
         path="/check-in/lookup"
-        element={<><CheckInLayout client={client} /><LookupPanel client={client} /></>}
+        element={<><CheckInLayout client={client} /><PageContent><LookupPanel client={client} /></PageContent></>}
       />
-      <Route path="/admin/login" element={<LoginPage client={client} />} />
-      <Route path="/admin/verify" element={<VerifyPage client={client} onSignedIn={() => undefined} />} />
+      <Route path="/admin/login" element={<PageContent><LoginPage client={client} /></PageContent>} />
+      <Route path="/admin/verify" element={<PageContent><VerifyPage client={client} onSignedIn={() => undefined} /></PageContent>} />
       <Route path="/admin" element={<ProtectedAdmin client={client} />}>
         <Route index element={<Navigate to="events" replace />} />
         <Route path="events" element={<EventsPage client={client} />} />
