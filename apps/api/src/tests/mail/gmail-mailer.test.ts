@@ -56,6 +56,26 @@ describe('Gmail OAuth mail provider', () => {
     expect(mime).toContain(Buffer.from('BEGIN:VCALENDAR').toString('base64'));
   });
 
+  it('refreshes an access token once after Gmail rejects it with 401', async () => {
+    const authorizations: string[] = [];
+    let tokenNumber = 0;
+    let sendNumber = 0;
+    const fetcher = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(input).includes('/token')) {
+        tokenNumber += 1;
+        return response({ access_token: `access-${tokenNumber}`, expires_in: 3600 });
+      }
+      authorizations.push((init?.headers as Record<string, string>).authorization);
+      sendNumber += 1;
+      return sendNumber === 1 ? response({ error: 'expired' }, 401) : response({ id: 'ok' });
+    });
+    const mailer = createGmailMailer(config, fetcher as typeof fetch);
+    await mailer.send({ to: 'parent@example.com', subject: 'Retry token', text: 'Body' });
+    expect(authorizations).toEqual(['Bearer access-1', 'Bearer access-2']);
+    expect(tokenNumber).toBe(2);
+    expect(sendNumber).toBe(2);
+  });
+
   it('reuses a refreshed access token until shortly before expiry', async () => {
     let calls = 0;
     const fetcher = vi.fn(async (input: Parameters<typeof fetch>[0]) => {

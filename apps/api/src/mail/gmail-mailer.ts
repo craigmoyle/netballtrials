@@ -115,20 +115,28 @@ export function createGmailMailer(
         throw new GmailDeliveryError('Email could not be composed');
       }
 
-      const token = await getAccessToken();
+      let token = await getAccessToken();
       let response: Response;
-      try {
-        response = await fetcher(GMAIL_SEND_URL, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({ raw: raw.toString('base64url') }),
-          signal: AbortSignal.timeout(15_000),
-        });
-      } catch {
-        throw new GmailDeliveryError('Gmail send request failed');
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          response = await fetcher(GMAIL_SEND_URL, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ raw: raw.toString('base64url') }),
+            signal: AbortSignal.timeout(15_000),
+          });
+        } catch {
+          throw new GmailDeliveryError('Gmail send request failed');
+        }
+        if (response.status !== 401 || attempt > 0) break;
+        if (accessToken === token) {
+          accessToken = null;
+          expiresAt = 0;
+        }
+        token = await getAccessToken();
       }
       if (!response.ok) throw new GmailDeliveryError('Gmail rejected the message', response.status);
     },
