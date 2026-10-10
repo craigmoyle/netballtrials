@@ -101,3 +101,19 @@ export async function createPendingRegistration(
     throw err;
   }
 }
+
+export async function withdrawRegistration(
+  prisma: PrismaClient,
+  eventId: string,
+  registrationId: string,
+  _now: Date,
+): Promise<Registration | null> {
+  const result = await prisma.registration.updateMany({
+    where: { id: registrationId, eventId },
+    data: { status: 'WITHDRAWN', checkedInAt: null, bibNumber: null },
+  });
+  if (result.count === 0) {
+    return null;
+  }
+  return prisma.registration.findUnique({ where: { id: registrationId } });
+}
