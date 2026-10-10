@@ -11,7 +11,7 @@ import {
 import type { RegistrationInput } from '../registrations/schemas';
 import { consumeRateLimit } from '../security/rate-limit';
 import { registerStripeWebhookRoute } from '../payments/webhook';
-import { getPublicEvent, getTicket } from './service';
+import { getPublicEvent, getTicket, getTicketCalendar } from './service';
 
 const REGISTRATION_LIMIT = 10;
 const REGISTRATION_WINDOW_MS = 15 * 60_000;
@@ -135,12 +135,29 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
     const { sessionId } = req.params as { sessionId: string };
     const registration = await deps.prisma.registration.findUnique({
       where: { checkoutSessionId: sessionId },
-      select: { status: true },
+      select: { status: true, qrToken: true },
     });
     if (!registration) {
       return reply.code(404).send({ error: 'not_found' });
     }
-    return { status: registration.status };
+    if (registration.status !== 'PAID' || !registration.qrToken) return { status: registration.status };
+    const token = encodeURIComponent(registration.qrToken);
+    return {
+      status: registration.status,
+      ticketPath: `/ticket/${token}`,
+      calendarUrl: `${deps.env.API_PUBLIC_URL.replace(/\/$/, '')}/api/public/ticket/${token}/calendar`,
+      ticket: await getTicket(deps.prisma, registration.qrToken),
+    };
+  });
+
+  app.get('/api/public/ticket/:token/calendar', async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const file = await getTicketCalendar(deps.prisma, token);
+    if (!file) return reply.code(404).send({ error: 'not_found' });
+    return reply
+      .type('text/calendar; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${file.filename}"`)
+      .send(file.calendar);
   });
 
   app.get('/api/public/ticket/:token', async (req, reply) => {

@@ -14,6 +14,8 @@ describe('GET /api/public/events/:id', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.name).toBe('15/U Ladies');
+    expect(body.competitionYear).toBe(2027);
+    expect(body.startTime).toBe('08:30');
     expect(body.minAge).toBe(12);
     expect(body.registrationFeeCents).toBe(3500);
     expect(body).not.toHaveProperty('policyDocumentName');

@@ -81,6 +81,7 @@ export function apiClient(baseUrl: string) {
         body: JSON.stringify(patch),
       }),
     listAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/admin/associations'),
+    listPublicAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/public/associations'),
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),
     register: (id: string, input: Record<string, unknown>) =>
@@ -90,9 +91,15 @@ export function apiClient(baseUrl: string) {
         { method: 'POST', body: JSON.stringify(input) },
       ),
     getRegistrationStatus: (sessionId: string) =>
-      request<{ status: RegistrationStatus }>(baseUrl, `/api/public/checkout-sessions/${sessionId}/status`),
+      request<{
+        status: RegistrationStatus;
+        ticketPath?: string;
+        calendarUrl?: string;
+        ticket?: TicketDTO | null;
+      }>(baseUrl, `/api/public/checkout-sessions/${sessionId}/status`),
     getTicket: (token: string) =>
-      request<TicketDTO>(baseUrl, `/api/public/ticket/${token}`),
+      request<TicketDTO>(baseUrl, `/api/public/ticket/${encodeURIComponent(token)}`),
+    ticketCalendarUrl: (token: string) => `${baseUrl}/api/public/ticket/${encodeURIComponent(token)}/calendar`,
     openCheckIn: (eventId: string, pin: string) =>
       request<{ eventName: string }>(baseUrl, '/api/check-in/session', {
         method: 'POST',

@@ -7,7 +7,9 @@ const apiMocks = vi.hoisted(() => ({
   me: vi.fn(),
   listEvents: vi.fn(),
   getPublicEvent: vi.fn(),
+  listPublicAssociations: vi.fn(),
   getTicket: vi.fn(),
+  ticketCalendarUrl: vi.fn((token: string) => `/api/public/ticket/${token}/calendar`),
 }));
 
 vi.mock('./api/client', () => ({ apiClient: () => apiMocks }));
@@ -29,13 +31,14 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  apiMocks.listPublicAssociations.mockResolvedValue([]);
 });
 
 describe('App route boundaries', () => {
   it('loads public registration without checking admin authentication', async () => {
     apiMocks.getPublicEvent.mockResolvedValue({
       id: 'event-1', name: 'Trials', division: '15/U', section: 'Ladies', eventDate: '2026-09-12T00:00:00.000Z',
-      venue: 'Chisholm', firstWhistle: '09:00', registrationFeeCents: 0, currency: 'aud', policyUrl: null,
+      venue: 'Chisholm', startTime: '08:30', firstWhistle: '09:00', competitionYear: 2027, registrationFeeCents: 0, currency: 'aud', policyUrl: null,
       minAge: 12, maxAge: 15, courts: 1, status: 'OPEN',
     });
     renderApp('/register/event-1');
@@ -46,7 +49,7 @@ describe('App route boundaries', () => {
   });
 
   it('loads a public ticket without checking admin authentication', async () => {
-    apiMocks.getTicket.mockResolvedValue({ playerName: 'Ada Lovelace', event: { name: 'Trials' } });
+    apiMocks.getTicket.mockResolvedValue({ playerName: 'Ada Lovelace', qrCode: 'data:image/png;base64,YWJj', event: { name: 'Trials' } });
     renderApp('/ticket/opaque-token');
     expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(apiMocks.getTicket).toHaveBeenCalledWith('opaque-token');

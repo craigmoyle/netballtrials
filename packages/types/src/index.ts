@@ -67,6 +67,8 @@ export interface PublicEventDTO {
   eventDate: string;
   venue: string;
   firstWhistle: string;
+  startTime: string;
+  competitionYear: number;
   registrationFeeCents: number;
   currency: string;
   policyUrl: string | null;
@@ -85,7 +87,8 @@ export type RegistrationStatus =
 
 export interface TicketDTO {
   playerName: string;
-  event: { name: string; eventDate?: string; venue?: string; firstWhistle?: string };
+  qrCode: string;
+  event: { name: string; eventDate: string; venue: string; startTime: string; firstWhistle: string };
   bibNumber?: number | null;
 }
 

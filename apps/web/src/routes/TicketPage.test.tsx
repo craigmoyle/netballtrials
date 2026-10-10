@@ -4,8 +4,14 @@ import { TicketPage } from './TicketPage';
 
 describe('TicketPage', () => {
   it('renders the player name and event', async () => {
-    render(<TicketPage client={{ getTicket: async () => ({ playerName: 'Ada Lovelace', event: { name: '15/U Ladies' } }) } as any} token="t" />);
-    expect(await screen.findByText('Ada Lovelace')).toBeTruthy();
-    expect(screen.getByText('15/U Ladies')).toBeTruthy();
+    render(<TicketPage client={{
+      getTicket: async () => ({ playerName: 'Ada Lovelace', qrCode: 'data:image/png;base64,YWJj', event: { name: '15/U Ladies', eventDate: '2026-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30' } }),
+      ticketCalendarUrl: (token: string) => `/api/public/ticket/${token}/calendar`,
+    } as any} token="opaque-token" />);
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    expect(screen.getByText('15/U Ladies')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /check-in qr code for ada lovelace/i })).toHaveAttribute('src', 'data:image/png;base64,YWJj');
+    expect(screen.getByRole('link', { name: /download calendar/i })).toHaveAttribute('href', '/api/public/ticket/opaque-token/calendar');
+    expect(screen.queryByText(/anne@example.com/)).not.toBeInTheDocument();
   });
 });

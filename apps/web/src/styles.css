@@ -108,6 +108,35 @@ button:disabled { opacity: 0.62; cursor: not-allowed; }
   outline-color: #ffd66b;
 }
 
+.public-page {
+  width: min(100% - 2rem, 52rem);
+  margin: clamp(1rem, 5vw, 3rem) auto;
+}
+
+.public-page > p { max-width: 70ch; }
+
+.error-summary {
+  max-width: 44rem;
+  margin-block: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: #fff;
+  border: 2px solid var(--plum);
+  border-radius: 0.25rem;
+}
+
+.error-summary h2 { margin-top: 0; }
+.error-summary li + li { margin-top: 0.25rem; }
+
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: #9c1c26; }
+
+.ticket-qr {
+  display: block;
+  width: min(100%, 20rem);
+  height: auto;
+  margin-block: 1.25rem;
+  background: #fff;
+}
+
 @media (max-width: 38rem) {
   .app-header { align-items: flex-start; flex-wrap: wrap; gap: 0.75rem 1rem; }
   .app-nav { order: 3; width: 100%; }

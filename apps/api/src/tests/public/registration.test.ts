@@ -129,6 +129,23 @@ describe('POST /api/public/events/:id/registrations', () => {
     expect(byId.statusCode).toBe(404);
   });
 
+  it('returns a ticket and calendar continuation only after confirmed payment', async () => {
+    const token = 'paid-ticket-token-12345678901234567890';
+    await prisma.registration.create({
+      data: registrationFixture(eventId, { status: 'PAID', checkoutSessionId: 'cs_paid', qrToken: token }),
+    });
+    const status = await app.inject({ method: 'GET', url: '/api/public/checkout-sessions/cs_paid/status' });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      status: 'PAID',
+      ticketPath: `/ticket/${token}`,
+      calendarUrl: `http://localhost:3000/api/public/ticket/${token}/calendar`,
+      ticket: { playerName: 'Ada Lovelace', event: { name: '15/U Ladies' } },
+    });
+    expect(status.json().ticket.qrCode).toMatch(/^data:image\/png;base64,/);
+    expect(status.json().ticket).not.toHaveProperty('parentEmail');
+  });
+
   it('returns per-field errors for invalid input', async () => {
     const res = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload: { ...payload, rank1Position: 'XX' } });
     expect(res.statusCode).toBe(400);

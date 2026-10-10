@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { createAssociation, listAssociations, setAssociationActive } from './service';
+import { createAssociation, listActiveAssociations, listAssociations, setAssociationActive } from './service';
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -21,6 +21,8 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export function registerAssociationRoutes(app: FastifyInstance, deps: AppDeps): void {
+  app.get('/api/public/associations', async () => listActiveAssociations(deps.prisma));
+
   app.get('/api/admin/associations', { preHandler: requireAdmin(deps) }, async () => {
     return listAssociations(deps.prisma);
   });

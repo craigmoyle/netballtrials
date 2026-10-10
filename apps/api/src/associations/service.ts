@@ -4,6 +4,10 @@ export async function listAssociations(prisma: PrismaClient): Promise<MemberAsso
   return prisma.memberAssociation.findMany({ orderBy: { name: 'asc' } });
 }
 
+export async function listActiveAssociations(prisma: PrismaClient): Promise<MemberAssociation[]> {
+  return prisma.memberAssociation.findMany({ where: { active: true }, orderBy: { name: 'asc' } });
+}
+
 export async function createAssociation(
   prisma: PrismaClient,
   name: string,

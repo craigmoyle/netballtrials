@@ -1,8 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
 import { sendEmailToRecipient } from '../messages/service';
-import { localDateTimeToUtc } from '../time/melbourne';
-import { buildIcs } from './ics';
+import { buildTrialCalendar } from './calendar';
 import { qrPng } from './qr';
 
 export type ConfirmationInput = {
@@ -86,15 +85,7 @@ export async function sendConfirmation(
   options: { batchId?: string } = {},
 ): Promise<void> {
   const eventDate = event.eventDate.toISOString().slice(0, 10);
-  const calendar = buildIcs({
-    uid: `${registration.id}@chisholmnetball.com`,
-    title: `${event.name} trials`,
-    start: localDateTimeToUtc(event.eventDate, event.startTime),
-    end: localDateTimeToUtc(event.eventDate, event.endTime),
-    location: event.venue,
-    description: 'Bring your QR code to check in. Bib numbers are issued at the door.',
-    stamp: new Date(),
-  });
+  const calendar = buildTrialCalendar(event, `${registration.id}@chisholmnetball.com`);
   const email = buildConfirmation({
     playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
     event: { name: event.name, eventDate, venue: event.venue, firstWhistle: event.firstWhistle },

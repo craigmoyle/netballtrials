@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { RegistrationStatus } from '@netball-trials/types';
+import { Link } from 'react-router-dom';
+import type { RegistrationStatus, TicketDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
@@ -12,7 +13,11 @@ export function RegistrationPendingPage({
   checkoutSessionId: string;
 }) {
   const [status, setStatus] = useState<RegistrationStatus | null>(null);
+  const [ticket, setTicket] = useState<TicketDTO | null>(null);
+  const [ticketPath, setTicketPath] = useState<string | null>(null);
+  const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -23,11 +28,18 @@ export function RegistrationPendingPage({
         const result = await client.getRegistrationStatus(checkoutSessionId);
         if (!active) return;
         setStatus(result.status);
-        if (result.status === 'PENDING') {
+        setError(null);
+        if (result.status === 'PAID') {
+          setTicket(result.ticket ?? null);
+          setTicketPath(result.ticketPath ?? null);
+          setCalendarUrl(result.calendarUrl ?? null);
+        } else if (result.status === 'PENDING') {
           timer = setTimeout(poll, 3000);
         }
       } catch {
-        if (active) setError('Could not check the payment status.');
+        if (!active) return;
+        setError('Could not check the payment status. You can retry here; do not pay again while the status is being checked.');
+        timer = setTimeout(poll, 5000);
       }
     };
 
@@ -36,34 +48,52 @@ export function RegistrationPendingPage({
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [client, checkoutSessionId]);
-
-  if (error) {
-    return <p role="alert">{error}</p>;
-  }
+  }, [client, checkoutSessionId, retry]);
 
   if (status === 'PAID') {
     return (
-      <section>
-        <h2>Payment received</h2>
-        <p>Check your email for the QR ticket and calendar invite.</p>
+      <section className="public-page">
+        <h1>Payment received</h1>
+        {ticket ? (
+          <>
+            <p>{ticket.playerName} is registered for {ticket.event.name}.</p>
+            <img className="ticket-qr" src={ticket.qrCode} alt={`Check-in QR code for ${ticket.playerName}`} />
+            <p>{ticket.event.eventDate?.slice(0, 10)} · arrival {ticket.event.startTime} · {ticket.event.venue}</p>
+            {ticketPath ? <p><Link to={ticketPath}>Open ticket</Link></p> : null}
+            {calendarUrl ? <p><a href={calendarUrl} download>Download calendar invite</a></p> : null}
+          </>
+        ) : (
+          <p>Check your email for the QR ticket and calendar invite.</p>
+        )}
+        <p>Keep the QR code available for check-in. Do not share it with anyone else.</p>
       </section>
     );
   }
 
   if (status === 'EXPIRED' || status === 'FAILED') {
     return (
-      <section>
-        <h2>Payment not completed</h2>
+      <section className="public-page">
+        <h1>Payment not completed</h1>
         <p>That checkout has closed. You can register again from the trial page.</p>
       </section>
     );
   }
 
+  if (status === 'WITHDRAWN') {
+    return (
+      <section className="public-page">
+        <h1>Registration not active</h1>
+        <p>This registration is no longer active. Contact the club if you need help.</p>
+      </section>
+    );
+  }
+
   return (
-    <section>
-      <h2>Confirming your payment</h2>
-      <p>This page updates automatically. You can also check your email.</p>
+    <section className="public-page">
+      <h1>Confirming your payment</h1>
+      <p>This page updates automatically. Do not start another payment while the status is pending.</p>
+      {error ? <p role="alert">{error}</p> : null}
+      <button type="button" onClick={() => { setError(null); setRetry((count) => count + 1); }}>Check payment again</button>
     </section>
   );
 }
