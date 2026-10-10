@@ -12,7 +12,8 @@
     "start": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "send-reminders": "tsx src/scripts/send-reminders.ts"
+    "send-reminders": "tsx src/scripts/send-reminders.ts",
+    "retention": "tsx src/scripts/retention.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
