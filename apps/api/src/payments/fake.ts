@@ -25,11 +25,11 @@ export function createFakePaymentProvider(): PaymentProvider & {
       }
       try {
         const parsed = JSON.parse(rawBody.toString('utf8'));
-        return parsed && parsed.kind === 'checkout_completed'
+        return parsed && ['checkout_completed', 'checkout_expired', 'checkout_failed'].includes(parsed.kind)
           ? (parsed as WebhookEvent)
-          : { kind: 'ignored' };
+          : { kind: 'ignored', stripeEventId: String(parsed?.stripeEventId ?? 'fake_ignored') };
       } catch {
-        return { kind: 'ignored' };
+        return { kind: 'ignored', stripeEventId: 'fake_malformed' };
       }
     },
   };

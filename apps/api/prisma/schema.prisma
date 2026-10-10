@@ -131,7 +131,9 @@ model Registration {
   ageFlagged             Boolean            @default(false)
   amountCents            Int
   currency               String             @default("aud")
-  paymentRef             String?
+  checkoutSessionId      String?            @unique
+  paymentIntentId        String?            @unique
+  legacyPaymentRef       String?
   paidAt                 DateTime?
   qrToken                String?            @unique
   bibNumber              Int?
@@ -145,6 +147,15 @@ model Registration {
   emailLogs              EmailLog[]
 
   @@index([eventId, status])
+}
+
+model ProcessedStripeEvent {
+  stripeEventId String   @id
+  eventType     String
+  outcome       String
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model CheckInSession {

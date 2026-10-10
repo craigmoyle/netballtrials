@@ -41,18 +41,51 @@ export function createStripePaymentProvider(config: {
         config.webhookSecret,
       );
 
-      if (event.type === 'checkout.session.completed') {
+      if (
+        event.type === 'checkout.session.completed' ||
+        event.type === 'checkout.session.async_payment_succeeded'
+      ) {
         const session = event.data.object as Stripe.Checkout.Session;
+        const paymentIntent = session.payment_intent;
         return {
           kind: 'checkout_completed',
-          registrationId: String(session.client_reference_id ?? ''),
+          stripeEventId: event.id,
+          registrationId: session.client_reference_id ?? '',
           sessionId: session.id,
           amountCents: session.amount_total ?? 0,
-          paymentRef: String(session.payment_intent ?? session.id),
+          currency: (session.currency ?? '').toLowerCase(),
+          paymentStatus:
+            session.payment_status === 'paid'
+              ? 'paid'
+              : session.payment_status === 'no_payment_required'
+                ? 'no_payment_required'
+                : 'unpaid',
+          paymentIntentId:
+            typeof paymentIntent === 'string' ? paymentIntent : paymentIntent?.id ?? null,
         };
       }
 
-      return { kind: 'ignored' };
+      if (event.type === 'checkout.session.expired') {
+        const session = event.data.object as Stripe.Checkout.Session;
+        return {
+          kind: 'checkout_expired',
+          stripeEventId: event.id,
+          registrationId: session.client_reference_id ?? '',
+          sessionId: session.id,
+        };
+      }
+
+      if (event.type === 'checkout.session.async_payment_failed') {
+        const session = event.data.object as Stripe.Checkout.Session;
+        return {
+          kind: 'checkout_failed',
+          stripeEventId: event.id,
+          registrationId: session.client_reference_id ?? '',
+          sessionId: session.id,
+        };
+      }
+
+      return { kind: 'ignored', stripeEventId: event.id };
     },
   };
 }

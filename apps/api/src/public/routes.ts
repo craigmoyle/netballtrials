@@ -63,7 +63,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
 
       await deps.prisma.registration.update({
         where: { id: registration.id },
-        data: { paymentRef: checkout.sessionId },
+        data: { checkoutSessionId: checkout.sessionId },
       });
 
       return reply

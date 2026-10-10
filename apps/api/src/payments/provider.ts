@@ -13,15 +13,22 @@ export interface CheckoutSession {
   sessionId: string;
 }
 
+interface CheckoutEventBase {
+  stripeEventId: string;
+  registrationId: string;
+  sessionId: string;
+}
+
 export type WebhookEvent =
-  | {
+  | (CheckoutEventBase & {
       kind: 'checkout_completed';
-      registrationId: string;
-      sessionId: string;
       amountCents: number;
-      paymentRef: string;
-    }
-  | { kind: 'ignored' };
+      currency: string;
+      paymentStatus: 'paid' | 'unpaid' | 'no_payment_required';
+      paymentIntentId: string | null;
+    })
+  | (CheckoutEventBase & { kind: 'checkout_expired' | 'checkout_failed' })
+  | { kind: 'ignored'; stripeEventId: string };
 
 export interface PaymentProvider {
   createCheckout(request: CheckoutRequest): Promise<CheckoutSession>;

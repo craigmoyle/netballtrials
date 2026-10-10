@@ -15,8 +15,8 @@ beforeEach(async () => {
       eventId: event.id, playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
       dateOfBirth: new Date('2011-04-02T00:00:00Z'), parentName: 'Anne', parentEmail: 'anne@example.com',
       parentMobile: '0400000000', memberAssociation: 'MENA', rank1Position: 'GS', amountCents: 3500,
-      policyReference: 'x', expiresAt: new Date(Date.now() + 86_400_000), paymentRef: 'cs_1',
-      eligibilityConfirmedAt: new Date('2026-08-01T00:00:00Z'),
+      policyReference: 'x', expiresAt: new Date(Date.now() + 86_400_000), checkoutSessionId: 'cs_1',
+      eligibilityConfirmedAt: new Date('2026-08-01T00:00:00Z'), currency: 'aud',
     },
   });
   registrationId = reg.id;
@@ -30,7 +30,7 @@ describe('stripe webhook', () => {
     expect(res.json().error).toBe('invalid_signature');
   });
   it('marks a registration paid once, issues a QR, and is idempotent', async () => {
-    const fake = { kind: 'checkout_completed' as const, registrationId, sessionId: 'cs_1', amountCents: 3500, paymentRef: 'pi_1' };
+    const fake = { kind: 'checkout_completed' as const, stripeEventId: 'evt_paid_1', registrationId, sessionId: 'cs_1', amountCents: 3500, currency: 'aud', paymentStatus: 'paid' as const, paymentIntentId: 'pi_1' };
     const res1 = await app.inject({ method: 'POST', url: '/api/webhooks/stripe', headers: { 'stripe-signature': 'ok', 'content-type': 'application/json' }, payload: fake });
     const res2 = await app.inject({ method: 'POST', url: '/api/webhooks/stripe', headers: { 'stripe-signature': 'ok', 'content-type': 'application/json' }, payload: fake });
     expect(res1.json().status).toBe('ok');
@@ -41,7 +41,7 @@ describe('stripe webhook', () => {
     expect(reg?.paidAt).not.toBeNull();
   });
   it('ignores a payment for an amount that does not match', async () => {
-    const fake = { kind: 'checkout_completed' as const, registrationId, sessionId: 'cs_1', amountCents: 999, paymentRef: 'pi_1' };
+    const fake = { kind: 'checkout_completed' as const, stripeEventId: 'evt_bad_amount', registrationId, sessionId: 'cs_1', amountCents: 999, currency: 'aud', paymentStatus: 'paid' as const, paymentIntentId: 'pi_1' };
     const res = await app.inject({ method: 'POST', url: '/api/webhooks/stripe', headers: { 'stripe-signature': 'ok', 'content-type': 'application/json' }, payload: fake });
     expect(res.json().status).toBe('ignored');
     expect((await prisma.registration.findUnique({ where: { id: registrationId } }))?.status).toBe('PENDING');
