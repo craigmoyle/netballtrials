@@ -1,0 +1,117 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #211b20;
+  background: #f7f5f7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --plum: #603259;
+  --plum-dark: #482345;
+  --ink: #211b20;
+  --paper: #ffffff;
+  --line: #817681;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  background: #f7f5f7;
+  line-height: 1.5;
+}
+
+button, input, select, textarea { font: inherit; }
+
+a { color: var(--plum-dark); text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+
+:focus-visible {
+  outline: 3px solid #a65c00;
+  outline-offset: 3px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 4.5rem;
+  padding: 0.75rem clamp(1rem, 4vw, 3rem);
+  color: #fff;
+  background: var(--plum);
+}
+
+.app-brand {
+  color: #fff;
+  font-size: 1.125rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-right: auto;
+}
+
+.app-nav a { color: #fff; font-weight: 650; }
+.app-header button { margin-left: auto; }
+
+.app-main {
+  width: min(100% - 2rem, 76rem);
+  margin-inline: auto;
+  padding-block: clamp(1.5rem, 4vw, 3rem);
+}
+
+.app-main > section { max-width: 62rem; }
+
+h1, h2, h3 { line-height: 1.2; }
+h1 { margin-block: 0 1rem; font-size: clamp(1.75rem, 4vw, 2.5rem); }
+h2 { margin-block: 2rem 0.75rem; font-size: clamp(1.25rem, 3vw, 1.6rem); }
+
+form { max-width: 44rem; }
+form p { margin-block: 1rem; }
+label { display: block; margin-bottom: 0.3rem; font-weight: 650; }
+
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+  width: min(100%, 36rem);
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+}
+
+input[type="checkbox"], input[type="radio"] { width: 1.2rem; height: 1.2rem; accent-color: var(--plum); }
+textarea { min-height: 8rem; resize: vertical; }
+
+button {
+  min-height: 2.75rem;
+  padding: 0.55rem 1rem;
+  color: #fff;
+  font-weight: 650;
+  background: var(--plum);
+  border: 1px solid var(--plum);
+  border-radius: 0.3rem;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { background: var(--plum-dark); }
+button:disabled { opacity: 0.62; cursor: not-allowed; }
+
+.app-header a:focus-visible, .app-header button:focus-visible {
+  outline-color: #ffd66b;
+}
+
+@media (max-width: 38rem) {
+  .app-header { align-items: flex-start; flex-wrap: wrap; gap: 0.75rem 1rem; }
+  .app-nav { order: 3; width: 100%; }
+  .app-header button { margin-left: auto; }
+}
+
+::selection { color: #fff; background: var(--plum); }

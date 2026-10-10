@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { EventDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
@@ -35,7 +36,7 @@ export function EventsPage({ client }: { client: Client }) {
     <section>
       <h1>Events</h1>
       <p>
-        <a href="/admin/events/new">New event</a>
+        <Link to="/admin/events/new">New event</Link>
       </p>
       {events.length === 0 ? (
         <p>No events yet.</p>
@@ -43,7 +44,7 @@ export function EventsPage({ client }: { client: Client }) {
         <ul>
           {events.map((event) => (
             <li key={event.id}>
-              <a href={`/admin/events/${event.id}`}>{event.name}</a>
+              <Link to={`/admin/events/${event.id}`}>{event.name}</Link>
               <p>
                 {event.eventDate.slice(0, 10)} · {event.division} {event.section} · {event.courts} courts
               </p>

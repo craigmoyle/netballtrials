@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { CheckInResult } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 import { announceResult, resultLabel } from './feedback';
@@ -94,7 +95,7 @@ export function ScanPage({ client }: { client: Client }) {
         </p>
       ) : null}
       <p>
-        <a href="/check-in/lookup">Look up by name instead</a>
+        <Link to="/check-in/lookup">Look up by name instead</Link>
       </p>
     </section>
   );

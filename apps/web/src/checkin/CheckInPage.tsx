@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
 
 export function CheckInPage({ client, eventId }: { client: Client; eventId?: string }) {
+  const navigate = useNavigate();
   const [eventIdInput, setEventIdInput] = useState(eventId ?? '');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +17,7 @@ export function CheckInPage({ client, eventId }: { client: Client; eventId?: str
     setError(null);
     try {
       await client.openCheckIn(eventIdInput, pin);
-      window.location.assign('/check-in/scan');
+      navigate('/check-in/scan');
     } catch (err) {
       const status = (err as { status?: number }).status;
       if (status === 401) setError('PIN is incorrect.');

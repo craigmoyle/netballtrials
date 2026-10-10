@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { EventDTO, PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
@@ -86,7 +87,7 @@ export function PlannerPage({ client, eventId }: { client: Client; eventId: stri
       {plan ? (
         <p>
           {plan.status} — {plan.rounds} rounds.{' '}
-          <a href={`/admin/events/${eventId}/sheets`}>Print selector sheets</a>
+          <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
         </p>
       ) : null}
       {gaps.length > 0 ? (
