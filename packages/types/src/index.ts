@@ -124,3 +124,17 @@ export interface PlannerGapDTO {
   message: string;
   detail?: Record<string, unknown>;
 }
+
+export interface ReviewItemDTO {
+  id: string;
+  reason: string;
+  note: string | null;
+  resolvedAt: string | null;
+  resolvedByUserId: string | null;
+  registration: {
+    id: string;
+    playerName: string;
+    bibNumber: number | null;
+    ageFlagged: boolean;
+  };
+}
