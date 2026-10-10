@@ -13,6 +13,8 @@ import { CheckInPage } from './checkin/CheckInPage';
 import { CheckInLayout } from './checkin/CheckInLayout';
 import { ScanPage } from './checkin/ScanPage';
 import { LookupPanel } from './checkin/LookupPanel';
+import { PlannerPage } from './planner/PlannerPage';
+import { SheetsPage } from './planner/SheetsPage';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? 'http://localhost:3000');
 
@@ -35,6 +37,18 @@ function TicketRoute({ client }: { client: Client }) {
   const { token } = useParams();
   if (!token) return <Navigate to="/" replace />;
   return <TicketPage client={client} token={token} />;
+}
+
+function PlannerRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <PlannerPage client={client} eventId={id} />;
+}
+
+function SheetsRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <SheetsPage client={client} eventId={id} />;
 }
 
 
@@ -102,6 +116,8 @@ export function App() {
         <Route path="events" element={<EventsPage client={client} />} />
         <Route path="events/new" element={<EventFormPage client={client} />} />
         <Route path="events/:id" element={<EventFormPage client={client} />} />
+        <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
+        <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
       </Route>
       <Route path="*" element={<Navigate to="/admin/events" replace />} />
     </Routes>
