@@ -1,5 +1,6 @@
 import { computeMinimumRounds, totalTimeMinutes } from './minimum';
 import { verifyPlan } from './verify';
+import { extraPositionSpread, repeatOpponentPairs, restSpread } from './fairness';
 import { COURT_POSITIONS } from './types';
 import type {
   PlannerGap,
@@ -163,7 +164,7 @@ function preflightGaps(input: PlannerInput, rounds: number): PlannerGap[] | null
   return gaps.length > 0 ? gaps : null;
 }
 
-export function generatePlan(input: PlannerInput, seed: number): PlannerResult {
+function buildPlan(input: PlannerInput, seed: number): PlannerResult {
   const rounds = computeMinimumRounds(input);
 
   const preflight = preflightGaps(input, rounds);
@@ -275,4 +276,37 @@ export function generatePlan(input: PlannerInput, seed: number): PlannerResult {
     ok: false,
     gaps: [...gaps, { code: 'no_solution', message: 'the generator could not satisfy every rule' }],
   };
+}
+
+type PlanScore = [number, number, number];
+
+function scorePlan(plan: PlannerPlan, input: PlannerInput): PlanScore {
+  return [repeatOpponentPairs(plan), extraPositionSpread(plan, input), restSpread(plan, input)];
+}
+
+function compareScores(a: PlanScore, b: PlanScore): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+
+export function generatePlan(input: PlannerInput, seed: number): PlannerResult {
+  const candidates = [seed, seed + 1, seed + 2].map((candidateSeed) =>
+    buildPlan(input, candidateSeed),
+  );
+  const successful = candidates.filter(
+    (candidate): candidate is { ok: true; plan: PlannerPlan } => candidate.ok,
+  );
+  if (successful.length === 0) {
+    return candidates[0];
+  }
+
+  let best = successful[0];
+  let bestScore = scorePlan(best.plan, input);
+  for (let index = 1; index < successful.length; index += 1) {
+    const candidateScore = scorePlan(successful[index].plan, input);
+    if (compareScores(candidateScore, bestScore) < 0) {
+      best = successful[index];
+      bestScore = candidateScore;
+    }
+  }
+  return best;
 }
