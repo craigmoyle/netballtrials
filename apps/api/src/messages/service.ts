@@ -1,11 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
 
-export async function sendEventMessage(
+export async function deliverEventMessage(
   deps: { prisma: PrismaClient; mailer: EmailProvider },
   eventId: string,
   message: { subject: string; text: string },
   now: Date,
+  kind: string,
 ): Promise<{ sent: number; failed: number }> {
   const registrations = await deps.prisma.registration.findMany({
     where: { eventId, status: 'PAID' },
@@ -31,7 +32,7 @@ export async function sendEventMessage(
           registrationId,
           to,
           subject: message.subject,
-          kind: 'message',
+          kind,
           body: message.text,
           sentAt: now,
         },
@@ -44,7 +45,7 @@ export async function sendEventMessage(
           registrationId,
           to,
           subject: message.subject,
-          kind: 'message',
+          kind,
           body: message.text,
           failedAt: now,
           error: error instanceof Error ? error.message : String(error),
@@ -55,4 +56,13 @@ export async function sendEventMessage(
   }
 
   return { sent, failed };
+}
+
+export async function sendEventMessage(
+  deps: { prisma: PrismaClient; mailer: EmailProvider },
+  eventId: string,
+  message: { subject: string; text: string },
+  now: Date,
+): Promise<{ sent: number; failed: number }> {
+  return deliverEventMessage(deps, eventId, message, now, 'message');
 }
