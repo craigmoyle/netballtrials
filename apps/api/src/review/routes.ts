@@ -4,8 +4,10 @@ import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { withdrawRegistration } from '../registrations/service';
 import { ensureReviewItems, listReviewQueue, resolveReviewItem } from './service';
+import { sendEventMessage } from '../messages/service';
 
 const resolveSchema = z.object({ note: z.string().max(2000).optional() });
+const messageSchema = z.object({ subject: z.string().min(1).max(200), text: z.string().min(1).max(5000) });
 
 export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/admin/events/:id/review', { preHandler: requireAdmin(deps) }, async (req) => {
@@ -54,6 +56,21 @@ export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void 
       };
     },
   );
+
+  app.post('/api/admin/events/:id/messages', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = messageSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'validation_failed' });
+    }
+    const { id } = req.params as { id: string };
+    const result = await sendEventMessage(
+      { prisma: deps.prisma, mailer: deps.mailer },
+      id,
+      { subject: parsed.data.subject, text: parsed.data.text },
+      new Date(),
+    );
+    return result;
+  });
 
   app.get('/api/admin/events/:id/email-log', { preHandler: requireAdmin(deps) }, async (req) => {
     const { id } = req.params as { id: string };
