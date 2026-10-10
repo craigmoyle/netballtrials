@@ -1,8 +1,13 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { ReviewPage } from './ReviewPage';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+function renderPage(client: Record<string, unknown>) {
+  return render(<MemoryRouter><ReviewPage client={client as any} eventId="e1" /></MemoryRouter>);
+}
 
 describe('ReviewPage', () => {
   it('confirms a withdrawal before applying it', async () => {
@@ -13,27 +18,35 @@ describe('ReviewPage', () => {
       listReview: vi.fn().mockResolvedValue([{ id: 'i1', reason: 'age_out_of_range', registration: { id: 'r1', playerName: 'Ada Lovelace' } }]),
       withdrawRegistration,
     };
-    render(<ReviewPage client={client as any} eventId="e1" />);
+    renderPage(client);
     fireEvent.click(await screen.findByRole('button', { name: /withdraw/i }));
     expect(confirm).toHaveBeenCalled();
     expect(withdrawRegistration).toHaveBeenCalledWith('e1', 'r1');
   });
 
-  it('lists flagged registrations and lets an admin resolve one', async () => {
+  it('refreshes the open queue after a registration is withdrawn', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const listReview = vi.fn().mockResolvedValueOnce([
+      { id: 'i1', reason: 'age_out_of_range', registration: { id: 'r1', playerName: 'Ada Lovelace' } },
+    ]).mockResolvedValueOnce([]);
+    const withdrawRegistration = vi.fn().mockResolvedValue({ status: 'WITHDRAWN' });
+    renderPage({ listReview, withdrawRegistration });
+    fireEvent.click(await screen.findByRole('button', { name: /withdraw/i }));
+    await waitFor(() => expect(withdrawRegistration).toHaveBeenCalledWith('e1', 'r1'));
+    expect(await screen.findByText(/nothing to review/i)).toBeInTheDocument();
+    expect(listReview).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the note entered when resolving a review item', async () => {
     const resolveReview = vi.fn().mockResolvedValue({ id: 'i1', resolvedAt: '2026-09-01T00:00:00Z' });
     const client = {
-      listReview: vi.fn().mockResolvedValue([
-        {
-          id: 'i1',
-          reason: 'age_out_of_range',
-          registration: { playerName: 'Ada Lovelace' },
-        },
-      ]),
+      listReview: vi.fn().mockResolvedValue([{ id: 'i1', reason: 'age_out_of_range', registration: { playerName: 'Ada Lovelace' } }]),
       resolveReview,
     };
-    render(<ReviewPage client={client as any} eventId="e1" />);
+    renderPage(client);
     expect(await screen.findByText('Ada Lovelace')).toBeTruthy();
-    (await screen.findByRole('button', { name: /mark reviewed/i })).click();
-    expect(resolveReview).toHaveBeenCalledWith('e1', 'i1', expect.any(String));
+    fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Checked with association' } });
+    fireEvent.click(await screen.findByRole('button', { name: /mark reviewed/i }));
+    expect(resolveReview).toHaveBeenCalledWith('e1', 'i1', 'Checked with association');
   });
 });

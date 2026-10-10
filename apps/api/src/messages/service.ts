@@ -277,6 +277,14 @@ export async function deliverEventMessage(
   return sendBatch(deps, eventId, undefined, message, now, kind, options);
 }
 
+export async function countEventMessageRecipients(prisma: PrismaClient, eventId: string): Promise<number> {
+  const registrations = await prisma.registration.findMany({
+    where: { eventId, status: 'PAID' },
+    select: { parentEmail: true },
+  });
+  return new Set(registrations.map((registration) => registration.parentEmail.trim().toLowerCase())).size;
+}
+
 export async function sendEventMessage(
   deps: DeliveryDeps,
   eventId: string,

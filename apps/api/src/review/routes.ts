@@ -6,7 +6,7 @@ import { requireAdmin } from '../auth/guard';
 import { withdrawRegistration } from '../registrations/service';
 import { sendConfirmation } from '../registrations/confirmation';
 import { ensureReviewItems, listReviewQueue, resolveReviewItem } from './service';
-import { EmailBatchConflictError, getDeliverySummary, reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../messages/service';
+import { EmailBatchConflictError, countEventMessageRecipients, getDeliverySummary, reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../messages/service';
 
 const resolveSchema = z.object({ note: z.string().max(2000).optional() });
 const messageSchema = z.object({
@@ -66,6 +66,13 @@ export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void 
       };
     },
   );
+
+  app.get('/api/admin/events/:id/message-recipients', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const event = await deps.prisma.event.findUnique({ where: { id }, select: { id: true } });
+    if (!event) return reply.code(404).send({ error: 'not_found' });
+    return { count: await countEventMessageRecipients(deps.prisma, id) };
+  });
 
   app.post('/api/admin/events/:id/messages', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = messageSchema.safeParse(req.body ?? {});

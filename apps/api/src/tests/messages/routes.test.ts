@@ -18,6 +18,18 @@ beforeEach(async () => {
 });
 
 describe('admin message delivery routes', () => {
+  it('previews the exact distinct paid recipient count', async () => {
+    await prisma.registration.create({ data: registrationFixture(eventId, { playerFirstName: 'Sibling', playerNameNormalized: 'sibling', parentEmail: 'ANNE@example.com', status: 'PAID' }) });
+    await prisma.registration.create({ data: registrationFixture(eventId, { playerFirstName: 'Different', playerNameNormalized: 'different', parentEmail: 'BO@example.com', status: 'PAID' }) });
+    await prisma.registration.create({ data: registrationFixture(eventId, { playerFirstName: 'Pending', playerNameNormalized: 'pending', parentEmail: 'pending@example.com', status: 'PENDING' }) });
+    await prisma.registration.create({ data: registrationFixture(eventId, { playerFirstName: 'Withdrawn', playerNameNormalized: 'withdrawn', parentEmail: 'gone@example.com', status: 'WITHDRAWN' }) });
+    const denied = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/message-recipients` });
+    const preview = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/message-recipients`, cookies: { nt_session: cookie } });
+    expect(denied.statusCode).toBe(401);
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toEqual({ count: 2 });
+  });
+
   it('requires an admin and an idempotency batch ID', async () => {
     const unauthenticated = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/messages`, payload: { subject: 'Test', text: 'Body', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },

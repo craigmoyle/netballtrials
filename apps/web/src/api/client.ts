@@ -182,6 +182,7 @@ export function apiClient(baseUrl: string) {
         `/api/admin/events/${eventId}/registrations/${registrationId}/withdraw`,
         { method: 'POST' },
       ),
+    getMessageRecipientCount: (eventId: string) => request<{ count: number }>(baseUrl, `/api/admin/events/${eventId}/message-recipients`),
     sendMessage: async (eventId: string, message: { subject: string; text: string; batchId?: string }) => {
       const response = await fetch(`${baseUrl}/api/admin/events/${eventId}/messages`, {
         method: 'POST',
@@ -193,7 +194,7 @@ export function apiClient(baseUrl: string) {
       if (!response.ok) {
         throw new ApiError(response.status, body?.error ?? 'request_failed');
       }
-      return body as { sent: number; failed: number };
+      return body as { batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[]; sentThisRun: number; failedThisRun: number; ambiguousThisRun: number };
     },
     retryMessage: (eventId: string, batchId: string, deliveryIds: string[], includeAmbiguous = false) =>
       request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(

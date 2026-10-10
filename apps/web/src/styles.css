@@ -124,7 +124,8 @@ button:disabled { opacity: 0.62; cursor: not-allowed; }
   border-radius: 0.25rem;
 }
 
-.error-summary h2 { margin-top: 0; }
+.error-summary h2, .message-confirmation h2 { margin-top: 0; }
+.message-confirmation { max-width: 44rem; margin-block: 1.25rem; padding: 1rem 1.25rem; background: #fff; border: 1px solid var(--line); border-radius: 0.25rem; }
 .error-summary li + li { margin-top: 0.25rem; }
 
 input[aria-invalid="true"], select[aria-invalid="true"] { border-color: #9c1c26; }

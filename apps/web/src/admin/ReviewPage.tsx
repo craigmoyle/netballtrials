@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { ReviewItemDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
@@ -12,10 +13,12 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
   const [items, setItems] = useState<ReviewItemDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   async function refresh() {
     try {
       setItems(await client.listReview(eventId));
+      setError(null);
     } catch {
       setError('Could not load the review queue.');
     }
@@ -33,7 +36,8 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
     setBusy(true);
     setError(null);
     try {
-      await client.resolveReview(eventId, item.id, 'Reviewed');
+      await client.resolveReview(eventId, item.id, notes[item.id] ?? '');
+      setNotes((current) => { const next = { ...current }; delete next[item.id]; return next; });
       await refresh();
     } catch {
       setError('Could not resolve this item.');
@@ -59,6 +63,13 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
   return (
     <section>
       <h1>Review queue</h1>
+      <nav aria-label="Event workflows" className="workflow-links">
+        <Link to={`/admin/events/${eventId}`}>Event controls</Link>
+        <Link to={`/admin/events/${eventId}/roster`}>Roster and export</Link>
+        <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>
+        <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>
+        <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
+      </nav>
       {error ? <p role="alert">{error}</p> : null}
       {items.length === 0 ? <p>Nothing to review.</p> : null}
       <ul>
@@ -67,7 +78,7 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
             <span>{item.registration.playerName}</span> — {REASONS[item.reason] ?? item.reason}
             <p>
               <label htmlFor={`note-${item.id}`}>Note</label>
-              <input id={`note-${item.id}`} placeholder="Optional note" />
+              <input id={`note-${item.id}`} maxLength={2000} value={notes[item.id] ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Optional note" />
             </p>
             <button type="button" disabled={busy} onClick={() => resolve(item)}>
               Mark reviewed
