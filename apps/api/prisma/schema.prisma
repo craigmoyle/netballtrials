@@ -81,6 +81,8 @@ model Event {
   registrations        Registration[]
   checkInSessions      CheckInSession[]
   roundPlans           RoundPlan[]
+  reviewItems          ReviewItem[]
+  emailLogs            EmailLog[]
 }
 
 model MemberAssociation {
@@ -139,6 +141,9 @@ model Registration {
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
+  reviewItems            ReviewItem[]
+  emailLogs              EmailLog[]
+
   @@index([eventId, status])
 }
 
@@ -185,4 +190,37 @@ model RoundSlot {
   registrationId String
 
   @@index([planId, round])
+}
+
+model ReviewItem {
+  id               String       @id @default(cuid())
+  eventId          String
+  event            Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationId   String
+  registration     Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  reason           String
+  note             String?
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  createdAt        DateTime     @default(now())
+
+  @@index([eventId])
+  @@index([registrationId])
+}
+
+model EmailLog {
+  id             String        @id @default(cuid())
+  eventId        String
+  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationId String?
+  registration   Registration? @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  to             String
+  subject        String
+  kind           String
+  body           String
+  sentAt         DateTime      @default(now())
+  failedAt       DateTime?
+  error          String?
+
+  @@index([eventId])
 }

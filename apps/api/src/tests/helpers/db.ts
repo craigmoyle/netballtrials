@@ -5,6 +5,8 @@ export async function resetDb(): Promise<void> {
   await prisma.loginToken.deleteMany();
   await prisma.staffUser.deleteMany();
   await prisma.checkInSession.deleteMany();
+  await prisma.emailLog.deleteMany();
+  await prisma.reviewItem.deleteMany();
   await prisma.roundSlot.deleteMany();
   await prisma.roundPlan.deleteMany();
   await prisma.registration.deleteMany();
