@@ -1,7 +1,8 @@
+import { POSITIONS } from '@netball-trials/types';
 import { z } from 'zod';
 import { isCalendarDate } from '../validation/date';
 
-export const positionSchema = z.enum(['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK']);
+export const positionSchema = z.enum(POSITIONS);
 export type RegistrationPosition = z.infer<typeof positionSchema>;
 
 function positionsAreDistinct(data: {

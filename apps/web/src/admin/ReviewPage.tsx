@@ -26,10 +26,10 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
 
   useEffect(() => {
     let active = true;
-    refresh().finally(() => undefined);
-    return () => {
-      active = false;
-    };
+    client.listReview(eventId)
+      .then((loaded) => { if (active) { setItems(loaded); setError(null); } })
+      .catch(() => { if (active) setError('Could not load the review queue.'); });
+    return () => { active = false; };
   }, [client, eventId]);
 
   async function resolve(item: ReviewItemDTO) {

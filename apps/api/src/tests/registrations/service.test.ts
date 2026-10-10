@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
+import { eventFixture } from '../helpers/fixtures';
 import { createPendingRegistration, expireStalePending, RegistrationConflictError, RegistrationValidationError } from '../../registrations/service';
 
 let eventId: string;
@@ -64,12 +65,3 @@ describe('createPendingRegistration', () => {
     await expect(createPendingRegistration(prisma, eventId, input, new Date())).rejects.toMatchObject({ reason: 'closed' });
   });
 });
-
-function eventFixture() {
-  return {
-    name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
-    eventDate: new Date('2026-09-12T00:00:00.000Z'), venue: 'SNC', startTime: '08:30', endTime: '12:00',
-    firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 5,
-    rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2, minAge: 12, maxAge: 15,
-  };
-}

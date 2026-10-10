@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient, type RegistrationStatus } from '@prisma/client';
+import { melbourneDateKey } from '@netball-trials/types';
 
 const BATCH_SIZE = 100;
 const ANONYMIZED_DOB = new Date('1900-01-01T00:00:00.000Z');
@@ -10,14 +11,6 @@ export function retentionCutoff(eventDate: Date): Date {
   const day = eventDate.getUTCDate();
   const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   return new Date(Date.UTC(year, month, Math.min(day, lastDay)));
-}
-
-function melbourneDateKey(date: Date): string {
-  const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
 export function isPastRetentionCutoff(eventDate: Date, now: Date): boolean {

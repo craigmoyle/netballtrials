@@ -1,6 +1,4 @@
-import type { PlanSlot, PlannerPlayer, Position } from './types';
-
-const POSITIONS: Position[] = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'];
+import { COURT_POSITIONS, type PlanSlot, type PlannerPlayer } from './types';
 type EventLabel = { name: string; eventDate: string; venue: string };
 
 type SheetInput = {
@@ -20,7 +18,7 @@ function escapeHtml(value: string): string {
 function renderSection(input: SheetInput): string {
   const players = new Map(input.players.map((player) => [player.registrationId, player]));
   const slots = new Map(input.slots.map((slot) => [`${slot.team}:${slot.position}`, slot]));
-  const team = (teamId: 0 | 1) => POSITIONS.map((position) => {
+  const team = (teamId: 0 | 1) => COURT_POSITIONS.map((position) => {
     const slot = slots.get(`${teamId}:${position}`);
     const player = slot ? players.get(slot.registrationId) : undefined;
     if (!player) return `<tr><th scope="row">${position}</th><td></td><td></td></tr>`;

@@ -255,7 +255,7 @@ function buildPlan(
             trial[index] = alternative;
             const trialAssignment = assignCourt(trial, input);
             if (!trialAssignment) continue;
-            const [incoming] = unselected.splice(alternateIndex, 1);
+            unselected.splice(alternateIndex, 1);
             unselected.push(courtPlayers[index]);
             courtPlayers = trial;
             byCourt.set(court, trial);
@@ -319,7 +319,7 @@ function maxRoundsWithinWindow(input: PlannerInput): number {
   return duration > 0 ? Math.floor((input.windowMinutes + input.changeoverMinutes) / duration) : 0;
 }
 
-function failureFrom(candidates: PlannerResult[], input: PlannerInput): PlannerResult {
+function failureFrom(candidates: PlannerResult[]): PlannerResult {
   const failed = candidates.filter((candidate): candidate is { ok: false; gaps: PlannerGap[] } => !candidate.ok);
   const gaps = failed.flatMap((candidate) => candidate.gaps);
   const unique = [...new Map(gaps.map((gap) => [`${gap.code}:${gap.message}`, gap])).values()];
@@ -344,7 +344,7 @@ export function generatePlan(input: PlannerInput, seed: number): PlannerResult {
     if (best) return best;
     lastCandidates = candidates;
   }
-  return failureFrom(lastCandidates, input);
+  return failureFrom(lastCandidates);
 }
 
 export function generatePlanFromPrefix(
@@ -371,5 +371,5 @@ export function generatePlanFromPrefix(
     if (best) return best;
     lastCandidates = candidates;
   }
-  return failureFrom(lastCandidates, input);
+  return failureFrom(lastCandidates);
 }

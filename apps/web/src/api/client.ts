@@ -12,18 +12,18 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
-  let response: Response;
+async function fetchResponse(baseUrl: string, path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && !headers.has('content-type')) headers.set('content-type', 'application/json');
   try {
-    response = await fetch(`${baseUrl}${path}`, {
-      credentials: 'include',
-      ...init,
-      headers: { ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(init?.headers ?? {}) },
-    });
+    return await fetch(`${baseUrl}${path}`, { credentials: 'include', ...init, headers });
   } catch {
     throw new ApiError(0, 'network_error');
   }
+}
 
+async function request<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
+  const response = await fetchResponse(baseUrl, path, init);
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
 
@@ -39,11 +39,7 @@ async function planAction(
   path: string,
   init?: RequestInit,
 ): Promise<{ ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] }> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: { ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(init?.headers ?? {}) },
-  });
+  const response = await fetchResponse(baseUrl, path, init);
   const body = await response.json().catch(() => null);
   if (response.status === 422) {
     return { ok: false, gaps: (body?.gaps ?? []) as PlannerGapDTO[] };
@@ -88,12 +84,7 @@ export function apiClient(baseUrl: string) {
     closeCheckIn: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in/close`, { method: 'POST' }),
     getRoster: (id: string) => request<RosterDTO>(baseUrl, `/api/admin/events/${id}/roster`),
     downloadRoster: async (id: string) => {
-      let response: Response;
-      try {
-        response = await fetch(`${baseUrl}/api/admin/events/${id}/roster/export`, { credentials: 'include' });
-      } catch {
-        throw new ApiError(0, 'network_error');
-      }
+      const response = await fetchResponse(baseUrl, `/api/admin/events/${id}/roster/export`);
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new ApiError(response.status, body?.error ?? 'request_failed');
@@ -166,9 +157,7 @@ export function apiClient(baseUrl: string) {
         body: JSON.stringify({ fromRound }),
       }),
     getSheetsHtml: async (eventId: string) => {
-      const response = await fetch(`${baseUrl}/api/admin/events/${eventId}/sheets`, {
-        credentials: 'include',
-      });
+      const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/sheets`);
       if (!response.ok) {
         throw new ApiError(response.status, 'request_failed');
       }
@@ -189,10 +178,8 @@ export function apiClient(baseUrl: string) {
       ),
     getMessageRecipientCount: (eventId: string) => request<{ count: number }>(baseUrl, `/api/admin/events/${eventId}/message-recipients`),
     sendMessage: async (eventId: string, message: { subject: string; text: string; batchId?: string }) => {
-      const response = await fetch(`${baseUrl}/api/admin/events/${eventId}/messages`, {
+      const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/messages`, {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...message, batchId: message.batchId ?? crypto.randomUUID() }),
       });
       const body = await response.json().catch(() => null);

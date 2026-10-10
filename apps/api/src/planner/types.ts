@@ -1,6 +1,8 @@
-export type Position = 'GS' | 'GA' | 'WA' | 'C' | 'WD' | 'GD' | 'GK';
+import { POSITIONS as COURT_POSITIONS } from '@netball-trials/types';
+import type { Position } from '@netball-trials/types';
 
-export const COURT_POSITIONS: Position[] = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'];
+export { COURT_POSITIONS };
+export type { Position };
 
 export type TeamIndex = 0 | 1;
 

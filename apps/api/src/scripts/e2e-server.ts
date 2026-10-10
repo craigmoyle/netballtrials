@@ -6,6 +6,7 @@ import { createApp } from '../app';
 import { createDevMailer } from '../mail/dev-mailer';
 import { createFakePaymentProvider } from '../payments/fake';
 import { hashPin } from '../checkin/pin';
+import { COURT_POSITIONS } from '../planner/types';
 import { eventFixture, registrationFixture } from '../tests/helpers/fixtures';
 
 if (process.env.NODE_ENV !== 'test' || !process.env.DATABASE_URL?.endsWith('_test')) {
@@ -35,7 +36,6 @@ async function resetFixtures(): Promise<Record<string, string>> {
       courts: 2, rank1Min: 1, rank2Min: 0, rank3Min: 0,
     }) },
   });
-  const positions = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const;
   for (let index = 0; index < 28; index++) {
     const parentEmail = index === 27 ? 'PARENT1@example.test' : `parent${index + 1}@example.test`;
     await prisma.registration.create({
@@ -47,7 +47,7 @@ async function resetFixtures(): Promise<Record<string, string>> {
         parentEmail,
         dateOfBirth: new Date('2012-04-02T00:00:00Z'),
         memberAssociation: 'MENA',
-        rank1Position: positions[index % positions.length],
+        rank1Position: COURT_POSITIONS[index % COURT_POSITIONS.length],
         optInExtraPositions: true,
         status: 'PAID',
         ageFlagged: index < 2,

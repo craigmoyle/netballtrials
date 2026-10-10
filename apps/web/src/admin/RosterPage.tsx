@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Position, RosterDTO } from '@netball-trials/types';
+import { POSITIONS, type Position, type RosterDTO } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
-const POSITIONS: Position[] = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'];
 
 function saveCsv(blob: Blob, eventId: string): void {
   const url = URL.createObjectURL(blob);

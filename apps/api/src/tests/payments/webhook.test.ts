@@ -5,6 +5,7 @@ import { createFakePaymentProvider } from '../../payments/fake';
 import { confirmPayment } from '../../payments/webhook';
 import { signInAsNewAdmin } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
+import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 let app: ReturnType<typeof createApp>;
 let registrationId: string;
@@ -15,13 +16,7 @@ beforeEach(async () => {
   const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
   eventId = event.id;
   const reg = await prisma.registration.create({
-    data: {
-      eventId: event.id, playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
-      dateOfBirth: new Date('2011-04-02T00:00:00Z'), parentName: 'Anne', parentEmail: 'anne@example.com',
-      parentMobile: '0400000000', memberAssociation: 'MENA', rank1Position: 'GS', amountCents: 3500,
-      policyReference: 'x', expiresAt: new Date(Date.now() + 86_400_000), checkoutSessionId: 'cs_1',
-      eligibilityConfirmedAt: new Date('2026-08-01T00:00:00Z'), currency: 'aud',
-    },
+    data: { ...registrationFixture(event.id), policyReference: 'x', checkoutSessionId: 'cs_1' },
   });
   registrationId = reg.id;
   app = createApp({ payment: createFakePaymentProvider() });
@@ -92,12 +87,3 @@ describe('stripe webhook', () => {
     expect((await prisma.registration.findUnique({ where: { id: registrationId } }))?.status).toBe('PENDING');
   });
 });
-
-function eventFixture() {
-  return {
-    name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
-    eventDate: new Date('2026-09-12T00:00:00.000Z'), venue: 'SNC', startTime: '08:30', endTime: '12:00',
-    firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 5,
-    rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2, minAge: 12, maxAge: 15,
-  };
-}

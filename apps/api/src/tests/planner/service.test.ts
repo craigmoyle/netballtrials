@@ -156,8 +156,7 @@ describe('plan service', () => {
     const departing = await prisma.registration.findFirstOrThrow({ where: { eventId: event.id, status: 'PAID' } });
     await prisma.registration.update({ where: { id: departing.id }, data: { status: 'WITHDRAWN', checkedInAt: null, bibNumber: null } });
 
-    const regenerated = await regenerateFromRound(prisma, event.id, 3, new Date(), original.plan.id);
-    if (!regenerated.ok) console.log('withdrawal regeneration gaps', regenerated.gaps);
+    const regenerated = await regenerateFromRound(prisma, event.id, 3, new Date(1_000_000), original.plan.id);
     expect(regenerated.ok).toBe(true);
     if (!regenerated.ok) return;
     const revision = await prisma.roundPlan.findUniqueOrThrow({ where: { id: regenerated.plan.id }, include: { slots: true, players: true } });

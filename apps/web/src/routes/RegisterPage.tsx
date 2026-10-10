@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { MemberAssociationDTO, PublicEventDTO } from '@netball-trials/types';
+import { melbourneDateKey, POSITIONS, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
 
-const POSITIONS = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'];
 const FIELD_LABELS: Record<string, string> = {
   playerFirstName: 'Player first name',
   playerLastName: 'Player last name',
@@ -18,14 +17,6 @@ const FIELD_LABELS: Record<string, string> = {
   rank3Position: 'Third position',
   eligibilityConfirmed: 'Eligibility confirmation',
 };
-
-function melbourneToday(): string {
-  const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
-}
 
 const EMPTY = {
   playerFirstName: '',
@@ -189,7 +180,7 @@ export function RegisterPage({ client, eventId }: { client: Client; eventId: str
         </p>
         <p>
           <label htmlFor="dateOfBirth">Player date of birth</label>
-          <input id="dateOfBirth" type="date" max={melbourneToday()} value={form.dateOfBirth} aria-invalid={invalid('dateOfBirth') || undefined} aria-describedby={describedBy('dateOfBirth')} onChange={(e) => set('dateOfBirth', e.target.value)} />
+          <input id="dateOfBirth" type="date" max={melbourneDateKey(new Date())} value={form.dateOfBirth} aria-invalid={invalid('dateOfBirth') || undefined} aria-describedby={describedBy('dateOfBirth')} onChange={(e) => set('dateOfBirth', e.target.value)} />
           {invalid('dateOfBirth') ? <span id="dateOfBirth-error">Enter a valid date of birth.</span> : null}
         </p>
         <p>

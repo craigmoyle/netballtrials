@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generatePlan } from '../../planner/generate';
 import { verifyPlan } from '../../planner/verify';
+import { COURT_POSITIONS } from '../../planner/types';
 import { plannerInput } from '../helpers/planner';
 
 // Ruling: the plan's `{ courts: 2, players: 21 }` case is infeasible (21 players
@@ -57,7 +58,7 @@ describe('generatePlan', () => {
         registrationId: `roster-${String(index).padStart(2, '0')}`,
         name: `Player ${index}`,
         bibNumber: index + 1,
-        rank1: (['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const)[index % 7],
+        rank1: COURT_POSITIONS[index % COURT_POSITIONS.length],
         rank2: null,
         rank3: null,
         optInExtra: false,

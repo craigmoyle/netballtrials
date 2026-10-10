@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { verifyPlan } from '../../planner/verify';
+import { COURT_POSITIONS } from '../../planner/types';
 import { plannerInput } from '../helpers/planner';
 
 describe('verifyPlan', () => {
   it('accepts a complete one-court plan', () => {
     const input = plannerInput({ courts: 1, players: 14, rounds: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0 });
-    const positions = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const;
+    const positions = COURT_POSITIONS;
     const slots = positions.flatMap((position, index) => [
       { round: 1, court: 1, position, team: 0 as const, registrationId: `p${index}` },
       { round: 1, court: 1, position, team: 1 as const, registrationId: `p${index + 7}` },
@@ -21,7 +22,7 @@ describe('verifyPlan', () => {
     ['invalid position', (slot: any) => ({ ...slot, position: 'BENCH' })],
   ])('rejects a slot with %s', (_label, mutate) => {
     const input = plannerInput({ courts: 1, players: 14, rounds: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0 });
-    const positions = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const;
+    const positions = COURT_POSITIONS;
     const slots = positions.flatMap((position, index) => [
       { round: 1, court: 1, position, team: 0 as const, registrationId: `p${index}` },
       { round: 1, court: 1, position, team: 1 as const, registrationId: `p${index + 7}` },
@@ -32,7 +33,7 @@ describe('verifyPlan', () => {
 
   it('rejects an unknown registration even when the court grid is full', () => {
     const input = plannerInput({ courts: 1, players: 14, rounds: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0 });
-    const positions = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const;
+    const positions = COURT_POSITIONS;
     const slots = positions.flatMap((position, index) => [
       { round: 1, court: 1, position, team: 0 as const, registrationId: `p${index}` },
       { round: 1, court: 1, position, team: 1 as const, registrationId: `p${index + 7}` },
@@ -43,7 +44,7 @@ describe('verifyPlan', () => {
 
   it('rejects a court with a missing position and a duplicate position', () => {
     const input = plannerInput({ courts: 1, players: 14, rounds: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0 });
-    const positions = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const;
+    const positions = COURT_POSITIONS;
     const slots = positions.flatMap((position, index) => [
       { round: 1, court: 1, position, team: 0 as const, registrationId: `p${index}` },
       { round: 1, court: 1, position, team: 1 as const, registrationId: `p${index + 7}` },

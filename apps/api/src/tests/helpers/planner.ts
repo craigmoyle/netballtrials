@@ -1,4 +1,4 @@
-import type { PlannerInput, PlannerPlayer, Position } from '../../planner/types';
+import { COURT_POSITIONS, type PlannerInput, type PlannerPlayer, type Position } from '../../planner/types';
 import { prisma } from '../../db';
 import { eventFixture, registrationFixture } from './fixtures';
 
@@ -20,8 +20,6 @@ export function player(
   };
 }
 
-const POSITIONS: Position[] = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'];
-
 export function plannerInput(input: {
   courts: number;
   players: number | PlannerPlayer[];
@@ -41,7 +39,7 @@ export function plannerInput(input: {
       ? Array.from({ length: input.players }, (_, index) =>
           player(
             `p${index}`,
-            input.rank1 ?? POSITIONS[index % POSITIONS.length],
+            input.rank1 ?? COURT_POSITIONS[index % COURT_POSITIONS.length],
             input.rank2 ?? null,
             input.rank3 ?? null,
             { bib: index + 1 },
@@ -93,7 +91,7 @@ export async function seedEventWithPlayers(
         playerFirstName: `Player${index}`,
         playerLastName: 'Test',
         playerNameNormalized: `player${index} test`,
-        rank1Position: POSITIONS[index % POSITIONS.length],
+        rank1Position: COURT_POSITIONS[index % COURT_POSITIONS.length],
         status: 'PAID',
         qrToken: `token-${index}-${event.id}`,
         bibNumber: index < checkedIn ? index + 1 : null,

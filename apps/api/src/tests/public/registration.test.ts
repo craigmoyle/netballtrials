@@ -4,7 +4,7 @@ import { prisma } from '../../db';
 import { createFakePaymentProvider } from '../../payments/fake';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { resetDb } from '../helpers/db';
-import { registrationFixture } from '../helpers/fixtures';
+import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 let app: ReturnType<typeof createApp>;
 let eventId: string;
@@ -160,14 +160,5 @@ function testEnv() {
     SESSION_COOKIE_SECURE: false, MAIL_FROM: 'chisholmnetball@gmail.com', MAIL_REPLY_TO: 'chisholmnetball@gmail.com',
     GMAIL_CLIENT_ID: '', GMAIL_CLIENT_SECRET: '', GMAIL_REFRESH_TOKEN: '',
     STRIPE_SECRET_KEY: 'x', STRIPE_WEBHOOK_SECRET: 'y', PORT: 3000,
-  };
-}
-
-function eventFixture() {
-  return {
-    name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
-    eventDate: new Date('2026-09-12T00:00:00.000Z'), venue: 'SNC', startTime: '08:30', endTime: '12:00',
-    firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 5,
-    rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2, minAge: 12, maxAge: 15,
   };
 }
