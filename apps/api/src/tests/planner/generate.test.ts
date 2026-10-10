@@ -22,6 +22,63 @@ describe('generatePlan', () => {
     if (!result.ok) return;
     expect(verifyPlan(input, result.plan)).toEqual([]);
   });
+  it('increases rounds when a position minimum is feasible only with more games', () => {
+    const input = plannerInput({
+      courts: 1,
+      players: Array.from({ length: 14 }, (_, index) => ({
+        registrationId: `gs-${index}`,
+        name: `GS player ${index}`,
+        bibNumber: index + 1,
+        rank1: 'GS' as const,
+        rank2: null,
+        rank3: null,
+        optInExtra: true,
+      })),
+      rounds: 1,
+      playMinutes: 8,
+      changeoverMinutes: 2,
+      windowMinutes: 68,
+      rank1Min: 1,
+      rank2Min: 0,
+      rank3Min: 0,
+    });
+    const result = generatePlan(input, 4);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.plan.rounds).toBe(7);
+      expect(verifyPlan(input, result.plan)).toEqual([]);
+    }
+  });
+
+  it('does not change a feasible assignment when roster order changes', () => {
+    const input = plannerInput({
+      courts: 2,
+      players: Array.from({ length: 28 }, (_, index) => ({
+        registrationId: `roster-${String(index).padStart(2, '0')}`,
+        name: `Player ${index}`,
+        bibNumber: index + 1,
+        rank1: (['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'] as const)[index % 7],
+        rank2: null,
+        rank3: null,
+        optInExtra: false,
+      })),
+      rank1Min: 1,
+      rank2Min: 0,
+      rank3Min: 0,
+    });
+    const shuffled = { ...input, players: [...input.players].reverse() };
+    const first = generatePlan(input, 9);
+    const second = generatePlan(shuffled, 9);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (first.ok && second.ok) {
+      const canonical = (plan: typeof first.plan) => plan.slots
+        .map((slot) => `${slot.round}:${slot.court}:${slot.team}:${slot.position}:${slot.registrationId}`)
+        .sort();
+      expect(canonical(second.plan)).toEqual(canonical(first.plan));
+    }
+  });
+
   it('is deterministic for the same seed', () => {
     const input = plannerInput({ courts: 2, players: 28 });
     const a = generatePlan(input, 1);

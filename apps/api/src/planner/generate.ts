@@ -164,9 +164,8 @@ function preflightGaps(input: PlannerInput, rounds: number): PlannerGap[] | null
   return gaps.length > 0 ? gaps : null;
 }
 
-function buildPlan(input: PlannerInput, seed: number): PlannerResult {
-  const rounds = computeMinimumRounds(input);
-
+function buildPlan(input: PlannerInput, seed: number, rounds: number): PlannerResult {
+  input = { ...input, players: [...input.players].sort((a, b) => a.registrationId.localeCompare(b.registrationId)) };
   const preflight = preflightGaps(input, rounds);
   if (preflight) {
     return { ok: false, gaps: preflight };
@@ -289,24 +288,54 @@ function compareScores(a: PlanScore, b: PlanScore): number {
 }
 
 export function generatePlan(input: PlannerInput, seed: number): PlannerResult {
-  const candidates = [seed, seed + 1, seed + 2].map((candidateSeed) =>
-    buildPlan(input, candidateSeed),
-  );
-  const successful = candidates.filter(
-    (candidate): candidate is { ok: true; plan: PlannerPlan } => candidate.ok,
-  );
-  if (successful.length === 0) {
-    return candidates[0];
+  const minimumRounds = Math.max(computeMinimumRounds(input), input.rounds);
+  const roundDuration = input.playMinutes + input.changeoverMinutes;
+  const maxRounds = roundDuration > 0
+    ? Math.floor((input.windowMinutes + input.changeoverMinutes) / roundDuration)
+    : 0;
+
+  if (input.players.length < input.courts * 14) {
+    return buildPlan(input, seed, minimumRounds);
+  }
+  if (totalTimeMinutes(minimumRounds, input.playMinutes, input.changeoverMinutes) > input.windowMinutes) {
+    return {
+      ok: false,
+      gaps: [{
+        code: 'time_window',
+        message: `${totalTimeMinutes(minimumRounds, input.playMinutes, input.changeoverMinutes)} minutes needed but the window is ${input.windowMinutes}`,
+        detail: { needed: totalTimeMinutes(minimumRounds, input.playMinutes, input.changeoverMinutes), window: input.windowMinutes },
+      }],
+    };
   }
 
-  let best = successful[0];
-  let bestScore = scorePlan(best.plan, input);
-  for (let index = 1; index < successful.length; index += 1) {
-    const candidateScore = scorePlan(successful[index].plan, input);
-    if (compareScores(candidateScore, bestScore) < 0) {
-      best = successful[index];
-      bestScore = candidateScore;
+  let lastFailure: PlannerGap[] = [];
+  for (let rounds = minimumRounds; rounds <= maxRounds; rounds += 1) {
+    const candidates = [seed, seed + 1, seed + 2].map((candidateSeed) =>
+      buildPlan(input, candidateSeed, rounds),
+    );
+    const successful = candidates.filter(
+      (candidate): candidate is { ok: true; plan: PlannerPlan } => candidate.ok,
+    );
+    if (successful.length > 0) {
+      let best = successful[0];
+      let bestScore = scorePlan(best.plan, input);
+      for (let index = 1; index < successful.length; index += 1) {
+        const candidateScore = scorePlan(successful[index].plan, input);
+        if (compareScores(candidateScore, bestScore) < 0) {
+          best = successful[index];
+          bestScore = candidateScore;
+        }
+      }
+      return best;
     }
+    const last = candidates[candidates.length - 1];
+    lastFailure = last.ok ? [] : last.gaps;
   }
-  return best;
+
+  return {
+    ok: false,
+    gaps: lastFailure.length > 0
+      ? lastFailure
+      : [{ code: 'time_window', message: `no valid round count fits the ${input.windowMinutes}-minute playing window` }],
+  };
 }

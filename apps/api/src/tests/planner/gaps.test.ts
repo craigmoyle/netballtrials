@@ -23,7 +23,7 @@ describe('gap reporting', () => {
   it('reports an unmet position minimum with the position', () => {
     // 14 players on one court, everyone wants GS, but only two GS places exist per round.
     const result = generatePlan(
-      plannerInput({ courts: 1, players: 14, rank1: 'GS', rank1Min: 3, rank2Min: 0, rank3Min: 0 }),
+      plannerInput({ courts: 1, players: 14, rank1: 'GS', rank1Min: 3, rank2Min: 0, rank3Min: 0, windowMinutes: 58 }),
       1,
     );
     expect(result.ok).toBe(false);
