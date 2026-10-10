@@ -161,6 +161,7 @@ export interface ReviewItemDTO {
   note: string | null;
   resolvedAt: string | null;
   resolvedByUserId: string | null;
+  resolutionHistory?: unknown | null;
   registration: {
     id: string;
     playerName: string;

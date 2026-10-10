@@ -10,6 +10,7 @@ function toDTO(item: ItemWithRegistration): ReviewItemDTO {
     note: item.note,
     resolvedAt: item.resolvedAt ? item.resolvedAt.toISOString() : null,
     resolvedByUserId: item.resolvedByUserId,
+    resolutionHistory: item.resolutionHistory,
     registration: {
       id: item.registration.id,
       playerName: `${item.registration.playerFirstName} ${item.registration.playerLastName}`,
@@ -39,6 +40,7 @@ export async function ensureReviewItems(prisma: PrismaClient, eventId: string): 
       registrationId: registration.id,
       reason: 'age_out_of_range',
     })),
+    skipDuplicates: true,
   });
   return result.count;
 }
@@ -49,7 +51,10 @@ export async function listReviewQueue(
   includeResolved = false,
 ): Promise<ReviewItemDTO[]> {
   const items = await prisma.reviewItem.findMany({
-    where: { eventId, ...(includeResolved ? {} : { resolvedAt: null }) },
+    where: {
+      eventId,
+      ...(includeResolved ? {} : { resolvedAt: null, registration: { is: { status: 'PAID' } } }),
+    },
     orderBy: { createdAt: 'asc' },
     include: { registration: true },
   });

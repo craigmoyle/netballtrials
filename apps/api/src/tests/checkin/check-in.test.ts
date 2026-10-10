@@ -105,6 +105,16 @@ describe('check-in', () => {
     expect(response.json().referToCommittee).toBe(false);
   });
 
+  it('does not refer a withdrawn flagged registration and removes it from the open queue', async () => {
+    const registration = await paid('d'.repeat(43), { ageFlagged: true });
+    await ensureReviewItems(prisma, eventId);
+    expect(await listReviewQueue(prisma, eventId)).toHaveLength(1);
+    await withdrawRegistration(prisma, eventId, registration.id, new Date());
+    const result = await manualCheckIn(prisma, eventId, registration.id, 'Volunteer', new Date('2026-09-12T00:00:00Z'), cookie);
+    expect(result).toMatchObject({ result: 'refused', reason: 'not_paid', referToCommittee: false });
+    expect(await listReviewQueue(prisma, eventId)).toHaveLength(0);
+  });
+
   it('is idempotent for a second scan', async () => {
     await paid('t'.repeat(43));
     await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 't'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header });

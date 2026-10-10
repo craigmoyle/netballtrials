@@ -275,8 +275,10 @@ model ReviewItem {
   note             String?
   resolvedAt       DateTime?
   resolvedByUserId String?
+  resolutionHistory Json?
   createdAt        DateTime     @default(now())
 
+  @@unique([registrationId, reason])
   @@index([eventId])
   @@index([registrationId])
 }
