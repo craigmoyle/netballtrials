@@ -74,6 +74,7 @@ model Event {
   maxAge               Int         @default(99)
   checkInPinHash       String?
   checkInPinUpdatedAt  DateTime?
+  checkInPinVersion    Int         @default(0)
   nextBibNumber        Int         @default(1)
   checkInClosedAt      DateTime?
   policyUrl            String?
@@ -183,8 +184,9 @@ model CheckInSession {
   id        String   @id @default(cuid())
   eventId   String
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
-  expiresAt DateTime
+  tokenHash  String   @unique
+  pinVersion Int      @default(0)
+  expiresAt  DateTime
   createdAt DateTime @default(now())
 
   @@index([eventId])
@@ -221,6 +223,8 @@ model RoundSlot {
   team           Int
   registrationId String
 
+  @@unique([planId, round, court, position, team])
+  @@unique([planId, round, registrationId])
   @@index([planId, round])
 }
 
