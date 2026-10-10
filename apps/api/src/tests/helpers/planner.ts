@@ -1,4 +1,6 @@
 import type { PlannerInput, PlannerPlayer, Position } from '../../planner/types';
+import { prisma } from '../../db';
+import { eventFixture, registrationFixture } from './fixtures';
 
 export function player(
   id: string,
@@ -60,4 +62,45 @@ export function plannerInput(input: {
     rank3Min: input.rank3Min ?? 0,
     players,
   };
+}
+
+export async function seedEventWithPlayers(
+  count: number,
+  options: {
+    courts?: number;
+    checkedIn?: number;
+    rank1Min?: number;
+    rank2Min?: number;
+    rank3Min?: number;
+  } = {},
+) {
+  const event = await prisma.event.create({
+    data: {
+      ...eventFixture({
+        courts: options.courts ?? 2,
+        rank1Min: options.rank1Min ?? 1,
+        rank2Min: options.rank2Min ?? 0,
+        rank3Min: options.rank3Min ?? 0,
+      }),
+      status: 'OPEN',
+    },
+  });
+
+  const checkedIn = options.checkedIn ?? count;
+  for (let index = 0; index < count; index += 1) {
+    await prisma.registration.create({
+      data: registrationFixture(event.id, {
+        playerFirstName: `Player${index}`,
+        playerLastName: 'Test',
+        playerNameNormalized: `player${index} test`,
+        rank1Position: POSITIONS[index % POSITIONS.length],
+        status: 'PAID',
+        qrToken: `token-${index}-${event.id}`,
+        bibNumber: index < checkedIn ? index + 1 : null,
+        checkedInAt: index < checkedIn ? new Date('2026-09-12T08:00:00.000Z') : null,
+      }),
+    });
+  }
+
+  return event;
 }

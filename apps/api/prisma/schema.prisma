@@ -80,6 +80,7 @@ model Event {
   updatedAt            DateTime    @updatedAt
   registrations        Registration[]
   checkInSessions      CheckInSession[]
+  roundPlans           RoundPlan[]
 }
 
 model MemberAssociation {
@@ -150,4 +151,38 @@ model CheckInSession {
   createdAt DateTime @default(now())
 
   @@index([eventId])
+}
+
+enum PlanStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model RoundPlan {
+  id                String      @id @default(cuid())
+  eventId           String
+  event             Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seed              Int
+  status            PlanStatus  @default(DRAFT)
+  rounds            Int
+  playMinutes       Int
+  changeoverMinutes Int
+  createdAt         DateTime    @default(now())
+  publishedAt       DateTime?
+  slots             RoundSlot[]
+
+  @@index([eventId])
+}
+
+model RoundSlot {
+  id             String    @id @default(cuid())
+  planId         String
+  plan           RoundPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  round          Int
+  court          Int
+  position       Position
+  team           Int
+  registrationId String
+
+  @@index([planId, round])
 }
