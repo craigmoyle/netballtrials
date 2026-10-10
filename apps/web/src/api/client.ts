@@ -1,4 +1,4 @@
-import type { AuthUser, CheckInResult, CheckInSummary, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PublicEventDTO, RegistrationStatus, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, CheckInResult, CheckInSummary, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, RoundPlanDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -32,6 +32,26 @@ async function request<T>(baseUrl: string, path: string, init?: RequestInit): Pr
   }
 
   return body as T;
+}
+
+async function planAction(
+  baseUrl: string,
+  path: string,
+  init?: RequestInit,
+): Promise<{ ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] }> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    credentials: 'include',
+    ...init,
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+  });
+  const body = await response.json().catch(() => null);
+  if (response.status === 422) {
+    return { ok: false, gaps: (body?.gaps ?? []) as PlannerGapDTO[] };
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, body?.error ?? 'request_failed');
+  }
+  return { ok: true, plan: body as RoundPlanDTO };
 }
 
 export function apiClient(baseUrl: string) {
@@ -90,5 +110,35 @@ export function apiClient(baseUrl: string) {
       request<CheckInResult>(baseUrl, `/api/check-in/registrations/${id}`, { method: 'POST' }),
     undoCheckIn: (id: string) =>
       request<unknown>(baseUrl, `/api/check-in/registrations/${id}/undo`, { method: 'POST' }),
+    getPlan: async (eventId: string) => {
+      try {
+        return await request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan`);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    generatePlan: (eventId: string) =>
+      planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
+    publishPlan: (eventId: string) =>
+      request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan/publish`, {
+        method: 'POST',
+      }),
+    regeneratePlan: (eventId: string, fromRound: number) =>
+      planAction(baseUrl, `/api/admin/events/${eventId}/plan/regenerate`, {
+        method: 'POST',
+        body: JSON.stringify({ fromRound }),
+      }),
+    getSheetsHtml: async (eventId: string) => {
+      const response = await fetch(`${baseUrl}/api/admin/events/${eventId}/sheets`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new ApiError(response.status, 'request_failed');
+      }
+      return response.text();
+    },
   };
 }

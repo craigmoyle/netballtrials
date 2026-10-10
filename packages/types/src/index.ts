@@ -118,3 +118,9 @@ export interface RoundPlanDTO {
   publishedAt: string | null;
   slots: RoundSlotDTO[];
 }
+
+export interface PlannerGapDTO {
+  code: string;
+  message: string;
+  detail?: Record<string, unknown>;
+}
