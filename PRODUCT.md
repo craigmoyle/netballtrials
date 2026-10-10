@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. Hosting platform and email provider are deliberately undecided.
+React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. Hosting remains undecided. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com`.
 
 ## Users
 
@@ -41,7 +41,7 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - Internet access is assumed at check-in; there is no offline mode.
 - Card data is never stored; Stripe handles it. QR codes contain only a random token.
 - Personal data is deleted or anonymized 12 months after the event.
-- Open decisions: hosting platform, email provider, final selector-sheet fields and layout.
+- Open decisions: hosting platform, final selector-sheet fields and layout.
 
 ## Brand Commitments
 

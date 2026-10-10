@@ -43,7 +43,8 @@ describe('POST /api/public/events/:id/registrations', () => {
 
 function testEnv() {
   return {
-    DATABASE_URL: '', WEB_ORIGIN: 'http://localhost:5173', API_PUBLIC_URL: 'http://localhost:3000',
+    DATABASE_URL: '', NODE_ENV: 'test' as const, PAYMENT_PROVIDER: 'fake' as const,
+    WEB_ORIGIN: 'http://localhost:5173', API_PUBLIC_URL: 'http://localhost:3000',
     SESSION_COOKIE_SECURE: false, MAIL_FROM: 'a@b.com', MAIL_REPLY_TO: 'a@b.com',
     STRIPE_SECRET_KEY: 'x', STRIPE_WEBHOOK_SECRET: 'y', PORT: 3000,
   };

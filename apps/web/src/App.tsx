@@ -18,7 +18,7 @@ import { SheetsPage } from './planner/SheetsPage';
 import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
 
-const client = apiClient(import.meta.env.VITE_API_URL ?? 'http://localhost:3000');
+const client = apiClient(import.meta.env.VITE_API_URL ?? '');
 
 type Client = ReturnType<typeof apiClient>;
 
