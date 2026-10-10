@@ -1,24 +1,32 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 
 const KEY_LENGTH = 32;
 
-export function hashPin(pin: string): string {
+function derive(pin: string, salt: Buffer, length: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(pin, salt, length, (error, key) => {
+      if (error) reject(error);
+      else resolve(key);
+    });
+  });
+}
+
+export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(pin, salt, KEY_LENGTH);
+  const hash = await derive(pin, salt, KEY_LENGTH);
   return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 
-export function verifyPin(pin: string, stored: string): boolean {
+export async function verifyPin(pin: string, stored: string): Promise<boolean> {
   const [scheme, saltHex, hashHex] = stored.split('$');
-  if (scheme !== 'scrypt' || !saltHex || !hashHex) {
+  if (scheme !== 'scrypt' || !saltHex || !hashHex || !/^[\da-f]{32}$/i.test(saltHex) || !/^[\da-f]{64}$/i.test(hashHex)) {
     return false;
   }
 
   const salt = Buffer.from(saltHex, 'hex');
   const expected = Buffer.from(hashHex, 'hex');
-  const actual = scryptSync(pin, salt, expected.length);
-
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+  const actual = await derive(pin, salt, KEY_LENGTH);
+  return timingSafeEqual(actual, expected);
 }
 
 export function isValidPinFormat(pin: string): boolean {

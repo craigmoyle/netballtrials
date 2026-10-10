@@ -13,7 +13,7 @@ const nowHeader = { 'x-test-now': BEFORE };
 
 beforeEach(async () => {
   await resetDb();
-  const event = await prisma.event.create({ data: { ...eventFixture(), checkInPinHash: hashPin('4821') } });
+  const event = await prisma.event.create({ data: { ...eventFixture(), checkInPinHash: await hashPin('4821') } });
   eventId = event.id;
   app = createApp();
 });
@@ -36,6 +36,26 @@ describe('check-in session', () => {
     const res = await app.inject({ method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '4821' }, headers: { 'x-test-now': future } });
     expect(res.statusCode).toBe(404);
   });
+  it('shares wrong-PIN throttling across app instances', async () => {
+    const secondApp = createApp();
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await (attempt % 2 === 0 ? app : secondApp).inject({
+        method: 'POST',
+        url: '/api/check-in/session',
+        payload: { eventId, pin: '0000' },
+        headers: nowHeader,
+      });
+    }
+    const locked = await secondApp.inject({
+      method: 'POST',
+      url: '/api/check-in/session',
+      payload: { eventId, pin: '4821' },
+      headers: nowHeader,
+    });
+    expect(locked.statusCode).toBe(429);
+    await secondApp.close();
+  });
+
   it('locks out repeated wrong pins', async () => {
     for (let i = 0; i < 10; i++) {
       await app.inject({ method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '0000' }, headers: nowHeader });

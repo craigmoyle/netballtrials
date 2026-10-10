@@ -2,7 +2,6 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { createPinLimiter } from './limiter';
 import { isValidPinFormat } from './pin';
 import {
   CheckInClosedError,
@@ -21,7 +20,6 @@ import {
 } from './service';
 
 const pinSchema = z.object({ pin: z.string() });
-const pinLimiter = createPinLimiter({ max: 10, windowMs: 10 * 60_000 });
 
 function nowFrom(request: FastifyRequest): Date {
   if (process.env.NODE_ENV === 'test') {
@@ -87,7 +85,6 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
         deps,
         { ...parsed.data, clientKey },
         now,
-        pinLimiter,
       );
 
       reply.setCookie('nt_checkin', session.token, {
@@ -148,7 +145,11 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
     if (!parsed.success) {
       return reply.code(400).send({ error: 'validation_failed' });
     }
-    return checkInByToken(deps.prisma, eventId, parsed.data.token, labelFrom(req), nowFrom(req));
+    const result = await checkInByToken(
+      deps.prisma, eventId, parsed.data.token, labelFrom(req), nowFrom(req), req.cookies!.nt_checkin!,
+    );
+    if (!result) return reply.code(401).send({ error: 'unauthorized' });
+    return result;
   });
 
   app.post('/api/check-in/registrations/:id', async (req, reply) => {
@@ -157,7 +158,11 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(401).send({ error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
-    return manualCheckIn(deps.prisma, eventId, id, labelFrom(req), nowFrom(req));
+    const result = await manualCheckIn(
+      deps.prisma, eventId, id, labelFrom(req), nowFrom(req), req.cookies!.nt_checkin!,
+    );
+    if (!result) return reply.code(401).send({ error: 'unauthorized' });
+    return result;
   });
 
   app.post('/api/check-in/registrations/:id/undo', async (req, reply) => {
@@ -166,10 +171,9 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(401).send({ error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
-    const undone = await undoCheckIn(deps.prisma, eventId, id);
-    if (!undone) {
-      return reply.code(404).send({ error: 'not_found' });
-    }
+    const undone = await undoCheckIn(deps.prisma, eventId, id, req.cookies!.nt_checkin!, nowFrom(req));
+    if (undone === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!undone) return reply.code(404).send({ error: 'not_found' });
     return reply.code(204).send();
   });
 }

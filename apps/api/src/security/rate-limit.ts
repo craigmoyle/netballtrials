@@ -4,6 +4,10 @@ const CLEANUP_INTERVAL = 1024;
 const KEEP_MS = 24 * 60 * 60 * 1000;
 let callsSinceCleanup = 0;
 
+export async function resetRateLimit(prisma: PrismaClient, key: string): Promise<void> {
+  await prisma.requestRateLimitBucket.deleteMany({ where: { key } });
+}
+
 export async function consumeRateLimit(
   prisma: PrismaClient,
   key: string,
