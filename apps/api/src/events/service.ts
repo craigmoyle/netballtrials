@@ -1,4 +1,6 @@
-import type { Event, PrismaClient } from '@prisma/client';
+import type { Event, EventStatus, PrismaClient } from '@prisma/client';
+import { DEFAULT_POLICY_URL } from '../policy';
+import { ageAtDecember31, isAgeInRange } from '../registrations/eligibility';
 import {
   EventValidationError,
   eventInputSchema,
@@ -29,11 +31,11 @@ function toEventData(input: EventInput) {
     changeoverMinutes: input.changeoverMinutes,
     minAge: input.minAge,
     maxAge: input.maxAge,
-    policyUrl: input.policyUrl ?? null,
+    policyUrl: input.policyUrl ?? DEFAULT_POLICY_URL,
   };
 }
 
-function assertValid(input: EventInput): EventInput {
+function assertValid(input: unknown): EventInput {
   const parsed = eventInputSchema.safeParse(input);
   if (!parsed.success) {
     throw new EventValidationError(parsed.error.issues.map((issue) => String(issue.path[0])));
@@ -43,12 +45,18 @@ function assertValid(input: EventInput): EventInput {
   if (windowErrors.length > 0) {
     throw new EventValidationError(windowErrors);
   }
-
   if (parsed.data.minAge > parsed.data.maxAge) {
     throw new EventValidationError(['maxAge']);
   }
 
   return parsed.data;
+}
+
+export class EventLifecycleError extends Error {
+  constructor() {
+    super('Invalid event lifecycle transition');
+    this.name = 'EventLifecycleError';
+  }
 }
 
 export async function createEvent(prisma: PrismaClient, input: EventInput): Promise<Event> {
@@ -74,6 +82,11 @@ export async function updateEvent(
     return null;
   }
 
+  const parsedPatch = eventPatchSchema.safeParse(patch);
+  if (!parsedPatch.success) {
+    throw new EventValidationError(parsedPatch.error.issues.map((issue) => String(issue.path[0])));
+  }
+
   const merged = {
     name: existing.name,
     competitionYear: existing.competitionYear,
@@ -94,10 +107,58 @@ export async function updateEvent(
     changeoverMinutes: existing.changeoverMinutes,
     minAge: existing.minAge,
     maxAge: existing.maxAge,
-    policyUrl: existing.policyUrl ?? undefined,
-    ...patch,
+    policyUrl: existing.policyUrl ?? DEFAULT_POLICY_URL,
+    ...parsedPatch.data,
   };
+  const valid = assertValid(merged);
+  const ageSettingsChanged = valid.competitionYear !== existing.competitionYear ||
+    valid.minAge !== existing.minAge || valid.maxAge !== existing.maxAge;
 
-  const valid = assertValid(merged as EventInput);
-  return prisma.event.update({ where: { id }, data: toEventData(valid) });
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.event.update({ where: { id }, data: toEventData(valid) });
+    if (ageSettingsChanged) {
+      const registrations = await tx.registration.findMany({
+        where: { eventId: id, status: { in: ['PENDING', 'PAID'] } },
+        select: { id: true, dateOfBirth: true, ageFlagged: true },
+      });
+      for (const registration of registrations) {
+        const age = ageAtDecember31(registration.dateOfBirth, valid.competitionYear);
+        const ageFlagged = !isAgeInRange(age, valid.minAge, valid.maxAge);
+        if (ageFlagged !== registration.ageFlagged) {
+          await tx.registration.updateMany({
+            where: { id: registration.id, ageFlagged: registration.ageFlagged },
+            data: { ageFlagged },
+          });
+        }
+      }
+    }
+    return updated;
+  });
+}
+
+async function transitionEvent(
+  prisma: PrismaClient,
+  id: string,
+  from: EventStatus,
+  to: EventStatus,
+): Promise<Event | null> {
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) return null;
+  if (event.status === to) return event;
+  if (event.status !== from) throw new EventLifecycleError();
+
+  const changed = await prisma.event.updateMany({ where: { id, status: from }, data: { status: to } });
+  if (changed.count === 1) return prisma.event.findUnique({ where: { id } });
+  const current = await prisma.event.findUnique({ where: { id } });
+  if (current?.status === to) return current;
+  if (!current) return null;
+  throw new EventLifecycleError();
+}
+
+export function openEvent(prisma: PrismaClient, id: string): Promise<Event | null> {
+  return transitionEvent(prisma, id, 'DRAFT', 'OPEN');
+}
+
+export function closeEvent(prisma: PrismaClient, id: string): Promise<Event | null> {
+  return transitionEvent(prisma, id, 'OPEN', 'CLOSED');
 }

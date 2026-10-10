@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
-import { consumeLoginToken, requestLoginLink } from './service';
+import { consumeLoginToken, inviteAdmin, normalizeEmail, requestLoginLink } from './service';
+import { consumeRateLimit } from '../security/rate-limit';
 import { hashToken } from './tokens';
 import { requireAdmin } from './guard';
 
@@ -15,6 +17,9 @@ const requestLinkSchema = z.object({
 const verifySchema = z.object({
   token: z.string().min(10).max(200),
 });
+const inviteSchema = z.object({ email: z.email().trim().max(320) });
+const LOGIN_LINK_LIMIT = 5;
+const LOGIN_LINK_WINDOW_MS = 15 * 60_000;
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/auth/request-link', async (req, reply) => {
@@ -23,10 +28,19 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
       return reply.code(400).send({ error: 'validation_failed' });
     }
 
+    const normalizedEmail = normalizeEmail(parsed.data.email);
+    const key = createHash('sha256')
+      .update(`login-link\\0${req.ip ?? 'unknown'}\\0${normalizedEmail}`)
+      .digest('hex');
+    const now = new Date();
+    if (!(await consumeRateLimit(deps.prisma, key, now, LOGIN_LINK_LIMIT, LOGIN_LINK_WINDOW_MS))) {
+      return reply.code(429).send({ error: 'try_again_later' });
+    }
+
     await requestLoginLink(
       { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN },
-      parsed.data.email,
-      new Date(),
+      normalizedEmail,
+      now,
     );
     return reply.code(202).send({ status: 'sent' });
   });
@@ -56,6 +70,18 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
 
     return reply.code(200).send({ status: 'signed_in' });
+  });
+
+  app.post('/api/admin/staff/invites', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = inviteSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    await inviteAdmin(
+      { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN },
+      parsed.data.email,
+      req.adminUserId!,
+      new Date(),
+    );
+    return reply.code(202).send({ status: 'sent' });
   });
 
   app.get('/api/auth/me', { preHandler: requireAdmin(deps) }, async (req, reply) => {

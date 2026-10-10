@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { DEFAULT_POLICY_URL } from '../policy';
 
 export type PublicEvent = {
   id: string;
@@ -67,7 +68,7 @@ export async function getPublicEvent(
     firstWhistle: event.firstWhistle,
     registrationFeeCents: event.registrationFeeCents,
     currency: 'aud',
-    policyUrl: event.policyUrl,
+    policyUrl: event.policyUrl ?? DEFAULT_POLICY_URL,
     minAge: event.minAge,
     maxAge: event.maxAge,
     courts: event.courts,

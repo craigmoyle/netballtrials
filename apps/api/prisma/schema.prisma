@@ -11,12 +11,15 @@ enum StaffRole {
 }
 
 model StaffUser {
-  id          String       @id @default(cuid())
-  email       String       @unique
-  role        StaffRole    @default(ADMIN)
-  createdAt   DateTime     @default(now())
-  loginTokens LoginToken[]
-  sessions    Session[]
+  id                String       @id @default(cuid())
+  email             String       @unique
+  role              StaffRole    @default(ADMIN)
+  invitedByUserId   String?
+  invitedBy         StaffUser?   @relation("AdminInvitations", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  invitees          StaffUser[]  @relation("AdminInvitations")
+  createdAt         DateTime     @default(now())
+  loginTokens       LoginToken[]
+  sessions          Session[]
 }
 
 model LoginToken {
@@ -83,6 +86,15 @@ model Event {
   roundPlans           RoundPlan[]
   reviewItems          ReviewItem[]
   emailLogs            EmailLog[]
+  policyDocument       EventPolicyDocument?
+}
+
+model EventPolicyDocument {
+  eventId    String   @id
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fileName   String
+  bytes      Bytes
+  uploadedAt DateTime @default(now())
 }
 
 model MemberAssociation {

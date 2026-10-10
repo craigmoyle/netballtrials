@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { createPendingRegistration, expireStalePending, RegistrationConflictError } from '../../registrations/service';
+import { createPendingRegistration, expireStalePending, RegistrationConflictError, RegistrationValidationError } from '../../registrations/service';
 
 let eventId: string;
 
@@ -9,6 +9,7 @@ beforeEach(async () => {
   await resetDb();
   const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
   eventId = event.id;
+  await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
 });
 
 const input = {
@@ -45,6 +46,18 @@ describe('createPendingRegistration', () => {
     await prisma.registration.update({ where: { id: first.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
     expect(await expireStalePending(prisma, eventId, new Date())).toBe(1);
     await expect(createPendingRegistration(prisma, eventId, input, new Date())).resolves.toBeTruthy();
+  });
+  it('rejects a date of birth in the future', async () => {
+    await expect(
+      createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2026-10-11' }, new Date('2026-10-10T00:00:00Z')),
+    ).rejects.toMatchObject({ fields: ['dateOfBirth'] });
+  });
+  it('requires an active member association', async () => {
+    await expect(createPendingRegistration(prisma, eventId, { ...input, memberAssociation: 'Unknown Club' }, new Date()))
+      .rejects.toBeInstanceOf(RegistrationValidationError);
+    await prisma.memberAssociation.update({ where: { name: 'MENA' }, data: { active: false } });
+    await expect(createPendingRegistration(prisma, eventId, input, new Date()))
+      .rejects.toBeInstanceOf(RegistrationValidationError);
   });
   it('refuses when the event is not open', async () => {
     await prisma.event.update({ where: { id: eventId }, data: { status: 'DRAFT' } });

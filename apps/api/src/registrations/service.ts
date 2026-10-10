@@ -1,9 +1,9 @@
 import type { Prisma, PrismaClient, Registration } from '@prisma/client';
 import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibility';
+import { DEFAULT_POLICY_URL } from '../policy';
 import { registrationInputSchema, type RegistrationInput } from './schemas';
 
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_POLICY_URL = 'https://chisholmnetball.com/selection-policy/';
 
 export class RegistrationValidationError extends Error {
   readonly fields: string[];
@@ -65,10 +65,20 @@ export async function createPendingRegistration(
   if (!event || event.status !== 'OPEN') {
     throw new RegistrationConflictError('closed');
   }
+  const association = await prisma.memberAssociation.findFirst({
+    where: { name: values.memberAssociation, active: true },
+    select: { id: true },
+  });
+  if (!association) {
+    throw new RegistrationValidationError(['memberAssociation']);
+  }
 
   await expireStalePending(prisma, eventId, now);
 
   const dateOfBirth = new Date(`${values.dateOfBirth}T00:00:00.000Z`);
+  if (dateOfBirth.getTime() > now.getTime()) {
+    throw new RegistrationValidationError(['dateOfBirth']);
+  }
   const age = ageAtDecember31(dateOfBirth, event.competitionYear);
   const ageFlagged = !isAgeInRange(age, event.minAge, event.maxAge);
   const playerNameNormalized = normalizePlayerName(values.playerFirstName, values.playerLastName);

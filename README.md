@@ -18,7 +18,7 @@ Provide environment variables through the deployment's secret/configuration syst
 
 Apply database migrations with `cd apps/api && npx prisma migrate deploy`. Build/typecheck with `npm run build -w @netball-trials/api` and start with `npm run start -w @netball-trials/api`. The production runtime includes `tsx`; the build command currently performs a typecheck rather than emitting JavaScript. Set `PORT` as needed. Route the configured web origin to the web app and `/api` to the API, or configure the web build's `VITE_API_URL` with the matching API origin and CORS/cookie settings.
 
-Email delivery is being integrated through Gmail OAuth in the remediation work. Do not treat the development mailer as production delivery. Admin bootstrap, deployment secrets and reminder/retention scheduling will be documented as those remediation tasks land.
+Email delivery is being integrated through Gmail OAuth in the remediation work. Do not treat the development mailer as production delivery. After the Gmail provider and production credentials are configured, create the first admin once with `npm run admin:bootstrap -- admin@example.com`; subsequent admins are invited from the authenticated staff workflow. Schedule reminder and retention commands according to the selected hosting platform.
 
 ## Checks
 

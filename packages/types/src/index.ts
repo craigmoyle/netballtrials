@@ -1,5 +1,20 @@
 export type Position = 'GS' | 'GA' | 'WA' | 'C' | 'WD' | 'GD' | 'GK';
 
+export interface AgeRange {
+  minAge: number;
+  maxAge: number;
+}
+
+export function defaultAgeRange(division: string): AgeRange {
+  switch (division.trim().toLowerCase()) {
+    case '15/u': return { minAge: 12, maxAge: 15 };
+    case '17/u': return { minAge: 14, maxAge: 17 };
+    case 'open': return { minAge: 15, maxAge: 99 };
+    case 'all abilities': return { minAge: 10, maxAge: 99 };
+    default: return { minAge: 5, maxAge: 99 };
+  }
+}
+
 export type StaffRole = 'ADMIN';
 
 export type EventStatus = 'DRAFT' | 'OPEN' | 'CLOSED';

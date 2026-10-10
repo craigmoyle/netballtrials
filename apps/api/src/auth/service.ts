@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, StaffUser } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
 import { hashToken, newLoginToken, newSession } from './tokens';
 
@@ -15,6 +15,63 @@ export type ConsumeResult = {
 
 export function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
+}
+
+export class AdminBootstrapError extends Error {
+  constructor() {
+    super('Admin bootstrap already used');
+    this.name = 'AdminBootstrapError';
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null &&
+    (error as { code?: string }).code === 'P2002';
+}
+
+export async function bootstrapFirstAdmin(
+  deps: LoginDeps,
+  rawEmail: string,
+  now: Date,
+): Promise<StaffUser> {
+  const email = normalizeEmail(rawEmail);
+  const user = await deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(1397051019)) AS bootstrap_lock`;
+    const users = await tx.staffUser.findMany({
+      select: { id: true, email: true, invitedByUserId: true },
+      take: 2,
+    });
+    if (users.length === 0) {
+      return tx.staffUser.create({ data: { email } });
+    }
+    if (users.length === 1 && users[0].email === email && users[0].invitedByUserId === null) {
+      return tx.staffUser.findUniqueOrThrow({ where: { id: users[0].id } });
+    }
+    throw new AdminBootstrapError();
+  });
+  await requestLoginLink(deps, email, now);
+  return user;
+}
+
+export async function inviteAdmin(
+  deps: LoginDeps,
+  rawEmail: string,
+  invitedByUserId: string,
+  now: Date,
+): Promise<StaffUser> {
+  const email = normalizeEmail(rawEmail);
+  let user = await deps.prisma.staffUser.findUnique({ where: { email } });
+  if (!user) {
+    try {
+      user = await deps.prisma.staffUser.create({ data: { email, invitedByUserId } });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      user = await deps.prisma.staffUser.findUnique({ where: { email } });
+      if (!user) throw error;
+    }
+  }
+  await requestLoginLink(deps, email, now);
+  return user;
 }
 
 export async function requestLoginLink(

@@ -15,6 +15,7 @@ beforeEach(async () => {
   await resetDb();
   const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
   eventId = event.id;
+  await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
   payment = createFakePaymentProvider();
   mailer = createDevMailer([]);
   app = createApp({ payment, mailer, env: testEnv() });

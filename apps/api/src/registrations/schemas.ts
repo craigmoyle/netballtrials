@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isCalendarDate } from '../validation/date';
 
 export const positionSchema = z.enum(['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK']);
 export type RegistrationPosition = z.infer<typeof positionSchema>;
@@ -18,7 +19,7 @@ export const registrationInputSchema = z
   .object({
     playerFirstName: z.string().trim().min(1).max(80),
     playerLastName: z.string().trim().min(1).max(80),
-    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
+    dateOfBirth: z.string().refine(isCalendarDate, 'must be a real YYYY-MM-DD date'),
     parentName: z.string().trim().min(1).max(120),
     parentEmail: z
       .email()
@@ -38,6 +39,10 @@ export const registrationInputSchema = z
   .refine(positionsAreDistinct, {
     message: 'positions must be distinct',
     path: ['rank2Position'],
+  })
+  .refine((data) => !data.rank3Position || Boolean(data.rank2Position), {
+    message: 'a third position requires a second position',
+    path: ['rank3Position'],
   });
 
 export type RegistrationInput = z.input<typeof registrationInputSchema>;

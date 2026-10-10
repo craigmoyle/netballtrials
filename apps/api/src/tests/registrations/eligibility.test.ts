@@ -38,4 +38,8 @@ describe('registrationInputSchema', () => {
     expect(registrationInputSchema.safeParse({ ...base, rank2Position: 'GS' }).success).toBe(false);
     expect(registrationInputSchema.safeParse({ ...base, eligibilityConfirmed: false }).success).toBe(false);
   });
+  it('requires ranked choices to be sequential and dates to be real calendar dates', () => {
+    expect(registrationInputSchema.safeParse({ ...base, rank3Position: 'WA' }).success).toBe(false);
+    expect(registrationInputSchema.safeParse({ ...base, rank2Position: 'WA', dateOfBirth: '2011-02-31' }).success).toBe(false);
+  });
 });
