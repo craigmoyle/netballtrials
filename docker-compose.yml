@@ -1,3 +1,5 @@
+name: netballtrials-rancher
+
 services:
   db:
     image: postgres:16
@@ -6,10 +8,70 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: netballtrials
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${RANCHER_DB_PORT:-55432}:5432"
     volumes:
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
-      - netballtrials-db:/var/lib/postgresql/data
+      - netballtrials-rancher-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d netballtrials"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    working_dir: /workspace
+    command: ["npm", "run", "e2e:server", "--workspace", "@netball-trials/api"]
+    environment:
+      NODE_ENV: test
+      PAYMENT_PROVIDER: fake
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/netballtrials_test
+      WEB_ORIGIN: http://localhost:5173
+      API_PUBLIC_URL: http://localhost:3000
+      SESSION_COOKIE_SECURE: "false"
+      PORT: "3000"
+      E2E_CONTROL_PORT: "3001"
+      E2E_BIND_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./apps/api/src:/workspace/apps/api/src
+      - ./apps/api/prisma:/workspace/apps/api/prisma
+      - ./apps/api/prisma.config.ts:/workspace/apps/api/prisma.config.ts:ro
+      - ./packages/types:/workspace/packages/types
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    working_dir: /workspace
+    command: ["npm", "run", "dev", "--workspace", "@netball-trials/web", "--", "--host", "0.0.0.0"]
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./apps/web:/workspace/apps/web
+      - ./packages/types:/workspace/packages/types
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
 volumes:
-  netballtrials-db:
+  netballtrials-rancher-db:

@@ -6,6 +6,7 @@ import { createApp } from '../app';
 import { createDevMailer } from '../mail/dev-mailer';
 import { createFakePaymentProvider } from '../payments/fake';
 import { hashPin } from '../checkin/pin';
+import { e2eBindHost } from './e2e-runtime';
 import { COURT_POSITIONS } from '../planner/types';
 import { eventFixture, registrationFixture } from '../tests/helpers/fixtures';
 
@@ -118,8 +119,9 @@ const control = createServer(async (request, response) => {
 });
 
 await resetFixtures();
-await app.listen({ port: Number(process.env.PORT ?? 3000), host: '127.0.0.1' });
-await new Promise<void>((resolve) => control.listen(Number(process.env.E2E_CONTROL_PORT ?? 3001), '127.0.0.1', resolve));
+const bindHost = e2eBindHost();
+await app.listen({ port: Number(process.env.PORT ?? 3000), host: bindHost });
+await new Promise<void>((resolve) => control.listen(Number(process.env.E2E_CONTROL_PORT ?? 3001), bindHost, resolve));
 
 async function close(): Promise<void> {
   await new Promise<void>((resolve, reject) => control.close((error) => error ? reject(error) : resolve()));
