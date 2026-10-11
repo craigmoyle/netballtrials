@@ -87,6 +87,20 @@ export interface PublicEventDTO {
   status: EventStatus;
 }
 
+export interface PublicTrialDTO {
+  id: string;
+  name: string;
+  division: string;
+  section: string;
+  eventDate: string;
+  venue: string;
+  startTime: string;
+  firstWhistle: string;
+  registrationFeeCents: number;
+  currency: string;
+  status: 'OPEN' | 'CLOSED';
+}
+
 export type RegistrationStatus =
   | 'PENDING'
   | 'PAID'

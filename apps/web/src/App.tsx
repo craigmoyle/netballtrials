@@ -19,11 +19,14 @@ import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
 import { RosterPage } from './admin/RosterPage';
 import { AssociationsPage } from './admin/AssociationsPage';
+import { PublicHomePage } from './routes/PublicHomePage';
+import { PublicSiteHeader } from './SiteNavigation';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? '');
 type Client = ReturnType<typeof apiClient>;
 
 const TITLES: Array<[RegExp, string]> = [
+  [/^\/$/, 'Upcoming trials'],
   [/^\/register\/[^/]+\/pending$/, 'Complete registration'],
   [/^\/register\//, 'Register for trials'],
   [/^\/ticket\//, 'Your trial ticket'],
@@ -84,7 +87,12 @@ function TicketRoute({ client }: { client: Client }) {
 }
 
 function PageContent({ children }: { children: ReactNode }) {
-  return <main className="app-main">{children}</main>;
+  return (
+    <>
+      <PublicSiteHeader />
+      <main className="app-main">{children}</main>
+    </>
+  );
 }
 
 function PlannerRoute({ client }: { client: Client }) {
@@ -125,6 +133,7 @@ export function App() {
 
   return (
     <Routes>
+      <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />
       <Route path="/register/:eventId" element={<PageContent><RegisterRoute client={client} /></PageContent>} />
       <Route path="/register/:eventId/pending" element={<PageContent><PendingRoute client={client} /></PageContent>} />
       <Route path="/ticket/:token" element={<PageContent><TicketRoute client={client} /></PageContent>} />
@@ -151,7 +160,7 @@ export function App() {
         <Route path="events/:id/messages" element={<MessagesRoute client={client} />} />
         <Route path="associations" element={<AssociationsPage client={client} />} />
       </Route>
-      <Route path="*" element={<main className="app-main"><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></main>} />
+      <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></PageContent>} />
     </Routes>
   );
 }

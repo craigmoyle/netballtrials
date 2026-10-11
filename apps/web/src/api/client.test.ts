@@ -5,6 +5,17 @@ import { apiClient } from './client';
 afterEach(() => vi.restoreAllMocks());
 
 describe('apiClient', () => {
+  it('fetches the public upcoming-trial list', async () => {
+    const events = [{
+      id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',
+      venue: 'SNC', startTime: '08:30', firstWhistle: '09:00', registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
+    }];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(events), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(apiClient('http://api.test').listPublicEvents()).resolves.toEqual(events);
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/public/events', expect.objectContaining({ credentials: 'include' }));
+  });
+
   it('posts the email and always parses a 202', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"status":"sent"}', { status: 202, headers: { 'content-type': 'application/json' } }));
     await expect(apiClient('http://api.test').requestLink('a@example.com')).resolves.toEqual({ status: 'sent' });

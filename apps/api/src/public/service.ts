@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { melbourneDateKey, type PublicTrialDTO } from '@netball-trials/types';
 import { DEFAULT_POLICY_URL } from '../policy';
 import { qrDataUrl } from '../registrations/qr';
 import { buildTrialCalendar } from '../registrations/calendar';
@@ -28,6 +29,24 @@ export type PublicTicket = {
   event: { name: string; eventDate: string; venue: string; startTime: string; firstWhistle: string };
   bibNumber: number | null;
 };
+
+export async function listPublicEvents(prisma: PrismaClient): Promise<PublicTrialDTO[]> {
+  const today = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`);
+  const events = await prisma.event.findMany({
+    where: { eventDate: { gte: today }, status: { in: ['OPEN', 'CLOSED'] } },
+    orderBy: [{ eventDate: 'asc' }, { name: 'asc' }],
+    select: {
+      id: true, name: true, division: true, section: true, eventDate: true, venue: true,
+      startTime: true, firstWhistle: true, registrationFeeCents: true, status: true,
+    },
+  });
+  return events.map((event) => ({
+    ...event,
+    eventDate: event.eventDate.toISOString(),
+    currency: 'aud',
+    status: event.status as PublicTrialDTO['status'],
+  }));
+}
 
 export async function getTicket(
   prisma: PrismaClient,

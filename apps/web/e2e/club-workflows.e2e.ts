@@ -57,6 +57,29 @@ test.beforeEach(async ({ request }) => {
   fixtures = await response.json();
 });
 
+test('public navigation exposes all sign-in flows and serves the home logo locally', async ({ page }) => {
+  const externalRequests: string[] = [];
+  page.on('request', (requestEvent) => {
+    const url = new URL(requestEvent.url());
+    if (['http:', 'https:'].includes(url.protocol) && !['localhost', '127.0.0.1'].includes(url.hostname)) externalRequests.push(requestEvent.url());
+  });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Upcoming trials' })).toBeVisible();
+  const logo = page.getByRole('link', { name: 'Trials home' });
+  await expect(logo).toHaveAttribute('href', '/');
+  await expect.poll(() => logo.locator('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const signIn = page.getByRole('navigation', { name: 'Sign in options' });
+  await expect(signIn.getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin/login');
+  await expect(signIn.getByRole('link', { name: 'Committee member' })).toHaveAttribute('href', '/check-in');
+  await expect(signIn.getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/check-in');
+  await signIn.getByRole('link', { name: 'Committee member' }).click();
+  await expect(page).toHaveURL(/\/check-in$/);
+  await expect(page.getByRole('heading', { name: 'Check-in' })).toBeVisible();
+  await expect(page.getByLabel('Event ID')).toBeVisible();
+  await expect(page.getByLabel('Event PIN')).toBeVisible();
+  expect(externalRequests).toEqual([]);
+});
+
 test('Vite hot-reloads edits to the mounted web stylesheet', async ({ page }) => {
   const stylesheet = fileURLToPath(new URL('../src/styles.css', import.meta.url));
   const original = await readFile(stylesheet, 'utf8');

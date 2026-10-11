@@ -11,7 +11,7 @@ import {
 import type { RegistrationInput } from '../registrations/schemas';
 import { consumeRateLimit } from '../security/rate-limit';
 import { registerStripeWebhookRoute } from '../payments/webhook';
-import { getPublicEvent, getTicket, getTicketCalendar } from './service';
+import { getPublicEvent, getTicket, getTicketCalendar, listPublicEvents } from './service';
 
 const REGISTRATION_LIMIT = 10;
 const REGISTRATION_WINDOW_MS = 15 * 60_000;
@@ -121,6 +121,8 @@ async function sendDuplicateGuidance(
 
 export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void {
   registerStripeWebhookRoute(app, deps);
+
+  app.get('/api/public/events', async () => listPublicEvents(deps.prisma));
 
   app.get('/api/public/events/:id', async (req, reply) => {
     const { id } = req.params as { id: string };

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { App } from './App';
 
@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   getRoster: vi.fn(),
   downloadRoster: vi.fn(),
   getPublicEvent: vi.fn(),
+  listPublicEvents: vi.fn(),
   listPublicAssociations: vi.fn(),
   getTicket: vi.fn(),
   ticketCalendarUrl: vi.fn((token: string) => `/api/public/ticket/${token}/calendar`),
@@ -35,7 +36,59 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
+});
+
+describe('Public home page', () => {
+  it('shows open and closed upcoming trials, fees and registration only for open trials', async () => {
+    apiMocks.listPublicEvents.mockResolvedValue([
+      {
+        id: 'open-trial', name: '15/U State Titles Trial', division: '15/U', section: 'Ladies',
+        eventDate: '2099-03-01T00:00:00.000Z', venue: 'SNC', startTime: '08:30', firstWhistle: '09:00',
+        registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
+      },
+      {
+        id: 'closed-trial', name: '17/U State Titles Trial', division: '17/U', section: 'Ladies',
+        eventDate: '2099-04-01T00:00:00.000Z', venue: 'MENA', startTime: '09:00', firstWhistle: '09:30',
+        registrationFeeCents: 4000, currency: 'aud', status: 'CLOSED',
+      },
+    ]);
+
+    renderApp('/');
+
+    const homeHeading = await screen.findByRole('heading', { name: 'Upcoming trials' });
+    expect(homeHeading).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
+    const signInNav = screen.getByRole('navigation', { name: 'Sign in options' });
+    expect(within(signInNav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin/login');
+    expect(within(signInNav).getByRole('link', { name: 'Committee member' })).toHaveAttribute('href', '/check-in');
+    expect(within(signInNav).getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/check-in');
+    expect(await screen.findByRole('heading', { name: '15/U State Titles Trial' })).toBeInTheDocument();
+    expect(screen.getByText(/35\.00/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Register for 15/U State Titles Trial' })).toHaveAttribute('href', '/register/open-trial');
+    expect(screen.getByText('Registration closed')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Chisholm Netball home' })).toHaveAttribute('href', 'https://chisholmnetball.com/');
+    expect(apiMocks.me).not.toHaveBeenCalled();
+  });
+
+  it('shows the no-trials message and club link when the public list is empty', async () => {
+    renderApp('/');
+
+    expect(await screen.findByText('No trials currently scheduled.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Chisholm Netball home' })).toBeInTheDocument();
+  });
+
+  it('offers retry when the trial list fails to load', async () => {
+    apiMocks.listPublicEvents.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([]);
+    renderApp('/');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('No trials currently scheduled.')).toBeInTheDocument();
+    expect(apiMocks.listPublicEvents).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('App route boundaries', () => {
@@ -47,6 +100,7 @@ describe('App route boundaries', () => {
     });
     renderApp('/register/event-1');
     expect(await screen.findByRole('heading', { name: 'Trials' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Sign in options' })).toBeInTheDocument();
     expect(apiMocks.getPublicEvent).toHaveBeenCalledWith('event-1');
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Register for trials | Chisholm Netball Trials'));
@@ -65,6 +119,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/admin/events');
     expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Sign in options' })).toBeInTheDocument();
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
   });
@@ -104,6 +159,7 @@ describe('App route boundaries', () => {
   it('loads the volunteer PIN screen without calling the admin session endpoint', async () => {
     renderApp('/check-in');
     expect(await screen.findByRole('heading', { name: 'Check-in' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Sign in options' })).toBeInTheDocument();
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Volunteer check-in | Chisholm Netball Trials'));
   });

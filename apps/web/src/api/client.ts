@@ -1,4 +1,4 @@
-import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -95,6 +95,7 @@ export function apiClient(baseUrl: string) {
     createAssociation: (name: string) => request<MemberAssociationDTO>(baseUrl, '/api/admin/associations', { method: 'POST', body: JSON.stringify({ name }) }),
     setAssociationActive: (id: string, active: boolean) => request<MemberAssociationDTO>(baseUrl, `/api/admin/associations/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
     listPublicAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/public/associations'),
+    listPublicEvents: () => request<PublicTrialDTO[]>(baseUrl, '/api/public/events'),
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),
     register: (id: string, input: Record<string, unknown>) =>
