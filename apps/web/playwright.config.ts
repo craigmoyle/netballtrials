@@ -2,9 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-const webOrigin = 'http://127.0.0.1:5173';
-const apiOrigin = 'http://127.0.0.1:3000';
-const controlOrigin = 'http://127.0.0.1:3001';
+const webOrigin = 'http://localhost:5173';
+const apiOrigin = 'http://localhost:3000';
+const controlOrigin = 'http://localhost:3001';
 const databaseUrl = process.env.E2E_DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/netballtrials_test';
 if (!databaseUrl.endsWith('_test')) throw new Error('E2E tests require a DATABASE_URL ending in _test');
 
@@ -33,7 +33,7 @@ export default defineConfig({
       command: 'npm run e2e:server --workspace @netball-trials/api',
       cwd: repoRoot,
       url: `${controlOrigin}/__test/ready`,
-      reuseExistingServer: false,
+      reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       env: {
         ...process.env,
@@ -51,7 +51,7 @@ export default defineConfig({
       command: 'npm run dev --workspace @netball-trials/web -- --host 127.0.0.1',
       cwd: repoRoot,
       url: `${webOrigin}/`,
-      reuseExistingServer: false,
+      reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: { ...process.env, VITE_API_URL: apiOrigin },
     },

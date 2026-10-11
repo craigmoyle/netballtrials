@@ -12,6 +12,33 @@ cd apps/api && npx prisma migrate dev
 
 In separate terminals run `npm run dev:api` and `npm run dev:web` from the repository root. The Vite server proxies `/api` to `http://localhost:3000`; override `VITE_API_PROXY_TARGET` if the API runs elsewhere. Local development explicitly uses the fake payment provider. Never deploy that provider or its signature outside development/tests.
 
+## Rancher Desktop local test stack
+
+Rancher Desktop must be running with Docker/Compose support. This stack is a local, disposable UI environment; it is not Kubernetes and does not use production services or credentials. If the Docker CLI is not already pointed at Rancher Desktop, use its explicit context without changing the global context:
+
+```sh
+docker --context rancher-desktop compose up --build -d
+```
+
+Open the web app at `http://localhost:5173`. The API is at `http://localhost:3000`, the local test-control service is at `http://localhost:3001`, and PostgreSQL's optional host port is `55432`. All published ports bind to `127.0.0.1`. Vite hot-reloads web and shared-type source changes; the Compose web service uses 500ms file polling for Rancher Desktop's bind mount, while host-run Vite keeps its native watcher. After API source changes, restart its service; that recreates the seeded fixtures and clears the in-memory mail outbox. Rebuild after dependency or Dockerfile changes:
+
+```sh
+docker --context rancher-desktop compose restart api
+docker --context rancher-desktop compose up --build -d
+```
+
+The API uses `netballtrials_test`, fake Checkout and an in-memory mailer. It applies migrations and seeds sample events on startup. Fake Checkout stays pending until a test webhook is explicitly delivered; a separate paid fixture is provided for ticket/QR/calendar UI review. No Stripe or Gmail requests are made. Inspect local magic links and messages at `http://localhost:3001/__test/outbox`; restore fixtures with `curl -X POST http://localhost:3001/__test/reset`. The control endpoints are test-only and host-loopback-published.
+
+Run the browser suite while the Compose stack is up to reuse its services:
+
+```sh
+npm run test:e2e
+```
+
+With Compose stopped, Playwright starts its own API/web servers and uses `E2E_DATABASE_URL` (default `postgresql://postgres:postgres@localhost:5432/netballtrials_test`). The Compose test database uses its own named Rancher volume and does not share a host database. Stop the stack while retaining its disposable DB with `docker --context rancher-desktop compose down`; add `--volumes` only when you want to erase that test DB.
+
+Provider-integration testing is deferred. The future Stripe test profile will use Stripe test mode and Stripe CLI; the Gmail test profile will use an API-compatible OAuth/send mock, not SMTP or Mailpit.
+
 ## Production API
 
 Provide environment variables through the deployment's secret/configuration system; do not commit `.env` or credentials. Set `NODE_ENV=production`, `PAYMENT_PROVIDER=stripe`, both `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, an offline `GMAIL_REFRESH_TOKEN`, `DATABASE_URL`, public `WEB_ORIGIN` and `API_PUBLIC_URL`, and `SESSION_COOKIE_SECURE=true`. The OAuth consent setup must request offline access and the narrow `https://www.googleapis.com/auth/gmail.send` scope; the authorized mailbox, From and Reply-To are fixed to `chisholmnetball@gmail.com`. Store OAuth secrets only in the deployment secret manager. `WEB_ORIGIN` must be the exact browser origin. If deployed behind a reverse proxy, set `TRUST_PROXY` only to that proxy's exact IPs/CIDRs so request rate limits use the client address without trusting arbitrary forwarded headers. Startup fails if Stripe/Gmail settings are incomplete, insecure cookies or non-HTTPS production origins are configured, or any mailer other than the Gmail API provider is injected.

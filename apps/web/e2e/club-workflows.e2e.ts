@@ -1,3 +1,5 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
@@ -9,8 +11,8 @@ type Fixtures = {
   adminEmail: string;
 };
 
-const API_ORIGIN = 'http://127.0.0.1:3000';
-const CONTROL_ORIGIN = 'http://127.0.0.1:3001';
+const API_ORIGIN = 'http://localhost:3000';
+const CONTROL_ORIGIN = 'http://localhost:3001';
 let fixtures: Fixtures;
 
 async function signIn(page: Page, request: APIRequestContext): Promise<void> {
@@ -28,6 +30,12 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
 }
 
+async function adminGet(page: Page, request: APIRequestContext, url: string) {
+  const session = (await page.context().cookies(API_ORIGIN)).find((cookie) => cookie.name === 'nt_session');
+  expect(session, 'verified browser session cookie').toBeTruthy();
+  return request.get(url, { headers: { cookie: `nt_session=${session!.value}` } });
+}
+
 async function expectAccessible(page: Page): Promise<void> {
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -41,15 +49,40 @@ async function expectAccessible(page: Page): Promise<void> {
 }
 
 test.beforeEach(async ({ request }) => {
+  const ready = await request.get(`${CONTROL_ORIGIN}/__test/ready`);
+  expect(ready.ok()).toBeTruthy();
+  expect(await ready.json()).toEqual({ status: 'ready' });
   const response = await request.post(`${CONTROL_ORIGIN}/__test/reset`);
   expect(response.ok()).toBeTruthy();
   fixtures = await response.json();
 });
 
+test('Vite hot-reloads edits to the mounted web stylesheet', async ({ page }) => {
+  const stylesheet = fileURLToPath(new URL('../src/styles.css', import.meta.url));
+  const original = await readFile(stylesheet, 'utf8');
+  const marker = `hmr-${Date.now()}`;
+  await page.goto('/check-in');
+  await expect(page.locator('.app-main')).toBeVisible();
+  try {
+    await writeFile(stylesheet, `${original}\n.app-main { --rancher-hmr-probe: ${marker}; }\n`);
+    await expect.poll(() => page.request.get(`/src/styles.css?probe=${marker}`).then((response) => response.text()), { timeout: 12_000 }).toContain(marker);
+    await expect.poll(
+      () => page.locator('.app-main').evaluate((element) => getComputedStyle(element).getPropertyValue('--rancher-hmr-probe').trim()),
+      { timeout: 12_000 },
+    ).toBe(marker);
+  } finally {
+    await page.close();
+    await writeFile(stylesheet, original);
+  }
+});
+
 test('parent registration stays neutral, checkout return stays pending, and ticket has QR/calendar only', async ({ page, request }) => {
   const authCalls: string[] = [];
+  const nonLocalRequests: string[] = [];
   page.on('request', (requestEvent) => {
-    if (requestEvent.url().includes('/api/auth/me')) authCalls.push(requestEvent.url());
+    const url = new URL(requestEvent.url());
+    if (url.pathname === '/api/auth/me') authCalls.push(requestEvent.url());
+    if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && !(['localhost', '127.0.0.1'].includes(url.hostname) && ['5173', '3000'].includes(url.port))) nonLocalRequests.push(requestEvent.url());
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/register/${fixtures.mainEventId}`);
@@ -102,6 +135,7 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   ]);
   expect(calendar.suggestedFilename()).toMatch(/^trials-.+\.ics$/);
   expect(authCalls).toEqual([]);
+  expect(nonLocalRequests).toEqual([]);
 });
 
 test('admin logs in, controls events, exports roster, reviews and messages', async ({ page, request }) => {
@@ -174,12 +208,11 @@ test('volunteer uses manual fallback, sees referral/name/bib, live count and und
   await page.goto('/check-in');
   await page.getByLabel('Event ID').fill(fixtures.checkInEventId);
   await page.getByLabel('Event PIN').fill('4821');
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Start check-in' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
   await expect(page.getByText('0 of 14 arrived')).toBeVisible();
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
-  await page.getByLabel('Player name').fill('Checkin1');
+  await page.getByLabel('Player name').fill('Checkin1 Trial');
   await page.getByRole('button', { name: 'Check in' }).first().click();
   await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, bib 1 — Refer to committee/);
   await expect(page.getByText('1 of 14 arrived')).toBeVisible();
@@ -208,11 +241,15 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(page.getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
 
-  const publishedBefore = await page.request.get(`${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`).then((response) => response.json());
+  const publishedBeforeResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`);
+  expect(publishedBeforeResponse.status()).toBe(200);
+  const publishedBefore = await publishedBeforeResponse.json();
   await page.getByLabel('Regenerate from round').fill('2');
   await page.getByRole('button', { name: 'Regenerate suffix' }).click();
   await expect(page.getByText(/Draft revision 2/)).toBeVisible();
-  const draft = await page.request.get(`${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan`).then((response) => response.json());
+  const draftResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan`);
+  expect(draftResponse.status()).toBe(200);
+  const draft = await draftResponse.json();
   const prefix = (plan: { slots: Array<{ round: number; court: number; position: string; team: number; registrationId: string }> }) =>
     plan.slots.filter((slot) => slot.round === 1).map(({ round, court, position, team, registrationId }) => ({ round, court, position, team, registrationId })).sort((a, b) => `${a.court}:${a.position}:${a.team}`.localeCompare(`${b.court}:${b.position}:${b.team}`));
   expect(prefix(draft)).toEqual(prefix(publishedBefore));

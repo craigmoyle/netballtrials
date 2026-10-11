@@ -59,6 +59,7 @@ services:
     command: ["npm", "run", "dev", "--workspace", "@netball-trials/web", "--", "--host", "0.0.0.0"]
     environment:
       VITE_API_URL: http://localhost:3000
+      VITE_USE_POLLING: "true"
     ports:
       - "127.0.0.1:5173:5173"
     volumes:
