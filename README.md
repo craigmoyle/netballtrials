@@ -5,12 +5,13 @@ React/Vite web app and Fastify/Prisma API for Chisholm Netball Region trials. Re
 ## Local development
 
 ```sh
+docker --context rancher-desktop compose up -d db
 npm install
 cp apps/api/.env.example apps/api/.env
 cd apps/api && npx prisma migrate dev
 ```
 
-In separate terminals run `npm run dev:api` and `npm run dev:web` from the repository root. The Vite server proxies `/api` to `http://localhost:3000`; override `VITE_API_PROXY_TARGET` if the API runs elsewhere. Local development explicitly uses the fake payment provider. Never deploy that provider or its signature outside development/tests.
+The sample `DATABASE_URL` points to Rancher Desktop's host-mapped PostgreSQL on port 55432. Override it for another local PostgreSQL instance. In separate terminals run `npm run dev:api` and `npm run dev:web` from the repository root. The Vite server proxies `/api` to `http://localhost:3000`; override `VITE_API_PROXY_TARGET` if the API runs elsewhere. Local development explicitly uses the fake payment provider. Never deploy that provider or its signature outside development/tests.
 
 ## Rancher Desktop local test stack
 
@@ -35,7 +36,7 @@ Run the browser suite while the Compose stack is up to reuse its services:
 npm run test:e2e
 ```
 
-With Compose stopped, Playwright starts its own API/web servers and uses `E2E_DATABASE_URL` (default `postgresql://postgres:postgres@localhost:5432/netballtrials_test`). The Compose test database uses its own named Rancher volume and does not share a host database. Stop the stack while retaining its disposable DB with `docker --context rancher-desktop compose down`; add `--volumes` only when you want to erase that test DB.
+With the Compose API/web services stopped, Playwright starts its own API/web servers and uses `E2E_DATABASE_URL` (default `postgresql://postgres:postgres@localhost:5432/netballtrials_test`). If only the Rancher database service is running on port 55432, set `E2E_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/netballtrials_test`. The Rancher PostgreSQL service uses its own named volume, separate from any host PostgreSQL or other Compose project. It contains both `netballtrials` for host-run development and `netballtrials_test` for E2E. Stop the stack while retaining these databases with `docker --context rancher-desktop compose down`; add `--volumes` only when you want to erase both local databases.
 
 Provider-integration testing is deferred. The future Stripe test profile will use Stripe test mode and Stripe CLI; the Gmail test profile will use an API-compatible OAuth/send mock, not SMTP or Mailpit.
 
