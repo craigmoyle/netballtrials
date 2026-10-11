@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { CheckInSummary } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 import { CHECK_IN_UPDATED_EVENT } from './refresh';
+import { ClubLogoLink } from '../SiteNavigation';
 
 type Client = ReturnType<typeof apiClient>;
 
@@ -28,6 +29,7 @@ export function CheckInLayout({ client }: { client: Client }) {
 
   return (
     <header className="app-header checkin-header">
+      <ClubLogoLink />
       <h1>{summary ? summary.eventName : 'Check-in'}</h1>
       {summary ? (
         <p>

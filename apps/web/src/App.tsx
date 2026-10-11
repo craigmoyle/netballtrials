@@ -86,10 +86,10 @@ function TicketRoute({ client }: { client: Client }) {
   return <TicketPage client={client} token={token} />;
 }
 
-function PageContent({ children }: { children: ReactNode }) {
+function PageContent({ children, showPublicHeader = true }: { children: ReactNode; showPublicHeader?: boolean }) {
   return (
     <>
-      <PublicSiteHeader />
+      {showPublicHeader ? <PublicSiteHeader /> : null}
       <main className="app-main">{children}</main>
     </>
   );
@@ -140,11 +140,11 @@ export function App() {
       <Route path="/check-in" element={<PageContent><CheckInPage client={client} /></PageContent>} />
       <Route
         path="/check-in/scan"
-        element={<><CheckInLayout client={client} /><PageContent><ScanPage client={client} /></PageContent></>}
+        element={<><CheckInLayout client={client} /><PageContent showPublicHeader={false}><ScanPage client={client} /></PageContent></>}
       />
       <Route
         path="/check-in/lookup"
-        element={<><CheckInLayout client={client} /><PageContent><LookupPanel client={client} /></PageContent></>}
+        element={<><CheckInLayout client={client} /><PageContent showPublicHeader={false}><LookupPanel client={client} /></PageContent></>}
       />
       <Route path="/admin/login" element={<PageContent><LoginPage client={client} /></PageContent>} />
       <Route path="/admin/verify" element={<PageContent><VerifyPage client={client} onSignedIn={() => undefined} /></PageContent>} />

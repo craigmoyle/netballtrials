@@ -144,7 +144,8 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await page.goto(`/register/${fixtures.mainEventId}/pending?session=${encodeURIComponent(sessionId!)}`);
   await expect(page.getByRole('heading', { name: 'Confirming your payment' })).toBeVisible();
   await expect(page.getByText(/Payment received/i)).toHaveCount(0);
-  await expect(page.locator('img')).toHaveCount(0);
+  await expect(page.getByRole('img', { name: 'Chisholm Netball logo' })).toBeVisible();
+  await expect(page.getByRole('img')).toHaveCount(1);
 
   // This pre-seeded ticket fixture exercises the ticket page only; the fake Checkout remains pending.
   await page.goto(`/ticket/${fixtures.ticketToken}`);
@@ -169,6 +170,8 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(unauthorized.status()).toBe(401);
   expect(unauthorizedExport.status()).toBe(401);
   await signIn(page, request);
+  await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('navigation', { name: 'Sign in options' })).toHaveCount(0);
   await expectAccessible(page);
 
   await page.getByRole('link', { name: 'E2E Draft event' }).click();
@@ -233,6 +236,8 @@ test('volunteer uses manual fallback, sees referral/name/bib, live count and und
   await page.getByLabel('Event PIN').fill('4821');
   await page.getByRole('button', { name: 'Start check-in' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('navigation', { name: 'Sign in options' })).toHaveCount(0);
   await expect(page.getByText('0 of 14 arrived')).toBeVisible();
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Checkin1 Trial');

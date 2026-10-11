@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   listEvents: vi.fn(),
   getEvent: vi.fn(),
   checkInSettings: vi.fn(),
+  checkInSummary: vi.fn(),
   getRoster: vi.fn(),
   downloadRoster: vi.fn(),
   getPublicEvent: vi.fn(),
@@ -38,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
+  apiMocks.checkInSummary.mockResolvedValue({ eventId: 'check-in-event', eventName: 'E2E Check-in', registered: 14, checkedIn: 0, closed: false });
 });
 
 describe('Public home page', () => {
@@ -129,12 +131,28 @@ describe('App route boundaries', () => {
     apiMocks.listEvents.mockResolvedValue([]);
     renderApp('/admin/events');
     const newEvent = await screen.findByRole('link', { name: 'New event' });
+    expect(screen.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('navigation', { name: 'Administration' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Sign in options' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Events | Chisholm Netball Trials'));
     fireEvent.click(newEvent);
     expect(await screen.findByRole('heading', { name: 'New event' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/new');
     await waitFor(() => expect(document.title).toBe('New event | Chisholm Netball Trials'));
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the home logo and check-in navigation without public sign-in links during a session', async () => {
+    renderApp('/check-in/lookup');
+
+    expect(await screen.findByRole('heading', { name: 'E2E Check-in' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
+    const checkInNav = screen.getByRole('navigation', { name: 'Check-in' });
+    expect(within(checkInNav).getByRole('link', { name: 'Scan' })).toHaveAttribute('href', '/check-in/scan');
+    expect(within(checkInNav).getByRole('link', { name: 'Lookup' })).toHaveAttribute('href', '/check-in/lookup');
+    expect(screen.queryByRole('navigation', { name: 'Sign in options' })).not.toBeInTheDocument();
+    expect(apiMocks.me).not.toHaveBeenCalled();
   });
 
   it('navigates from events to the connected event roster without a document reload', async () => {
