@@ -15,6 +15,7 @@ import { CheckInLayout } from './checkin/CheckInLayout';
 import { ScanPage } from './checkin/ScanPage';
 import { LookupPanel } from './checkin/LookupPanel';
 import { PlannerPage } from './planner/PlannerPage';
+import { FullGameListPage } from './planner/FullGameListPage';
 import { SheetsPage } from './planner/SheetsPage';
 import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
@@ -44,6 +45,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/bib-colors$/, 'Bib colors'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
+  [/^\/admin\/events\/[^/]+\/games$/, 'Full Game List'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
   [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
   [/^\/admin\/events\/[^/]+\/messages$/, 'Messages'],
@@ -104,6 +106,12 @@ function PlannerRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
   return <PlannerPage client={client} eventId={id} />;
+}
+
+function GamesRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <FullGameListPage client={client} eventId={id} />;
 }
 
 function SheetsRoute({ client }: { client: Client }) {
@@ -174,6 +182,7 @@ export function App() {
         <Route path="events/:id/check-in" element={<AdminCheckInRoute client={client} />} />
         <Route path="events/:id/day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
         <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
+        <Route path="events/:id/games" element={<GamesRoute client={client} />} />
         <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
         <Route path="events/:id/review" element={<ReviewRoute client={client} />} />
         <Route path="events/:id/messages" element={<MessagesRoute client={client} />} />

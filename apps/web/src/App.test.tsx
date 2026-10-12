@@ -16,6 +16,11 @@ const apiMocks = vi.hoisted(() => ({
   archiveBibColor: vi.fn(),
   getCourtColors: vi.fn(),
   setCourtColors: vi.fn(),
+  getPublishedPlan: vi.fn(),
+  getGameRoster: vi.fn(),
+  getPlanRevisions: vi.fn(),
+  getPlanRevision: vi.fn(),
+  saveManualRound: vi.fn(),
   dayOfRegistration: vi.fn(),
   getRoster: vi.fn(),
   downloadRoster: vi.fn(),
@@ -52,6 +57,11 @@ beforeEach(() => {
   apiMocks.listBibColors.mockResolvedValue([]);
   apiMocks.getCourtColors.mockResolvedValue([]);
   apiMocks.setCourtColors.mockResolvedValue({});
+  apiMocks.getPublishedPlan.mockResolvedValue(null);
+  apiMocks.getGameRoster.mockResolvedValue([]);
+  apiMocks.getPlanRevisions.mockResolvedValue([]);
+  apiMocks.getPlanRevision.mockResolvedValue(null);
+  apiMocks.saveManualRound.mockResolvedValue({ ok: true, plan: null });
 });
 
 describe('Public home page', () => {
@@ -187,6 +197,27 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/check-in/scan');
     expect(screen.getByRole('link', { name: 'Look up by name instead' })).toHaveAttribute('href', '/check-in/lookup');
     expect(screen.queryByLabelText('Event PIN')).not.toBeInTheDocument();
+  });
+
+  it('loads Full Game List through the protected Admin route with an empty-plan path to Plan Rounds', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.getEvent.mockResolvedValue({
+      id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+      eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
+      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 2,
+      rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
+    });
+    renderApp('/admin/events/event-1/games');
+
+    expect(await screen.findByText('No published game plan yet.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Full Game List' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getPublishedPlan).toHaveBeenCalledWith('event-1');
+    expect(apiMocks.getGameRoster).toHaveBeenCalledWith('event-1');
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/event-1/games');
+    await waitFor(() => expect(document.title).toBe('Full Game List | Chisholm Netball Trials'));
   });
 
   it('loads the Admin bib color catalog through the protected Admin route', async () => {

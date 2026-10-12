@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, EmailLogDTO, EventCourtColorDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, EmailLogDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, MemberAssociationDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -32,6 +32,26 @@ async function request<T>(baseUrl: string, path: string, init?: RequestInit): Pr
   }
 
   return body as T;
+}
+
+type ManualRoundResult =
+  | { ok: true; plan: RoundPlanDTO }
+  | { ok: false; reason: 'invalid_plan'; errors: PlannerGapDTO[] }
+  | { ok: false; reason: 'warnings_required'; warnings: PlannerGapDTO[] };
+
+async function manualRoundAction(baseUrl: string, eventId: string, round: number, input: ManualRoundInputDTO): Promise<ManualRoundResult> {
+  const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/plan/rounds/${round}/manual`, {
+    method: 'POST', body: JSON.stringify(input),
+  });
+  const body = await response.json().catch(() => null);
+  if (response.status === 422 && body?.error === 'invalid_plan') {
+    return { ok: false, reason: 'invalid_plan', errors: (body.errors ?? []) as PlannerGapDTO[] };
+  }
+  if (response.status === 422 && body?.error === 'warnings_require_confirmation') {
+    return { ok: false, reason: 'warnings_required', warnings: (body.warnings ?? []) as PlannerGapDTO[] };
+  }
+  if (!response.ok) throw new ApiError(response.status, body?.error ?? 'request_failed');
+  return { ok: true, plan: body as RoundPlanDTO };
 }
 
 async function planAction(
@@ -165,6 +185,10 @@ export function apiClient(baseUrl: string) {
       }
     },
     getPlanPreview: (eventId: string) => request<PlannerPreviewDTO>(baseUrl, `/api/admin/events/${eventId}/plan/preview`),
+    getPlanRevisions: (eventId: string) => request<PlanRevisionSummaryDTO[]>(baseUrl, `/api/admin/events/${eventId}/plan/revisions`),
+    getPlanRevision: (eventId: string, planId: string) => request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan/revisions/${planId}`),
+    getGameRoster: (eventId: string) => request<GamePlayerDTO[]>(baseUrl, `/api/admin/events/${eventId}/game-roster`),
+    saveManualRound: (eventId: string, round: number, input: ManualRoundInputDTO) => manualRoundAction(baseUrl, eventId, round, input),
     generatePlan: (eventId: string) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
     publishPlan: (eventId: string) =>

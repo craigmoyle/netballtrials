@@ -137,6 +137,7 @@ export function EventControls({
         <Link to={`/admin/events/${eventId}/roster`}>Roster and export</Link>
         <Link to={`/admin/events/${eventId}/review`}>Review queue</Link>
         <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>
+        <Link to={`/admin/events/${eventId}/games`}>Full Game List</Link>
         <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>
         <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
         {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}

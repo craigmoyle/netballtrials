@@ -53,6 +53,46 @@ describe('apiClient', () => {
     expect(JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string)).toEqual({ teamAColorId: 'white', teamBColorId: 'black' });
   });
 
+  it('loads revision history, a revision, the paid checked-in roster and saves one round', async () => {
+    const plan = { id: 'plan-2', revision: 2, status: 'PUBLISHED', slots: [], players: [], validationWarnings: [] };
+    const history = [{ id: 'plan-2', revision: 2, status: 'PUBLISHED' }];
+    const roster = [{ registrationId: 'player-1', playerName: 'Ada Lovelace', bibNumber: 7, rank1Position: 'GS', rank2Position: null, rank3Position: null, optInExtraPositions: false }];
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(history), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(roster), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 201 }));
+    const client = apiClient('http://api.test') as any;
+    const input = { sourcePlanId: 'plan-1', overrideWarnings: false, slots: [{ round: 2, court: 1, position: 'GS', team: 0, registrationId: 'player-1' }] };
+
+    await expect(client.getPlanRevisions('event-1')).resolves.toEqual(history);
+    await expect(client.getPlanRevision('event-1', 'plan-2')).resolves.toEqual(plan);
+    await expect(client.getGameRoster('event-1')).resolves.toEqual(roster);
+    await expect(client.saveManualRound('event-1', 2, input)).resolves.toEqual({ ok: true, plan });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/events/event-1/plan/revisions',
+      'http://api.test/api/admin/events/event-1/plan/revisions/plan-2',
+      'http://api.test/api/admin/events/event-1/game-roster',
+      'http://api.test/api/admin/events/event-1/plan/rounds/2/manual',
+    ]);
+    expect(JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string)).toEqual(input);
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
+  });
+
+  it('returns manual-plan validation warnings and preserves stale revisions as typed errors', async () => {
+    const warning = { code: 'position_preference_warning', message: 'Check the player position.' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'warnings_require_confirmation', warnings: [warning] }), { status: 422 }))
+      .mockResolvedValueOnce(new Response('{"error":"stale_plan"}', { status: 409 }));
+    const client = apiClient('http://api.test') as any;
+
+    await expect(client.saveManualRound('event-1', 1, { sourcePlanId: 'plan-1', slots: [], overrideWarnings: false }))
+      .resolves.toEqual({ ok: false, reason: 'warnings_required', warnings: [warning] });
+    await expect(client.saveManualRound('event-1', 1, { sourcePlanId: 'plan-0', slots: [], overrideWarnings: false }))
+      .rejects.toMatchObject({ status: 409, message: 'stale_plan' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('fetches the public upcoming-trial list', async () => {
     const events = [{
       id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',

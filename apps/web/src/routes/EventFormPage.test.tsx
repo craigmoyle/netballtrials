@@ -106,7 +106,8 @@ describe('EventFormPage', () => {
     render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
     expect(await screen.findByText(/status: draft/i)).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Admin check-in' })).toHaveAttribute('href', '/admin/events/e1/check-in');
-    for (const name of ['Roster and export', 'Review queue', 'Plan rounds', 'Messages', 'Print selector sheets', 'Member associations']) {
+    expect(screen.getByRole('link', { name: 'Full Game List' })).toHaveAttribute('href', '/admin/events/e1/games');
+    for (const name of ['Roster and export', 'Review queue', 'Plan rounds', 'Full Game List', 'Messages', 'Print selector sheets', 'Member associations']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
     fireEvent.click(screen.getByRole('button', { name: /open registration/i }));

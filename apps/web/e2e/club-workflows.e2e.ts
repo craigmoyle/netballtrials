@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
@@ -314,6 +314,41 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   await page.getByRole('button', { name: 'Undo last check-in' }).click();
   await expect(page.getByText('0 of 14 arrived')).toBeVisible();
   expect(pageErrors).toEqual([]);
+});
+
+test('Full Game List supports the 390px viewport and accessible round editing', async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
+  await page.getByRole('link', { name: 'Plan rounds' }).click();
+  await page.getByRole('button', { name: 'Generate draft' }).click();
+  await expect(page.getByRole('button', { name: 'Publish revision' })).toBeVisible();
+  await page.getByRole('button', { name: 'Publish revision' }).click();
+  await expect(page.getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
+  await page.getByRole('link', { name: 'Adjust event settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+  await page.getByRole('link', { name: 'Full Game List' }).click();
+  await expect(page.getByRole('heading', { name: 'Full Game List' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Round 1' })).toBeVisible();
+  const reviewDirectory = fileURLToPath(new URL('../../../.impeccable/review/full-game-list/', import.meta.url));
+  await mkdir(reviewDirectory, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+  await page.screenshot({ path: `${reviewDirectory}/desktop.png`, fullPage: true });
+  await expectAccessible(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: `${reviewDirectory}/mobile.png`, fullPage: true });
+  await expectAccessible(page);
+
+  await page.getByRole('button', { name: 'Edit round 1' }).click();
+  await page.screenshot({ path: `${reviewDirectory}/editor-mobile.png`, fullPage: true });
+  await expect(page.getByLabel('Player to move')).toBeVisible();
+  await expect(page.getByLabel('Destination slot')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await expectAccessible(page);
 });
 
 test('planner previews, publishes, regenerates without changing the prefix, and prints four landscape sheets', async ({ page, request }) => {

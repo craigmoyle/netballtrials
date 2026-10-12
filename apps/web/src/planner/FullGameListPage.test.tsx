@@ -1,0 +1,324 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type PlanRevisionSummaryDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO } from '@netball-trials/types';
+import { ApiError } from '../api/client';
+import { FullGameListPage } from './FullGameListPage';
+
+afterEach(cleanup);
+
+const event: EventDTO = {
+  id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+  eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
+  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 2,
+  rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+  minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
+};
+
+function makePlayers(): RoundPlanPlayerDTO[] {
+  return Array.from({ length: 28 }, (_, index) => ({
+    registrationId: `player-${index}`,
+    playerName: `Player ${index + 1}`,
+    bibNumber: index + 1,
+    rank1Position: POSITIONS[index % POSITIONS.length],
+    rank2Position: null,
+    rank3Position: null,
+    optInExtraPositions: true,
+    active: true,
+  }));
+}
+
+function makePlan(overrides: Partial<RoundPlanDTO> = {}): RoundPlanDTO {
+  const players = makePlayers();
+  const slots: RoundSlotDTO[] = [];
+  for (let round = 1; round <= 2; round += 1) {
+    for (let court = 1; court <= 2; court += 1) {
+      for (const [positionIndex, position] of POSITIONS.entries()) {
+        for (const team of [0, 1]) {
+          const placeIndex = (court - 1) * 14 + positionIndex * 2 + team;
+          const player = players[(placeIndex + (round - 1) * 14) % players.length];
+          slots.push({
+            id: `slot-${round}-${court}-${position}-${team}`, round, court, position, team,
+            registrationId: player.registrationId, playerName: player.playerName, bibNumber: player.bibNumber,
+          });
+        }
+      }
+    }
+  }
+  return {
+    id: 'plan-1', eventId: event.id, status: 'PUBLISHED', revision: 1, sourcePlanId: null, frozenThroughRound: 0,
+    seed: 1, rounds: 2, courts: 2, playMinutes: 8, changeoverMinutes: 2, windowMinutes: 150,
+    rank1Min: 1, rank2Min: 0, rank3Min: 0, eventName: event.name, eventDate: event.eventDate,
+    venue: event.venue, firstWhistle: event.firstWhistle, createdAt: '2027-08-01T00:00:00.000Z',
+    publishedAt: '2027-08-01T00:00:00.000Z', slots, players, validationWarnings: [], ...overrides,
+  };
+}
+
+const plan = makePlan({ revision: 2, sourcePlanId: 'plan-0' });
+const roster: GamePlayerDTO[] = plan.players.map((player) => ({
+  registrationId: player.registrationId, playerName: player.playerName, bibNumber: player.bibNumber!,
+  rank1Position: player.rank1Position, rank2Position: player.rank2Position, rank3Position: player.rank3Position,
+  optInExtraPositions: player.optInExtraPositions,
+}));
+const colors: EventCourtColorDTO[] = [
+  { court: 1, teamAColor: { id: 'white', name: 'White', hex: '#FFFFFF', archivedAt: null }, teamBColor: { id: 'black', name: 'Black', hex: '#111111', archivedAt: null } },
+  { court: 2, teamAColor: { id: 'grey', name: 'Grey', hex: '#777777', archivedAt: null }, teamBColor: { id: 'orange', name: 'Orange', hex: '#F28C28', archivedAt: null } },
+];
+const revisions: PlanRevisionSummaryDTO[] = [
+  { id: 'plan-1', revision: 2, status: 'PUBLISHED', sourcePlanId: 'plan-0', frozenThroughRound: 0, createdAt: '2027-08-02T00:00:00.000Z', publishedAt: '2027-08-02T00:00:00.000Z', validationWarnings: [] },
+  { id: 'plan-0', revision: 1, status: 'PUBLISHED', sourcePlanId: null, frozenThroughRound: 0, createdAt: '2027-08-01T00:00:00.000Z', publishedAt: '2027-08-01T00:00:00.000Z', validationWarnings: [] },
+];
+
+function makeClient(overrides: Record<string, unknown> = {}) {
+  return {
+    getEvent: vi.fn().mockResolvedValue(event),
+    getPublishedPlan: vi.fn().mockResolvedValue(plan),
+    getGameRoster: vi.fn().mockResolvedValue(roster),
+    getPlanRevisions: vi.fn().mockResolvedValue(revisions),
+    getPlanRevision: vi.fn().mockResolvedValue(makePlan({ id: 'plan-0', revision: 1, sourcePlanId: null })),
+    getCourtColors: vi.fn().mockResolvedValue(colors),
+    saveManualRound: vi.fn().mockResolvedValue({ ok: true, plan }),
+    ...overrides,
+  };
+}
+
+function renderPage(client = makeClient()) {
+  render(<MemoryRouter><FullGameListPage client={client as any} eventId="event-1" /></MemoryRouter>);
+  return client;
+}
+
+function editRoundOne() {
+  fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
+}
+
+function makeMove(playerId = 'player-0', target = '1:1:GA:0') {
+  editRoundOne();
+  fireEvent.change(screen.getByLabelText('Player to move'), { target: { value: playerId } });
+  fireEvent.change(screen.getByLabelText('Destination slot'), { target: { value: target } });
+  fireEvent.click(screen.getByRole('button', { name: 'Move or substitute' }));
+}
+
+describe('FullGameListPage', () => {
+  it('keeps the page heading stable while the published schedule loads', async () => {
+    let resolveEvent!: (loadedEvent: EventDTO) => void;
+    const pendingEvent = new Promise<EventDTO>((resolve) => { resolveEvent = resolve; });
+    const client = makeClient({ getEvent: vi.fn(() => pendingEvent), getPublishedPlan: vi.fn().mockResolvedValue(null), getPlanRevisions: vi.fn().mockResolvedValue([]) });
+    renderPage(client);
+    const heading = screen.getByRole('heading', { name: 'Full Game List' });
+    expect(screen.getByRole('status')).toHaveTextContent('Loading game list...');
+
+    resolveEvent(event);
+    await screen.findByText('No published game plan yet.');
+    expect(screen.getByRole('heading', { name: 'Full Game List' })).toBe(heading);
+  });
+
+  it('clears the previous event context while a different event loads', async () => {
+    let holdSecondEvent!: Promise<EventDTO>;
+    const client = makeClient();
+    const view = render(<MemoryRouter><FullGameListPage client={client as any} eventId="event-1" /></MemoryRouter>);
+    await screen.findByText('Active revision 2');
+    holdSecondEvent = new Promise<EventDTO>(() => undefined);
+    client.getEvent.mockReturnValueOnce(holdSecondEvent);
+
+    view.rerender(<MemoryRouter><FullGameListPage client={client as any} eventId="event-2" /></MemoryRouter>);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading game list...');
+    expect(screen.queryByText('15/U Ladies')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View revision 1' })).not.toBeInTheDocument();
+  });
+
+  it('groups rounds, courts, Team A/B and positions, showing color names and player Numbers', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+
+    expect(screen.getAllByRole('table').slice(0, 4).map((table) => within(table).getByRole('caption').textContent)).toEqual([
+      'Round 1, Court 1, Team A', 'Round 1, Court 1, Team B', 'Round 1, Court 2, Team A', 'Round 1, Court 2, Team B',
+    ]);
+    const firstTeam = screen.getAllByRole('table')[0];
+    expect(within(firstTeam).getAllByRole('row').slice(1).map((row) => within(row).getByRole('rowheader').textContent)).toEqual(['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK']);
+    expect(within(firstTeam).getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
+    expect(screen.getAllByText('White').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Black').length).toBeGreaterThan(0);
+    expect(within(firstTeam).getByText('Player 1')).toBeInTheDocument();
+    expect(within(firstTeam).getByText('1')).toBeInTheDocument();
+    expect(screen.getAllByLabelText('White bib color swatch')[0]).toHaveStyle({ backgroundColor: '#FFFFFF' });
+  });
+
+  it('shows the selected round in Position View without losing court, team, color, player or Number', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    fireEvent.change(screen.getByLabelText('Round for position view'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
+
+    const tables = await screen.findAllByRole('table', { name: /Round 2 by position/ });
+    const table = tables[0];
+    expect(within(table).getByRole('columnheader', { name: /Team A.*White/ })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: /Team B.*Black/ })).toBeInTheDocument();
+    expect(within(table).getByText('Player 15')).toBeInTheDocument();
+    expect(within(table).getByText('Number 15')).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: /Round 1 by position/ })).not.toBeInTheDocument();
+  });
+
+  it('does not discard a local edit when revision history is unavailable', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove();
+
+    expect(screen.getByRole('button', { name: 'Revision history' })).toBeDisabled();
+    expect(screen.getByText(/save or cancel your round changes before viewing revision history/i)).toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).getByText('Player 3')).toBeInTheDocument();
+  });
+
+  it('opens revision history as a read-only view', async () => {
+    const client = renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    fireEvent.click(screen.getByRole('button', { name: 'Revision history' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View revision 1' }));
+
+    expect(await screen.findByText('Viewing revision 1 — read-only')).toBeInTheDocument();
+    expect(client.getPlanRevision).toHaveBeenCalledWith('event-1', 'plan-0');
+    expect(screen.queryByRole('button', { name: 'Edit round 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Return to active revision' })).toBeInTheDocument();
+  });
+
+  it('links an empty event to Plan Rounds', async () => {
+    renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(null), getPlanRevisions: vi.fn().mockResolvedValue([]) }));
+    expect(await screen.findByText('No published game plan yet.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
+  });
+
+  it('keeps substitutions local until save and Cancel restores the active schedule', async () => {
+    const lateArrival: GamePlayerDTO = {
+      registrationId: 'late-player', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GS',
+      rank2Position: null, rank3Position: null, optInExtraPositions: true,
+    };
+    const client = renderPage(makeClient({ getGameRoster: vi.fn().mockResolvedValue([...roster, lateArrival]) }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove('late-player', '1:1:GS:0');
+
+    expect(screen.getByText('Late Arrival')).toBeInTheDocument();
+    expect(screen.getByText('Resting players')).toBeInTheDocument();
+    expect(client.saveManualRound).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).queryByText('Late Arrival')).not.toBeInTheDocument();
+    expect(screen.getByText('Late Arrival')).toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).getByText('Player 1')).toBeInTheDocument();
+    expect(client.saveManualRound).not.toHaveBeenCalled();
+  });
+
+  it('swaps assigned players and saves only the selected round with the source revision', async () => {
+    const client = renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove();
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).getByText('Player 3')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save round 1' }));
+
+    await waitFor(() => expect(client.saveManualRound).toHaveBeenCalledTimes(1));
+    const [, round, input] = client.saveManualRound.mock.calls[0] as [string, number, { sourcePlanId: string; overrideWarnings: boolean; slots: Array<{ round: number; court: number; position: string; team: number; registrationId: string }> }];
+    expect(round).toBe(1);
+    expect(input.sourcePlanId).toBe('plan-1');
+    expect(input.overrideWarnings).toBe(false);
+    expect(input.slots).toHaveLength(28);
+    expect(input.slots).toContainEqual(expect.objectContaining({ round: 1, court: 1, position: 'GS', team: 0, registrationId: 'player-2' }));
+    expect(input.slots.every((slot) => slot.round === 1)).toBe(true);
+  });
+
+  it('supports native drag and drop to swap assigned players within the selected round', async () => {
+    const client = renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
+    const table = screen.getByRole('table', { name: 'Round 1, Court 1, Team A' });
+    const transfer = { setData: vi.fn(), getData: vi.fn(() => 'player-0'), effectAllowed: 'move' };
+    fireEvent.dragStart(within(table).getByRole('button', { name: 'Player 1' }), { dataTransfer: transfer });
+    fireEvent.dragOver(within(table).getByRole('row', { name: /GA Player 3/ }), { dataTransfer: transfer });
+    fireEvent.drop(within(table).getByRole('row', { name: /GA Player 3/ }), { dataTransfer: transfer });
+
+    expect(within(table).getByRole('row', { name: /GS Player 3/ })).toBeInTheDocument();
+    expect(within(table).getByRole('row', { name: /GA Player 1/ })).toBeInTheDocument();
+    expect(client.saveManualRound).not.toHaveBeenCalled();
+  });
+
+  it('supports dropping an assigned player onto a resting player to substitute them', async () => {
+    const lateArrival: GamePlayerDTO = {
+      registrationId: 'late-player', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GS',
+      rank2Position: null, rank3Position: null, optInExtraPositions: true,
+    };
+    renderPage(makeClient({ getGameRoster: vi.fn().mockResolvedValue([...roster, lateArrival]) }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
+    const transfer = { setData: vi.fn(), getData: vi.fn(() => 'player-0'), effectAllowed: 'move' };
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Player 1' }), { dataTransfer: transfer });
+    const restingPlayer = screen.getByRole('button', { name: 'Late Arrival' });
+    fireEvent.dragOver(restingPlayer, { dataTransfer: transfer });
+    fireEvent.drop(restingPlayer, { dataTransfer: transfer });
+
+    const teamA = screen.getByRole('table', { name: 'Round 1, Court 1, Team A' });
+    expect(within(teamA).getByText('Late Arrival')).toBeInTheDocument();
+    expect(within(teamA).queryByText('Player 1')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Resting players' })).getByText('Player 1')).toBeInTheDocument();
+  });
+
+  it('keeps hard validation errors blocking and retains the local edit for correction', async () => {
+    renderPage(makeClient({
+      saveManualRound: vi.fn().mockResolvedValue({ ok: false, reason: 'invalid_plan', errors: [{ code: 'no_solution', message: 'Every court position needs a player.' }] }),
+    }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove();
+    fireEvent.click(screen.getByRole('button', { name: 'Save round 1' }));
+
+    expect(await screen.findByText('Every court position needs a player.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save anyway' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel changes' })).toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).getByText('Player 3')).toBeInTheDocument();
+  });
+
+  it('requires a separate Save anyway action for soft warnings', async () => {
+    const client = renderPage(makeClient({
+      saveManualRound: vi.fn()
+        .mockResolvedValueOnce({ ok: false, reason: 'warnings_required', warnings: [{ code: 'position_preference_warning', message: 'Check the position preference.' }] })
+        .mockResolvedValueOnce({ ok: true, plan }),
+    }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove();
+    fireEvent.click(screen.getByRole('button', { name: 'Save round 1' }));
+
+    expect(await screen.findByText('Check the position preference.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save anyway' })).toBeInTheDocument();
+    const firstInput = client.saveManualRound.mock.calls[0][2] as { overrideWarnings: boolean };
+    expect(firstInput.overrideWarnings).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Save anyway' }));
+    await waitFor(() => expect(client.saveManualRound).toHaveBeenCalledTimes(2));
+    expect((client.saveManualRound.mock.calls[1][2] as { overrideWarnings: boolean }).overrideWarnings).toBe(true);
+  });
+
+  it('preserves local edits on stale revision and requires explicit refresh', async () => {
+    const newer = makePlan({ id: 'plan-2', revision: 3, sourcePlanId: 'plan-1' });
+    renderPage(makeClient({
+      getPublishedPlan: vi.fn().mockResolvedValueOnce(plan).mockResolvedValueOnce(newer),
+      saveManualRound: vi.fn().mockRejectedValue(new ApiError(409, 'stale_plan')),
+    }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove();
+    fireEvent.click(screen.getByRole('button', { name: 'Save round 1' }));
+
+    expect(await screen.findByText(/another Admin published a newer revision/i)).toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).getByText('Player 3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Player to move')).toBeDisabled();
+    expect(screen.getByLabelText('Destination slot')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/local changes are not saved/i);
+    expect(screen.getByRole('button', { name: 'Edit round 1' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard local changes and refresh' }));
+    expect(await screen.findByText('Active revision 3')).toBeInTheDocument();
+    expect(screen.queryByText(/another Admin published a newer revision/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps editing and position controls available at a 390px viewport', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    expect(screen.getByLabelText('Game view')).toBeVisible();
+    expect(screen.getByLabelText('Round for position view')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Edit round 1' })).toBeVisible();
+  });
+});
