@@ -17,6 +17,7 @@ import { LookupPanel } from './checkin/LookupPanel';
 import { PlannerPage } from './planner/PlannerPage';
 import { FullGameListPage } from './planner/FullGameListPage';
 import { SheetsPage } from './planner/SheetsPage';
+import { BlankSheetPage } from './planner/BlankSheetPage';
 import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
 import { RosterPage } from './admin/RosterPage';
@@ -46,6 +47,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/bib-colors$/, 'Bib colors'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
   [/^\/admin\/events\/[^/]+\/games$/, 'Full Game List'],
+  [/^\/admin\/events\/[^/]+\/sheets\/blank$/, 'Blank game sheet'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
   [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
   [/^\/admin\/events\/[^/]+\/messages$/, 'Messages'],
@@ -120,6 +122,12 @@ function SheetsRoute({ client }: { client: Client }) {
   return <SheetsPage client={client} eventId={id} />;
 }
 
+function BlankSheetRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <BlankSheetPage client={client} eventId={id} />;
+}
+
 function ReviewRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -183,6 +191,7 @@ export function App() {
         <Route path="events/:id/day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
         <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
         <Route path="events/:id/games" element={<GamesRoute client={client} />} />
+        <Route path="events/:id/sheets/blank" element={<BlankSheetRoute client={client} />} />
         <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
         <Route path="events/:id/review" element={<ReviewRoute client={client} />} />
         <Route path="events/:id/messages" element={<MessagesRoute client={client} />} />

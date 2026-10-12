@@ -28,6 +28,7 @@ const apiMocks = vi.hoisted(() => ({
   listPublicEvents: vi.fn(),
   listPublicAssociations: vi.fn(),
   getTicket: vi.fn(),
+  getBlankSheetHtml: vi.fn(),
   ticketCalendarUrl: vi.fn((token: string) => `/api/public/ticket/${token}/calendar`),
 }));
 
@@ -61,6 +62,7 @@ beforeEach(() => {
   apiMocks.getGameRoster.mockResolvedValue([]);
   apiMocks.getPlanRevisions.mockResolvedValue([]);
   apiMocks.getPlanRevision.mockResolvedValue(null);
+  apiMocks.getBlankSheetHtml.mockResolvedValue('<main class="blank-sheet"><section class="sheet">Round: ______</section></main>');
   apiMocks.saveManualRound.mockResolvedValue({ ok: true, plan: null });
 });
 
@@ -218,6 +220,19 @@ describe('App route boundaries', () => {
     expect(apiMocks.getGameRoster).toHaveBeenCalledWith('event-1');
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/event-1/games');
     await waitFor(() => expect(document.title).toBe('Full Game List | Chisholm Netball Trials'));
+  });
+
+  it('loads the standalone blank game sheet through the protected Admin route', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    renderApp('/admin/events/event-1/sheets/blank');
+
+    expect(await screen.findByRole('heading', { name: 'Blank game sheet' })).toBeInTheDocument();
+    expect(screen.getByText('Round: ______')).toBeInTheDocument();
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getBlankSheetHtml).toHaveBeenCalledWith('event-1');
+    expect(apiMocks.getPublishedPlan).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/event-1/sheets/blank');
+    await waitFor(() => expect(document.title).toBe('Blank game sheet | Chisholm Netball Trials'));
   });
 
   it('loads the Admin bib color catalog through the protected Admin route', async () => {
