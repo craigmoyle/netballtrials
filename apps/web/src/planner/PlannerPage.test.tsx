@@ -62,6 +62,8 @@ describe('PlannerPage', () => {
     renderPlanner(client);
     expect(await screen.findByText(/Draft revision 2 · 2 rounds/i)).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Bib' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /print selector sheets/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /publish revision/i }));
     expect(await screen.findByRole('link', { name: /print selector sheets/i })).toHaveAttribute('href', '/admin/events/e1/sheets');

@@ -35,7 +35,8 @@ describe('RosterPage', () => {
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByText('anne@example.com')).toBeInTheDocument();
     expect(screen.getByText(/\$35\.00/)).toBeInTheDocument();
-    expect(screen.getByText(/bib 4 · checked in/i)).toBeInTheDocument();
+    expect(screen.getByText(/number 4 · checked in/i)).toBeInTheDocument();
+    expect(screen.queryByText(/bib 4/i)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'First choice' })).toBeInTheDocument();
     expect(screen.getByText('GS: 2')).toBeInTheDocument();
     for (const link of ['Review queue', 'Plan rounds', 'Messages', 'Print selector sheets']) {

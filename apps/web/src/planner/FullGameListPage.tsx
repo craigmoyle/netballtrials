@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
+import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
-type ViewMode = 'team' | 'position';
+type ViewMode = 'team' | 'position' | 'statistics' | 'reference';
 type DisplayPlayer = { playerName: string; bibNumber: number | null };
 
 const POSITION_INDEX = new Map(POSITIONS.map((position, index) => [position, index]));
@@ -107,9 +107,20 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   }, [client, eventId, retry]);
 
   const displayedPlan = historyPlan ?? plan;
+  const availablePlan = displayedPlan;
   const readOnly = historyPlan !== null;
-  const snapshotById = new Map((displayedPlan?.players ?? []).map((player) => [player.registrationId, player]));
+  const snapshotById = new Map((availablePlan?.players ?? []).map((player) => [player.registrationId, player]));
   const rosterById = new Map(roster.map((player) => [player.registrationId, player]));
+  const reportPlayers: RoundPlanPlayerDTO[] = [
+    ...(availablePlan?.players ?? []),
+    ...(!readOnly ? roster.filter((player) => !snapshotById.has(player.registrationId)).map((player) => ({ ...player, active: true })) : []),
+  ].sort((a, b) => (a.bibNumber ?? Number.MAX_SAFE_INTEGER) - (b.bibNumber ?? Number.MAX_SAFE_INTEGER) || a.playerName.localeCompare(b.playerName));
+  const assignmentsByPlayer = new Map<string, RoundSlotDTO[]>();
+  for (const slot of availablePlan?.slots ?? []) {
+    const assignments = assignmentsByPlayer.get(slot.registrationId) ?? [];
+    assignments.push(slot);
+    assignmentsByPlayer.set(slot.registrationId, assignments);
+  }
 
   function playerDetails(registrationId: string, slot?: RoundSlotDTO): DisplayPlayer {
     const snapshot = snapshotById.get(registrationId);
@@ -522,8 +533,59 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     );
   }
 
-  const availablePlan = displayedPlan;
-  const roundsToRender = !availablePlan ? [] : viewMode === 'position' || editing ? [selectedRound] : Array.from({ length: availablePlan.rounds }, (_, index) => index + 1);
+  function renderPlayerStatistics() {
+    return (
+      <section className="player-report" aria-labelledby="player-statistics-heading">
+        <h2 id="player-statistics-heading">Player Statistics</h2>
+        <p>Other counts assignments outside the player's recorded choices.</p>
+        <p className="player-report-scroll-note">Scroll horizontally to view all columns.</p>
+        <div className="table-scroll" role="region" aria-label="Scrollable player statistics" tabIndex={0}>
+          <table className="player-statistics-table">
+            <caption>Player Statistics</caption>
+            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th></tr></thead>
+            <tbody>{reportPlayers.map((player) => {
+              const slots = assignmentsByPlayer.get(player.registrationId) ?? [];
+              const counts = { rank1: 0, rank2: 0, rank3: 0, other: 0 };
+              for (const slot of slots) {
+                if (slot.position === player.rank1Position) counts.rank1 += 1;
+                else if (player.rank2Position && slot.position === player.rank2Position) counts.rank2 += 1;
+                else if (player.rank3Position && slot.position === player.rank3Position) counts.rank3 += 1;
+                else counts.other += 1;
+              }
+              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
+  function renderPlayerReference() {
+    return (
+      <section className="player-report" aria-labelledby="player-reference-heading">
+        <h2 id="player-reference-heading">Player Reference</h2>
+        <p className="player-report-scroll-note">Scroll horizontally to view all rounds.</p>
+        <div className="table-scroll" role="region" aria-label="Scrollable player reference" tabIndex={0}>
+          <table className="player-reference-table">
+            <caption>Player Reference</caption>
+            <thead><tr><th scope="col">Player</th><th scope="col">Number</th>{Array.from({ length: availablePlan?.rounds ?? 0 }, (_, index) => <th scope="col" key={index + 1}>Round {index + 1}</th>)}</tr></thead>
+            <tbody>{reportPlayers.map((player) => <tr key={player.registrationId}>
+              <th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td>
+              {Array.from({ length: availablePlan?.rounds ?? 0 }, (_, index) => {
+                const slot = assignmentsByPlayer.get(player.registrationId)?.find((assignment) => assignment.round === index + 1);
+                if (!slot) return <td key={index + 1}>Not playing</td>;
+                const teamName = slot.team === 0 ? 'Team A' : 'Team B';
+                const color = colorFor(courtColors, slot.court, slot.team === 0 ? 0 : 1);
+                return <td key={index + 1}>Court {slot.court}, {slot.position}, {teamName} — {color?.name ?? 'Color not set'}</td>;
+              })}
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
+  const roundsToRender = !availablePlan || viewMode === 'statistics' || viewMode === 'reference' ? [] : viewMode === 'position' || editing ? [selectedRound] : Array.from({ length: availablePlan.rounds }, (_, index) => index + 1);
 
   return (
     <section className="full-game-page">
@@ -559,7 +621,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
             {!loading && availablePlan ? (
               <label htmlFor="game-view">Game view
                 <select id="game-view" aria-label="Game view" value={viewMode} disabled={editing || suffixEditing} onChange={(changeEvent) => setViewMode(changeEvent.target.value as ViewMode)}>
-                  <option value="team">Full game list</option><option value="position">Position View</option>
+                  <option value="team">Full game list</option><option value="position">Position View</option><option value="statistics">Player Statistics</option><option value="reference">Player Reference</option>
                 </select>
               </label>
             ) : null}
@@ -597,13 +659,15 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                   <ul>{availablePlan.validationWarnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}</li>)}</ul>
                 </section>
               ) : null}
-              <label htmlFor="position-round">Round for position view
-                <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
-                  {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
-                </select>
-              </label>
+              {viewMode === 'team' || viewMode === 'position' ? (
+                <label htmlFor="position-round">Round for position view
+                  <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
+                    {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
+                  </select>
+                </label>
+              ) : null}
 
-              {plan && !historyPlan && plan.frozenThroughRound < plan.rounds ? (
+              {viewMode !== 'statistics' && viewMode !== 'reference' && plan && !historyPlan && plan.frozenThroughRound < plan.rounds ? (
                 <section className="game-roster-changes" aria-labelledby="roster-changes-heading">
                   <h2 id="roster-changes-heading">Roster changes</h2>
                   {lateArrivalPlayers.length > 0 ? <p>{lateArrivalPlayers.length} newly eligible player(s) are available in Resting players.</p> : null}
@@ -713,11 +777,11 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                 </section>
               ) : null}
 
-              {viewMode === 'position'
+              {viewMode === 'statistics' ? renderPlayerStatistics() : viewMode === 'reference' ? renderPlayerReference() : viewMode === 'position'
                 ? roundsToRender.map(renderPositionRound)
                 : roundsToRender.map(renderTeamRound)}
 
-              <section className="game-resting-list" aria-labelledby="resting-players-heading">
+              {viewMode === 'team' || viewMode === 'position' ? <section className="game-resting-list" aria-labelledby="resting-players-heading">
                 <h2 id="resting-players-heading">Resting players</h2>
                 {restingPlayers.length ? <ul>{restingPlayers.map((player) => (
                   <li key={player.registrationId} onDragOver={editing ? (event) => event.preventDefault() : undefined} onDrop={editing ? (event) => dropAssignedPlayerOnResting(event, player.registrationId) : undefined}>
@@ -725,7 +789,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                     {' '}<span>Number {player.bibNumber ?? '—'}</span>
                   </li>
                 ))}</ul> : <p>No players are resting or waiting to be placed in round {selectedRound}.</p>}
-              </section>
+              </section> : null}
 
             </>
           )}

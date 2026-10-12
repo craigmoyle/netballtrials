@@ -64,7 +64,7 @@ function csvCell(value: string | number | boolean | null): string {
 const CSV_HEADERS = [
   'Player name', 'Date of birth', 'Parent/guardian', 'Email', 'Mobile', 'Association',
   'Rank 1', 'Rank 2', 'Rank 3', 'Opt in to extra positions', 'Review flagged',
-  'Registration status', 'Amount (cents)', 'Currency', 'Bib number', 'Checked in at',
+  'Registration status', 'Amount (cents)', 'Currency', 'Number', 'Checked in at',
 ];
 
 export async function exportRosterCsv(

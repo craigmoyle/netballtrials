@@ -46,6 +46,8 @@ describe('admin roster routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/csv');
     expect(response.headers['content-disposition']).toContain('.csv');
+    expect(response.body.split('\r\n')[0]).toContain('"Number"');
+    expect(response.body.split('\r\n')[0]).not.toMatch(/Bib/i);
     expect(response.body).toContain("'=HYPERLINK(");
     expect(response.body).toContain("'@SUM(1)");
     expect(response.body).toContain('"Ng, Jr"');

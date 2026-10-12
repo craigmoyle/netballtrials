@@ -69,6 +69,43 @@ const revisions: PlanRevisionSummaryDTO[] = [
   { id: 'plan-0', revision: 1, status: 'PUBLISHED', sourcePlanId: null, frozenThroughRound: 0, createdAt: '2027-08-01T00:00:00.000Z', publishedAt: '2027-08-01T00:00:00.000Z', validationWarnings: [] },
 ];
 
+const reportNames = ['Player One', 'Player Two', 'Position Mismatch', 'Early Leaver', 'Player Five', 'Player Six', 'Player Seven', 'Player Eight', 'Player Nine', 'Player Ten', 'Player Eleven', 'Player Twelve', 'Player Thirteen', 'Player Fourteen', 'Reserve Player', 'Resting Player'];
+const reportPreferences = ['GS', 'GA', 'WD', 'C', 'GK', 'GS', 'GA', 'WA', 'WA', 'C', 'WD', 'GD', 'GD', 'GK', 'GA', 'WA'] as const;
+const reportPlayers: RoundPlanPlayerDTO[] = reportNames.map((playerName, index) => ({
+  registrationId: `report-player-${index + 1}`,
+  playerName,
+  bibNumber: index + 1,
+  rank1Position: reportPreferences[index],
+  rank2Position: index === 1 ? 'GS' : null,
+  rank3Position: null,
+  optInExtraPositions: true,
+  active: index !== 3,
+}));
+const reportAssignments: Array<{ round: number; positions: Record<(typeof POSITIONS)[number], readonly [string, string]> }> = [
+  { round: 1, positions: { GS: ['report-player-1', 'report-player-6'], GA: ['report-player-2', 'report-player-7'], WA: ['report-player-8', 'report-player-9'], C: ['report-player-4', 'report-player-10'], WD: ['report-player-11', 'report-player-12'], GD: ['report-player-13', 'report-player-14'], GK: ['report-player-3', 'report-player-5'] } },
+  { round: 2, positions: { GS: ['report-player-1', 'report-player-2'], GA: ['report-player-3', 'report-player-6'], WA: ['report-player-7', 'report-player-8'], C: ['report-player-9', 'report-player-10'], WD: ['report-player-11', 'report-player-12'], GD: ['report-player-13', 'report-player-14'], GK: ['report-player-5', 'report-player-15'] } },
+];
+const reportSlots: RoundSlotDTO[] = reportAssignments.flatMap(({ round, positions }) =>
+  POSITIONS.flatMap((position) => positions[position].map((registrationId, team) => {
+    const player = reportPlayers.find((candidate) => candidate.registrationId === registrationId)!;
+    return {
+      id: `report-slot-${round}-${position}-${team}`, round, court: 1, position, team,
+      registrationId, playerName: player.playerName, bibNumber: player.bibNumber,
+    };
+  })),
+);
+const lateReportPlayer: GamePlayerDTO = {
+  registrationId: 'report-late', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GA',
+  rank2Position: null, rank3Position: null, optInExtraPositions: true,
+};
+const reportRoster: GamePlayerDTO[] = [
+  ...reportPlayers.map(({ registrationId, playerName, bibNumber, rank1Position, rank2Position, rank3Position, optInExtraPositions }) => ({
+    registrationId, playerName, bibNumber: bibNumber!, rank1Position, rank2Position, rank3Position, optInExtraPositions,
+  })),
+  lateReportPlayer,
+];
+const reportPlan = makePlan({ id: 'report-plan', revision: 2, sourcePlanId: 'plan-0', rounds: 2, courts: 1, players: reportPlayers, slots: reportSlots });
+
 function makeClient(overrides: Record<string, unknown> = {}) {
   return {
     getEvent: vi.fn().mockResolvedValue(event),
@@ -445,6 +482,43 @@ describe('FullGameListPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save suffix anyway' }));
     await waitFor(() => expect(client.saveManualSuffix).toHaveBeenCalledTimes(2));
     expect((client.saveManualSuffix.mock.calls[1][1] as { overrideWarnings: boolean }).overrideWarnings).toBe(true);
+  });
+
+  it('shows hand-checked game counts, ranked positions, other positions and resting/late players', async () => {
+    renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(reportPlan), getGameRoster: vi.fn().mockResolvedValue(reportRoster) }));
+    await screen.findByText('Active revision 2');
+    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'statistics' } });
+
+    const table = await screen.findByRole('table', { name: 'Player Statistics' });
+    const row = (name: string) => within(table).getByRole('row', { name: new RegExp(name) });
+    const values = (name: string) => within(row(name)).getAllByRole('cell').map((cell) => cell.textContent);
+    expect(within(table).getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
+    expect(screen.getByText('Scroll horizontally to view all columns.')).toBeInTheDocument();
+    expect(values('Player One')).toEqual(['1', '2', '2', '0', '0', '0']);
+    expect(values('Player Two')).toEqual(['2', '2', '1', '1', '0', '0']);
+    expect(values('Position Mismatch')).toEqual(['3', '2', '0', '0', '0', '2']);
+    expect(values('Early Leaver')).toEqual(['4', '1', '1', '0', '0', '0']);
+    expect(values('Resting Player')).toEqual(['16', '0', '0', '0', '0', '0']);
+    expect(values('Late Arrival')).toEqual(['99', '0', '0', '0', '0', '0']);
+    expect(screen.getByText(/Other counts assignments outside the player's recorded choices/i)).toBeInTheDocument();
+    expect(screen.queryByText(/anne@example.com|payment|\$35\.00/i)).not.toBeInTheDocument();
+  });
+
+  it('shows each player Number and per-round court, position, color, or Not playing', async () => {
+    renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(reportPlan), getGameRoster: vi.fn().mockResolvedValue(reportRoster) }));
+    await screen.findByText('Active revision 2');
+    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'reference' } });
+
+    const table = await screen.findByRole('table', { name: 'Player Reference' });
+    expect(within(table).getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
+    expect(screen.getByText('Scroll horizontally to view all rounds.')).toBeInTheDocument();
+    const cells = (name: string) => within(within(table).getByRole('row', { name: new RegExp(name) })).getAllByRole('cell').map((cell) => cell.textContent);
+    expect(cells('Player One')).toEqual(['1', 'Court 1, GS, Team A — White', 'Court 1, GS, Team A — White']);
+    expect(cells('Player Two')).toEqual(['2', 'Court 1, GA, Team A — White', 'Court 1, GS, Team B — Black']);
+    expect(cells('Early Leaver')).toEqual(['4', 'Court 1, C, Team A — White', 'Not playing']);
+    expect(cells('Resting Player')).toEqual(['16', 'Not playing', 'Not playing']);
+    expect(cells('Late Arrival')).toEqual(['99', 'Not playing', 'Not playing']);
+    expect(screen.queryByText(/anne@example.com|payment|\$35\.00/i)).not.toBeInTheDocument();
   });
 
   it('keeps editing and position controls available at a 390px viewport', async () => {

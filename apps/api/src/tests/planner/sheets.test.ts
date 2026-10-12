@@ -19,6 +19,8 @@ describe('renderSelectorSheets', () => {
     expect(html).toContain('@page { size: A4 landscape');
     expect(html).toContain('.sheet:not(:last-child)');
     expect(html).not.toContain('.sheet { page-break-after: always; }');
+    expect(html).toContain('<th>Number</th>');
+    expect(html).not.toContain('<th>Bib</th>');
   });
 
   it('escapes player and event data in printable HTML', () => {

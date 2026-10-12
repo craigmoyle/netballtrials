@@ -14,9 +14,13 @@ describe('public ticket', () => {
     const res = await app.inject({ method: 'GET', url: `/api/public/ticket/${token}` });
     expect(res.statusCode).toBe(200);
     expect(res.json().playerName).toBe('Ada Lovelace');
+    expect(res.json().bibNumber).toBe(42);
     expect(res.json().qrCode).toMatch(/^data:image\/png;base64,/);
     expect(res.json().event.startTime).toBe('08:30');
     expect(res.json()).not.toHaveProperty('parentEmail');
+    expect(res.json()).not.toHaveProperty('parentName');
+    expect(res.json()).not.toHaveProperty('amountCents');
+    expect(res.json()).not.toHaveProperty('status');
   });
   it('serves the matching Melbourne-time calendar file for a paid ticket', async () => {
     const { token } = await seedPaid();
@@ -38,6 +42,6 @@ describe('public ticket', () => {
 async function seedPaid() {
   const event = await prisma.event.create({ data: eventFixture() });
   const token = 'a'.repeat(43);
-  await prisma.registration.create({ data: { ...registrationFixture(event.id), status: 'PAID', qrToken: token } });
+  await prisma.registration.create({ data: { ...registrationFixture(event.id), status: 'PAID', bibNumber: 42, qrToken: token } });
   return { token };
 }

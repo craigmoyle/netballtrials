@@ -109,7 +109,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
                 const amount = new Intl.NumberFormat('en-AU', { style: 'currency', currency: registration.currency.toUpperCase() }).format(registration.amountCents / 100);
                 const positions = [registration.rank1Position, registration.rank2Position, registration.rank3Position].filter(Boolean).join(', ');
                 const attendance = registration.checkedInAt
-                  ? `Bib ${registration.bibNumber ?? '—'} · checked in`
+                  ? `Number ${registration.bibNumber ?? '—'} · checked in`
                   : registration.status === 'PAID' ? 'No-show' : 'Not checked in';
                 return (
                   <tr key={registration.id}>

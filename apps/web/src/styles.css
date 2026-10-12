@@ -305,6 +305,16 @@ thead { background: var(--blue-pale); }
 .game-revision-subtitle { margin-bottom: 0.35rem; font-weight: 650; }
 .game-history-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .game-history-banner p { margin: 0; font-weight: 650; }
+.player-report { margin-block: 1.5rem; }
+.player-report h2 { margin-block: 0 0.75rem; }
+.player-report > p { margin-block: 0 0.75rem; }
+.player-statistics-table { min-width: 43rem; }
+.player-statistics-table caption, .player-reference-table caption { text-align: left; }
+.player-report-scroll-note { display: none; }
+.player-reference-table { min-width: max-content; }
+.player-reference-table th:first-child { min-width: 12rem; }
+.player-reference-table th:nth-child(2), .player-reference-table td:nth-child(2) { min-width: 6rem; }
+.player-reference-table th:nth-child(n+3), .player-reference-table td:nth-child(n+3) { min-width: 13rem; overflow-wrap: anywhere; }
 
 @media (max-width: 56rem) {
   .full-game-layout { grid-template-columns: minmax(0, 1fr); }
@@ -321,6 +331,7 @@ thead { background: var(--blue-pale); }
   .full-game-position-table th, .full-game-position-table td { padding: 0.4rem; }
   .game-editor, .game-empty-state, .game-history-banner { padding: 0.75rem; }
   .game-suffix-replacement { grid-template-columns: minmax(0, 1fr); }
+  .player-report-scroll-note { display: block; }
 }
 
 ::selection { color: #fff; background: var(--burgundy); }

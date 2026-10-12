@@ -28,7 +28,7 @@ export function TicketPage({ client, token }: { client: Client; token: string })
       {ticket.event.startTime ? <p>Arrival {ticket.event.startTime}</p> : null}
       {ticket.event.firstWhistle ? <p>First whistle {ticket.event.firstWhistle}</p> : null}
       {ticket.event.venue ? <p>{ticket.event.venue}</p> : null}
-      {ticket.bibNumber ? <p>Bib {ticket.bibNumber}</p> : null}
+      {ticket.bibNumber ? <p>Number {ticket.bibNumber}</p> : null}
       <img className="ticket-qr" src={ticket.qrCode} alt={`Check-in QR code for ${ticket.playerName}`} />
       <p>Show this QR code to a volunteer at check-in.</p>
       <p><a href={client.ticketCalendarUrl(token)} download>Download calendar invite</a></p>

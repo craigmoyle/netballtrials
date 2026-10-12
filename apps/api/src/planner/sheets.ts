@@ -29,8 +29,8 @@ function renderSection(input: SheetInput): string {
 
   return `<section class="sheet" data-round="${input.round}" data-court="${input.court}">
 <header class="selector-print__header"><h1>${escapeHtml(input.event.name)}</h1><p>Round ${input.round} · Court ${input.court} · ${escapeHtml(input.event.venue)} · ${escapeHtml(input.event.eventDate)}</p></header>
-<table><caption>Team 1</caption><thead><tr><th>Position</th><th>Bib</th><th>Player</th></tr></thead><tbody>${team(0)}</tbody></table>
-<table><caption>Team 2</caption><thead><tr><th>Position</th><th>Bib</th><th>Player</th></tr></thead><tbody>${team(1)}</tbody></table>
+<table><caption>Team 1</caption><thead><tr><th>Position</th><th>Number</th><th>Player</th></tr></thead><tbody>${team(0)}</tbody></table>
+<table><caption>Team 2</caption><thead><tr><th>Position</th><th>Number</th><th>Player</th></tr></thead><tbody>${team(1)}</tbody></table>
 <p class="selector-print__legend">* out of the player's selected positions</p>
 </section>`;
 }

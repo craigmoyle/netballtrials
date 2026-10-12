@@ -121,7 +121,7 @@ export function PlannerPage({ client, eventId }: { client: Client; eventId: stri
         <div className="table-scroll">
           <table className="schedule-preview">
             <caption>Schedule preview — {plan.status.toLowerCase()} revision {plan.revision}</caption>
-            <thead><tr><th scope="col">Round</th><th scope="col">Court</th><th scope="col">Team</th><th scope="col">Position</th><th scope="col">Bib</th><th scope="col">Player</th></tr></thead>
+            <thead><tr><th scope="col">Round</th><th scope="col">Court</th><th scope="col">Team</th><th scope="col">Position</th><th scope="col">Number</th><th scope="col">Player</th></tr></thead>
             <tbody>
               {plan.slots.map((slot) => <tr key={slot.id}><td>{slot.round}</td><td>{slot.court}</td><td>{slot.team + 1}</td><td>{slot.position}</td><td>{slot.bibNumber ?? '—'}</td><td>{slot.playerName}</td></tr>)}
             </tbody>
