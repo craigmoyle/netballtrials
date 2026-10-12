@@ -34,6 +34,7 @@ describe('manual game-plan read routes', () => {
     expect((await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/plan/revisions/${planId}` })).statusCode).toBe(401);
     expect((await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/game-roster` })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/plan/rounds/1/manual`, payload: {} })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/plan/suffix/manual`, payload: {} })).statusCode).toBe(401);
   });
 
   it('lists revisions and returns an immutable revision with player snapshots and warnings', async () => {
@@ -78,6 +79,29 @@ describe('manual game-plan read routes', () => {
     expect(response.json()).toHaveLength(28);
     expect(response.json()).toContainEqual(expect.objectContaining({ registrationId: expect.any(String), playerName: 'Player0 Test', bibNumber: 1 }));
     expect(JSON.stringify(response.json())).not.toMatch(/parentEmail|parentMobile|amountCents|checkoutSessionId|status/);
+  });
+
+  it('adds a newly checked-in paid player to the eligible roster and excludes other statuses', async () => {
+    const late = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Late', playerLastName: 'Arrival', playerNameNormalized: 'late arrival',
+      status: 'PAID', checkedInAt: new Date(), bibNumber: 29,
+    }) });
+    const failed = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Failed', playerLastName: 'Payment', playerNameNormalized: 'failed payment',
+      status: 'FAILED', checkedInAt: new Date(), bibNumber: 30,
+    }) });
+    const unchecked = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Not', playerLastName: 'Checked', playerNameNormalized: 'not checked',
+      status: 'PAID', checkedInAt: null, bibNumber: null,
+    }) });
+
+    const response = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/game-roster`, cookies: { nt_session: cookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(29);
+    expect(response.json()).toContainEqual(expect.objectContaining({ registrationId: late.id, playerName: 'Late Arrival', bibNumber: 29 }));
+    expect(response.json().some((player: { registrationId: string }) => player.registrationId === failed.id || player.registrationId === unchecked.id)).toBe(false);
+    expect(JSON.stringify(response.json())).not.toMatch(/parentEmail|parentMobile|amountCents|status/);
   });
 
   it('does not expose a revision belonging to another event', async () => {

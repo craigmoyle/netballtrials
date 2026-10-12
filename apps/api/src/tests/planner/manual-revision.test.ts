@@ -25,6 +25,13 @@ async function saveRound(round: number, input: Record<string, unknown>) {
   });
 }
 
+async function saveSuffix(input: Record<string, unknown>) {
+  return app.inject({
+    method: 'POST', url: `/api/admin/events/${eventId}/plan/suffix/manual`,
+    cookies: { nt_session: adminCookie }, payload: input,
+  });
+}
+
 function slotInput(slot: { round: number; court: number; position: string; team: number; registrationId: string }) {
   return { round: slot.round, court: slot.court, position: slot.position, team: slot.team, registrationId: slot.registrationId };
 }
@@ -195,6 +202,82 @@ describe('manual published-plan revisions', () => {
     expect(await prisma.roundPlan.count({ where: { eventId } })).toBe(beforeCount);
 
     const accepted = await saveRound(1, planInput(submitted, true));
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json().validationWarnings.length).toBeGreaterThan(0);
+  });
+
+  it('saves a complete manual suffix, preserves the prefix and leaves registration history unchanged', async () => {
+    await resetDb();
+    adminCookie = await signInAsNewAdmin(app, 'manual-plan-admin@example.com');
+    await createPublishedEvent(29, true);
+    const source = await prisma.roundPlan.findUniqueOrThrow({ where: { id: activePlanId }, include: { slots: true, players: true } });
+    const fromRound = 2;
+    const removed = source.players.find((player) => source.slots.some((slot) => slot.round === 1 && slot.registrationId === player.registrationId) &&
+      source.slots.some((slot) => slot.round >= fromRound && slot.registrationId === player.registrationId))!;
+    const registrationBefore = await prisma.registration.findUniqueOrThrow({ where: { id: removed.registrationId } });
+    const prefix = source.slots.filter((slot) => slot.round < fromRound).map(slotInput);
+    const suffix = source.slots.filter((slot) => slot.round >= fromRound).map(slotInput);
+    for (let round = fromRound; round <= source.rounds; round += 1) {
+      const leaverSlot = suffix.find((slot) => slot.round === round && slot.registrationId === removed.registrationId);
+      if (!leaverSlot) continue;
+      const assigned = new Set(suffix.filter((slot) => slot.round === round).map((slot) => slot.registrationId));
+      const replacement = source.players.find((player) => player.active && player.registrationId !== removed.registrationId && !assigned.has(player.registrationId));
+      expect(replacement).toBeTruthy();
+      const index = suffix.findIndex((slot) => slot === leaverSlot);
+      suffix[index] = { ...leaverSlot, registrationId: replacement!.registrationId };
+    }
+
+    const response = await saveSuffix({ sourcePlanId: source.id, fromRound, slots: suffix, removedRegistrationIds: [removed.registrationId], overrideWarnings: true });
+
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.json()).toMatchObject({ status: 'PUBLISHED', revision: source.revision + 1, sourcePlanId: source.id, frozenThroughRound: fromRound - 1 });
+    const next = await prisma.roundPlan.findUniqueOrThrow({ where: { id: response.json().id }, include: { slots: true, players: true } });
+    expect(sortedSlots(next.slots.filter((slot) => slot.round < fromRound).map(slotInput))).toEqual(sortedSlots(prefix));
+    expect(next.slots.some((slot) => slot.round >= fromRound && slot.registrationId === removed.registrationId)).toBe(false);
+    expect(next.players.find((player) => player.registrationId === removed.registrationId)?.active).toBe(false);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).publishedPlanId).toBe(next.id);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: removed.registrationId } })).toMatchObject({
+      status: registrationBefore.status, bibNumber: registrationBefore.bibNumber, checkedInAt: registrationBefore.checkedInAt,
+    });
+  });
+
+  it('blocks an incomplete manual suffix without creating a revision', async () => {
+    await resetDb();
+    adminCookie = await signInAsNewAdmin(app, 'manual-plan-admin@example.com');
+    await createPublishedEvent();
+    const source = await prisma.roundPlan.findUniqueOrThrow({ where: { id: activePlanId }, include: { slots: true } });
+    const suffix = source.slots.filter((slot) => slot.round >= 2).map(slotInput);
+    const countBefore = await prisma.roundPlan.count({ where: { eventId } });
+
+    const response = await saveSuffix({ sourcePlanId: source.id, fromRound: 2, slots: suffix.slice(0, -1), removedRegistrationIds: [], overrideWarnings: false });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: 'invalid_plan' });
+    expect(await prisma.roundPlan.count({ where: { eventId } })).toBe(countBefore);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).publishedPlanId).toBe(source.id);
+  });
+
+  it('requires a warning override for soft manual suffix violations', async () => {
+    await resetDb();
+    adminCookie = await signInAsNewAdmin(app, 'manual-plan-admin@example.com');
+    await createPublishedEvent(29);
+    const source = await prisma.roundPlan.findUniqueOrThrow({ where: { id: activePlanId }, include: { slots: true, players: true } });
+    const suffix = source.slots.filter((slot) => slot.round >= 2).map(slotInput);
+    const roundTwo = suffix.filter((slot) => slot.round === 2);
+    const assigned = new Set(roundTwo.map((slot) => slot.registrationId));
+    const resting = source.players.find((player) => player.active && !assigned.has(player.registrationId))!;
+    const position = roundTwo.find((slot) => slot.position !== resting.rank1Position)!;
+    const edited = suffix.map((slot) => slot === position ? { ...slot, registrationId: resting.registrationId } : slot);
+    const beforeCount = await prisma.roundPlan.count({ where: { eventId } });
+    const input = { sourcePlanId: source.id, fromRound: 2, slots: edited, removedRegistrationIds: [], overrideWarnings: false };
+
+    const warning = await saveSuffix(input);
+    expect(warning.statusCode).toBe(422);
+    expect(warning.json()).toMatchObject({ error: 'warnings_require_confirmation' });
+    expect(warning.json().warnings.length).toBeGreaterThan(0);
+    expect(await prisma.roundPlan.count({ where: { eventId } })).toBe(beforeCount);
+
+    const accepted = await saveSuffix({ ...input, overrideWarnings: true });
     expect(accepted.statusCode).toBe(201);
     expect(accepted.json().validationWarnings.length).toBeGreaterThan(0);
   });

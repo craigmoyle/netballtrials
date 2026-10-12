@@ -93,6 +93,25 @@ describe('apiClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('passes early-leaver IDs to automatic rebuilding and submits a complete manual suffix', async () => {
+    const plan = { id: 'plan-2', revision: 2, status: 'DRAFT', slots: [], players: [], validationWarnings: [] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 201 }));
+    const client = apiClient('http://api.test') as any;
+    const suffix = { sourcePlanId: 'plan-1', fromRound: 3, removedRegistrationIds: ['player-7'], overrideWarnings: false,
+      slots: [{ round: 3, court: 1, position: 'GS', team: 0, registrationId: 'player-8' }] };
+
+    await expect(client.regeneratePlan('event-1', 3, ['player-7'])).resolves.toEqual({ ok: true, plan });
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ fromRound: 3, removedRegistrationIds: ['player-7'] });
+    await expect(client.saveManualSuffix('event-1', suffix)).resolves.toEqual({ ok: true, plan });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/events/event-1/plan/regenerate',
+      'http://api.test/api/admin/events/event-1/plan/suffix/manual',
+    ]);
+    expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual(suffix);
+  });
+
   it('fetches the public upcoming-trial list', async () => {
     const events = [{
       id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',

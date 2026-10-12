@@ -2,10 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { RoundPlan, RoundPlanPlayer, RoundSlot } from '@prisma/client';
 import { POSITIONS } from '@netball-trials/types';
-import type { ManualRoundInputDTO, PlanRevisionSummaryDTO, PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
+import type { ManualRoundInputDTO, ManualSuffixInputDTO, PlanRevisionSummaryDTO, PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { getGameRoster, saveManualRoundRevision } from './games';
+import { getGameRoster, saveManualRoundRevision, saveManualSuffixRevision } from './games';
 import { generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
 import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
@@ -20,15 +20,25 @@ const POSITION_ORDER: Record<string, number> = {
   GK: 6,
 };
 
+const planSlotSchema = z.object({
+  round: z.number().int(),
+  court: z.number().int(),
+  position: z.enum(POSITIONS),
+  team: z.union([z.literal(0), z.literal(1)]),
+  registrationId: z.string().min(1),
+}).strict();
+
 const manualRoundSchema = z.object({
   sourcePlanId: z.string().min(1),
-  slots: z.array(z.object({
-    round: z.number().int(),
-    court: z.number().int(),
-    position: z.enum(POSITIONS),
-    team: z.union([z.literal(0), z.literal(1)]),
-    registrationId: z.string().min(1),
-  }).strict()),
+  slots: z.array(planSlotSchema),
+  overrideWarnings: z.boolean().default(false),
+}).strict();
+
+const manualSuffixSchema = z.object({
+  sourcePlanId: z.string().min(1),
+  fromRound: z.number().int().min(1),
+  slots: z.array(planSlotSchema),
+  removedRegistrationIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length).default([]),
   overrideWarnings: z.boolean().default(false),
 }).strict();
 
@@ -191,6 +201,19 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     return reply.code(201).send(serializePlan(result.plan));
   });
 
+  app.post('/api/admin/events/:id/plan/suffix/manual', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = manualSuffixSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const { id } = req.params as { id: string };
+    const result = await saveManualSuffixRevision(deps.prisma, id, parsed.data as ManualSuffixInputDTO, new Date());
+    if (!result.ok) {
+      if (result.reason === 'stale_plan') return reply.code(409).send({ error: 'stale_plan' });
+      if (result.reason === 'invalid_plan') return reply.code(422).send({ error: 'invalid_plan', errors: result.errors });
+      return reply.code(422).send({ error: 'warnings_require_confirmation', warnings: result.warnings });
+    }
+    return reply.code(201).send(serializePlan(result.plan));
+  });
+
   app.post(
     '/api/admin/events/:id/plan/publish',
     { preHandler: requireAdmin(deps) },
@@ -209,12 +232,16 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     '/api/admin/events/:id/plan/regenerate',
     { preHandler: requireAdmin(deps) },
     async (req, reply) => {
-      const parsed = z.object({ fromRound: z.number().int().min(1), sourcePlanId: z.string().optional() }).safeParse(req.body ?? {});
+      const parsed = z.object({
+        fromRound: z.number().int().min(1),
+        sourcePlanId: z.string().optional(),
+        removedRegistrationIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length).default([]),
+      }).safeParse(req.body ?? {});
       if (!parsed.success) {
         return reply.code(400).send({ error: 'validation_failed' });
       }
       const { id } = req.params as { id: string };
-      const result = await regenerateFromRound(deps.prisma, id, parsed.data.fromRound, new Date(), parsed.data.sourcePlanId);
+      const result = await regenerateFromRound(deps.prisma, id, parsed.data.fromRound, new Date(), parsed.data.sourcePlanId, parsed.data.removedRegistrationIds);
       if (!result.ok) {
         return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
       }

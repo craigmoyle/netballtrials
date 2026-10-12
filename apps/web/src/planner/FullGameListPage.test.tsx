@@ -78,6 +78,8 @@ function makeClient(overrides: Record<string, unknown> = {}) {
     getPlanRevision: vi.fn().mockResolvedValue(makePlan({ id: 'plan-0', revision: 1, sourcePlanId: null })),
     getCourtColors: vi.fn().mockResolvedValue(colors),
     saveManualRound: vi.fn().mockResolvedValue({ ok: true, plan }),
+    regeneratePlan: vi.fn().mockResolvedValue({ ok: true, plan: makePlan({ id: 'draft-3', status: 'DRAFT', revision: 3, sourcePlanId: plan.id }) }),
+    saveManualSuffix: vi.fn().mockResolvedValue({ ok: true, plan }),
     ...overrides,
   };
 }
@@ -213,6 +215,53 @@ describe('FullGameListPage', () => {
     expect(screen.getByRole('link', { name: 'Open Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
   });
 
+  it('lets an Admin mark an early leaver and request a reviewed suffix draft', async () => {
+    const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
+    const client = renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(currentPlan) }));
+    await screen.findByText('Active revision 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    expect(screen.getByLabelText('Remove future assignments from round')).toHaveValue('2');
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
+
+    await waitFor(() => expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 2, ['player-0']));
+    expect(await screen.findByText('Draft revision 3 is ready for review.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review draft in Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
+    expect(screen.getByText('Active revision 2')).toBeInTheDocument();
+  });
+
+  it('substitutes a resting arrival throughout the suffix and requires warning confirmation', async () => {
+    const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
+    const lateArrival: GamePlayerDTO = {
+      registrationId: 'late-player', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GS',
+      rank2Position: null, rank3Position: null, optInExtraPositions: true,
+    };
+    const client = renderPage(makeClient({
+      getPublishedPlan: vi.fn().mockResolvedValue(currentPlan),
+      getGameRoster: vi.fn().mockResolvedValue([...roster, lateArrival]),
+      saveManualSuffix: vi.fn()
+        .mockResolvedValueOnce({ ok: false, reason: 'warnings_required', warnings: [{ code: 'position_preference_warning', message: 'Review the suffix positions.' }] })
+        .mockResolvedValueOnce({ ok: true, plan }),
+    }));
+    await screen.findByText('Active revision 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Manual replacements' }));
+    fireEvent.change(screen.getByLabelText('Replacement for round 2, court 2, Team A, GS'), { target: { value: 'late-player' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save manual suffix' }));
+
+    expect(await screen.findByText('Review the suffix positions.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save suffix anyway' })).toBeInTheDocument();
+    const firstInput = client.saveManualSuffix.mock.calls[0][1] as { sourcePlanId: string; fromRound: number; removedRegistrationIds: string[]; overrideWarnings: boolean; slots: Array<{ round: number; court: number; position: string; team: number; registrationId: string }> };
+    expect(firstInput).toMatchObject({ sourcePlanId: 'plan-1', fromRound: 2, removedRegistrationIds: ['player-0'], overrideWarnings: false });
+    expect(firstInput.slots).toHaveLength(28);
+    expect(firstInput.slots.some((slot) => slot.round === 2 && slot.registrationId === 'player-0')).toBe(false);
+    expect(firstInput.slots).toContainEqual(expect.objectContaining({ round: 2, registrationId: 'late-player' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save suffix anyway' }));
+    await waitFor(() => expect(client.saveManualSuffix).toHaveBeenCalledTimes(2));
+    expect((client.saveManualSuffix.mock.calls[1][1] as { overrideWarnings: boolean }).overrideWarnings).toBe(true);
+  });
+
   it('keeps substitutions local until save and Cancel restores the active schedule', async () => {
     const lateArrival: GamePlayerDTO = {
       registrationId: 'late-player', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GS',
@@ -337,6 +386,65 @@ describe('FullGameListPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard local changes and refresh' }));
     expect(await screen.findByText('Active revision 3')).toBeInTheDocument();
     expect(screen.queryByText(/another Admin published a newer revision/i)).not.toBeInTheDocument();
+  });
+
+  it('offers an automatic suffix rebuild for selected early leavers and leaves the active plan unchanged', async () => {
+    const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
+    const client = renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(currentPlan) }));
+    await screen.findByText('Active revision 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    expect(screen.getByLabelText('Remove future assignments from round')).toHaveValue('2');
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
+
+    await waitFor(() => expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 2, ['player-0']));
+    expect(await screen.findByText('Draft revision 3 is ready for review.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review draft in Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
+    expect(screen.getByText('Active revision 2')).toBeInTheDocument();
+  });
+
+  it('explains when a removed future slot has no eligible replacement', async () => {
+    const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
+    renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(currentPlan) }));
+    await screen.findByText('Active revision 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Manual replacements' }));
+
+    expect(screen.getByText('No paid and checked-in player is available for round 2.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save manual suffix' })).toBeDisabled();
+  });
+
+  it('saves a complete manually replaced suffix and requires warning confirmation', async () => {
+    const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
+    const lateArrival: GamePlayerDTO = {
+      registrationId: 'late-player', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GS',
+      rank2Position: null, rank3Position: null, optInExtraPositions: true,
+    };
+    const client = renderPage(makeClient({
+      getPublishedPlan: vi.fn().mockResolvedValue(currentPlan),
+      getGameRoster: vi.fn().mockResolvedValue([...roster, lateArrival]),
+      saveManualSuffix: vi.fn()
+        .mockResolvedValueOnce({ ok: false, reason: 'warnings_required', warnings: [{ code: 'position_preference_warning', message: 'Review the suffix positions.' }] })
+        .mockResolvedValueOnce({ ok: true, plan }),
+    }));
+    await screen.findByText('Active revision 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Manual replacements' }));
+    fireEvent.change(screen.getByLabelText('Replacement for round 2, court 2, Team A, GS'), { target: { value: 'late-player' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save manual suffix' }));
+
+    expect(await screen.findByText('Review the suffix positions.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save suffix anyway' })).toBeInTheDocument();
+    const firstInput = client.saveManualSuffix.mock.calls[0][1] as { sourcePlanId: string; fromRound: number; removedRegistrationIds: string[]; overrideWarnings: boolean; slots: Array<{ round: number; registrationId: string }> };
+    expect(firstInput).toMatchObject({ sourcePlanId: 'plan-1', fromRound: 2, removedRegistrationIds: ['player-0'], overrideWarnings: false });
+    expect(firstInput.slots).toHaveLength(28);
+    expect(firstInput.slots.some((slot) => slot.round === 2 && slot.registrationId === 'player-0')).toBe(false);
+    expect(firstInput.slots).toContainEqual(expect.objectContaining({ round: 2, registrationId: 'late-player' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save suffix anyway' }));
+    await waitFor(() => expect(client.saveManualSuffix).toHaveBeenCalledTimes(2));
+    expect((client.saveManualSuffix.mock.calls[1][1] as { overrideWarnings: boolean }).overrideWarnings).toBe(true);
   });
 
   it('keeps editing and position controls available at a 390px viewport', async () => {

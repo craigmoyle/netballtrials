@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient, type RoundPlan, type RoundPlanPlayer, type RoundSlot } from '@prisma/client';
-import type { GamePlayerDTO, ManualRoundInputDTO } from '@netball-trials/types';
+import type { GamePlayerDTO, ManualRoundInputDTO, ManualSuffixInputDTO } from '@netball-trials/types';
 import { totalTimeMinutes } from './minimum';
 import { COURT_POSITIONS, type PlannerGap, type PlannerPlayer, type PlanSlot } from './types';
 
@@ -97,12 +97,13 @@ function settingsMatch(source: RoundPlan, event: Prisma.EventGetPayload<{}>): bo
     source.rank1Min === event.rank1Min && source.rank2Min === event.rank2Min && source.rank3Min === event.rank3Min;
 }
 
-function mergePlayers(source: LoadedPlan, registrations: EligibleRegistration[]): PlanPlayerSnapshot[] {
+function mergePlayers(source: LoadedPlan, registrations: EligibleRegistration[], inactiveRegistrationIds: string[] = []): PlanPlayerSnapshot[] {
   const eligible = new Map(registrations.map((registration) => [registration.id, toPlannerPlayer(registration)]));
+  const inactive = new Set(inactiveRegistrationIds);
   const sourceIds = new Set(source.players.map((player) => player.registrationId));
   const snapshots = source.players.map((snapshot) => {
     const current = eligible.get(snapshot.registrationId);
-    if (snapshot.active && current) return toSnapshot(current);
+    if (snapshot.active && current && !inactive.has(snapshot.registrationId)) return toSnapshot(current);
     return snapshotFromSource(snapshot);
   });
   for (const registration of registrations) {
@@ -155,6 +156,45 @@ function slotsForRound(source: LoadedPlan, round: number, input: ManualRoundInpu
     }
   }
   return { slots: [...byPlace.values()], errors };
+}
+
+function slotsForSuffix(source: LoadedPlan, input: ManualSuffixInputDTO): { slots: PlanSlot[]; errors: PlannerGap[] } {
+  const errors: PlannerGap[] = [];
+  const prefix: PlanSlot[] = source.slots.filter((slot) => slot.round < input.fromRound).map((slot) => ({
+    round: slot.round, court: slot.court, position: slot.position, team: slot.team === 0 ? 0 : 1, registrationId: slot.registrationId,
+  }));
+  const suffix: PlanSlot[] = [];
+  const submittedPlaces = new Set<string>();
+  const expected = (source.rounds - input.fromRound + 1) * source.courts * 14;
+  if (input.slots.length !== expected) errors.push(gap(`The suffix must contain all ${expected} court positions.`, { expected, actual: input.slots.length }));
+
+  for (const submitted of input.slots) {
+    if (submitted.round < input.fromRound || submitted.round > source.rounds ||
+      !Number.isInteger(submitted.court) || submitted.court < 1 || submitted.court > source.courts ||
+      !isPosition(submitted.position) || (submitted.team !== 0 && submitted.team !== 1)) {
+      errors.push(gap('A suffix slot has an invalid round, court, team, or position.', { round: submitted.round, court: submitted.court, team: submitted.team, position: submitted.position }));
+      continue;
+    }
+    const key = placeKey(submitted);
+    if (submittedPlaces.has(key)) {
+      errors.push(gap(`Suffix court position ${key} is assigned more than once.`));
+      continue;
+    }
+    submittedPlaces.add(key);
+    suffix.push({ ...submitted, team: submitted.team });
+  }
+
+  for (let round = input.fromRound; round <= source.rounds; round += 1) {
+    for (let court = 1; court <= source.courts; court += 1) {
+      for (const position of COURT_POSITIONS) {
+        for (const team of [0, 1]) {
+          const key = `${round}:${court}:${position}:${team}`;
+          if (!submittedPlaces.has(key)) errors.push(gap(`Suffix is missing round ${round}, court ${court}, ${position}, team ${team}.`));
+        }
+      }
+    }
+  }
+  return { slots: [...prefix, ...suffix], errors };
 }
 
 function validatePlan(
@@ -269,6 +309,47 @@ function manualWarnings(
   return warnings;
 }
 
+async function createPublishedRevision(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  source: LoadedPlan,
+  slots: PlanSlot[],
+  snapshots: PlanPlayerSnapshot[],
+  warnings: PlannerGap[],
+  now: Date,
+  frozenThroughRound = source.frozenThroughRound,
+): Promise<LoadedPlan> {
+  const latest = await tx.roundPlan.findFirst({ where: { eventId }, orderBy: { revision: 'desc' }, select: { revision: true } });
+  const created = await tx.roundPlan.create({
+    data: {
+      eventId,
+      revision: (latest?.revision ?? 0) + 1,
+      sourcePlanId: source.id,
+      frozenThroughRound,
+      seed: source.seed,
+      status: 'PUBLISHED',
+      rounds: source.rounds,
+      courts: source.courts,
+      playMinutes: source.playMinutes,
+      changeoverMinutes: source.changeoverMinutes,
+      windowMinutes: source.windowMinutes,
+      rank1Min: source.rank1Min,
+      rank2Min: source.rank2Min,
+      rank3Min: source.rank3Min,
+      eventName: source.eventName,
+      eventDate: source.eventDate,
+      venue: source.venue,
+      firstWhistle: source.firstWhistle,
+      publishedAt: now,
+      validationWarnings: warnings as unknown as Prisma.InputJsonValue,
+    },
+  });
+  await tx.roundPlanPlayer.createMany({ data: snapshots.map((player) => ({ planId: created.id, ...player })) });
+  await tx.roundSlot.createMany({ data: slots.map((slot) => ({ planId: created.id, ...slot })) });
+  await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: created.id } });
+  return tx.roundPlan.findUniqueOrThrow({ where: { id: created.id }, include: { slots: true, players: true } });
+}
+
 export async function saveManualRoundRevision(
   prisma: PrismaClient,
   eventId: string,
@@ -316,39 +397,81 @@ export async function saveManualRoundRevision(
       return { ok: false, reason: 'warnings_required', errors: [], warnings };
     }
 
-    const latest = await tx.roundPlan.findFirst({ where: { eventId }, orderBy: { revision: 'desc' }, select: { revision: true } });
-    const created = await tx.roundPlan.create({
-      data: {
-        eventId,
-        revision: (latest?.revision ?? 0) + 1,
-        sourcePlanId: source.id,
-        frozenThroughRound: source.frozenThroughRound,
-        seed: source.seed,
-        status: 'PUBLISHED',
-        rounds: source.rounds,
-        courts: source.courts,
-        playMinutes: source.playMinutes,
-        changeoverMinutes: source.changeoverMinutes,
-        windowMinutes: source.windowMinutes,
-        rank1Min: source.rank1Min,
-        rank2Min: source.rank2Min,
-        rank3Min: source.rank3Min,
-        eventName: source.eventName,
-        eventDate: source.eventDate,
-        venue: source.venue,
-        firstWhistle: source.firstWhistle,
-        publishedAt: now,
-        validationWarnings: warnings as unknown as Prisma.InputJsonValue,
+    const plan = await createPublishedRevision(tx, eventId, source, roundResult.slots, snapshots, warnings, now);
+    return { ok: true, plan };
+  });
+}
+
+export async function saveManualSuffixRevision(
+  prisma: PrismaClient,
+  eventId: string,
+  input: ManualSuffixInputDTO,
+  now: Date,
+): Promise<ManualRoundResult> {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
+    if (locked.length !== 1) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
+
+    const event = await tx.event.findUnique({ where: { id: eventId } });
+    const source = await tx.roundPlan.findFirst({
+      where: { id: input.sourcePlanId, eventId, status: 'PUBLISHED' },
+      include: { slots: true, players: true },
+    });
+    if (!event || !source || event.publishedPlanId !== source.id || !settingsMatch(source, event)) {
+      return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
+    }
+    if (!Number.isInteger(input.fromRound) || input.fromRound <= source.frozenThroughRound || input.fromRound > source.rounds) {
+      return { ok: false, reason: 'invalid_plan', errors: [gap(`Suffix must start after round ${source.frozenThroughRound} and no later than round ${source.rounds}.`)], warnings: [] };
+    }
+    const removedIds = new Set(input.removedRegistrationIds);
+    if (removedIds.size !== input.removedRegistrationIds.length) {
+      return { ok: false, reason: 'invalid_plan', errors: [gap('Early-leaver selections must be unique.')], warnings: [] };
+    }
+
+    const registrations = await tx.registration.findMany({
+      where: { eventId, status: 'PAID', checkedInAt: { not: null } },
+      orderBy: { bibNumber: 'asc' },
+      select: {
+        id: true,
+        playerFirstName: true,
+        playerLastName: true,
+        bibNumber: true,
+        rank1Position: true,
+        rank2Position: true,
+        rank3Position: true,
+        optInExtraPositions: true,
       },
     });
-    await tx.roundPlanPlayer.createMany({
-      data: snapshots.map((player) => ({ planId: created.id, ...player })),
-    });
-    await tx.roundSlot.createMany({
-      data: roundResult.slots.map((slot) => ({ planId: created.id, ...slot })),
-    });
-    await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: created.id } });
-    const plan = await tx.roundPlan.findUniqueOrThrow({ where: { id: created.id }, include: { slots: true, players: true } });
+    const eligibleIds = new Set(registrations.map((registration) => registration.id));
+    const sourcePlayers = new Map(source.players.map((player) => [player.registrationId, player]));
+    const errors: PlannerGap[] = [];
+    for (const id of removedIds) {
+      const hasSuffixAssignment = source.slots.some((slot) => slot.round >= input.fromRound && slot.registrationId === id);
+      if (!eligibleIds.has(id) || !sourcePlayers.get(id)?.active || !hasSuffixAssignment) {
+        errors.push(gap('Each early leaver must be an active, paid and checked-in player assigned in the selected suffix.', { registrationId: id }));
+      }
+    }
+
+    const suffix = slotsForSuffix(source, input);
+    const validationSource = { ...source, frozenThroughRound: input.fromRound - 1 };
+    errors.push(...suffix.errors, ...validatePlan(validationSource, suffix.slots, registrations));
+    for (const slot of suffix.slots) {
+      if (slot.round >= input.fromRound && removedIds.has(slot.registrationId)) {
+        errors.push(gap('An early leaver still has an assignment in the suffix.', { registrationId: slot.registrationId, round: slot.round }));
+      }
+    }
+    if (errors.length > 0) return { ok: false, reason: 'invalid_plan', errors, warnings: [] };
+
+    const inactiveIds = [
+      ...source.players.filter((player) => !player.active).map((player) => player.registrationId),
+      ...removedIds,
+    ];
+    const snapshots = mergePlayers(source, registrations, inactiveIds);
+    const warnings = manualWarnings(validationSource, suffix.slots, snapshots);
+    if (warnings.length > 0 && !input.overrideWarnings) {
+      return { ok: false, reason: 'warnings_required', errors: [], warnings };
+    }
+    const plan = await createPublishedRevision(tx, eventId, source, suffix.slots, snapshots, warnings, now, input.fromRound - 1);
     return { ok: true, plan };
   });
 }

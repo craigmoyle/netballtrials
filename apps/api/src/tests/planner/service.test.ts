@@ -229,6 +229,55 @@ describe('plan service', () => {
     expect(verifyPlan(snapshotInput, revision as any)).toEqual([]);
   });
 
+  it('rebuilds the suffix without assigning a selected early leaver or mutating registration history', async () => {
+    const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
+    const draft = await generateDraftPlan(prisma, event.id, new Date(), 31);
+    if (!draft.ok) throw new Error('setup failed');
+    const published = await publishPlan(prisma, event.id, draft.plan.id);
+    if (!published.ok) throw new Error('publish setup failed');
+    const sourceSlots = await prisma.roundSlot.findMany({ where: { planId: published.plan.id } });
+    const removedId = sourceSlots.find((slot) => slot.round === 1 && sourceSlots.some((later) => later.round >= 2 && later.registrationId === slot.registrationId))?.registrationId;
+    expect(removedId).toBeTruthy();
+    const registrationBefore = await prisma.registration.findUniqueOrThrow({ where: { id: removedId! } });
+    const prefixBefore = orderedSlots(sourceSlots.filter((slot) => slot.round < 2));
+
+    const rebuilt = await regenerateFromRound(prisma, event.id, 2, new Date('2027-09-12T01:00:00Z'), published.plan.id, [removedId!]);
+
+    expect(rebuilt.ok).toBe(true);
+    if (!rebuilt.ok) return;
+    const revision = await prisma.roundPlan.findUniqueOrThrow({ where: { id: rebuilt.plan.id }, include: { slots: true, players: true } });
+    expect(revision.status).toBe('DRAFT');
+    expect(revision.frozenThroughRound).toBe(1);
+    expect(orderedSlots(revision.slots.filter((slot) => slot.round < 2))).toEqual(prefixBefore);
+    expect(revision.slots.some((slot) => slot.registrationId === removedId && slot.round >= 2)).toBe(false);
+    expect(revision.players.find((player) => player.registrationId === removedId)?.active).toBe(false);
+    const registrationAfter = await prisma.registration.findUniqueOrThrow({ where: { id: removedId! } });
+    expect(registrationAfter).toMatchObject({ status: registrationBefore.status, bibNumber: registrationBefore.bibNumber, checkedInAt: registrationBefore.checkedInAt });
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).publishedPlanId).toBe(published.plan.id);
+    const republished = await publishPlan(prisma, event.id, rebuilt.plan.id);
+    expect(republished.ok, JSON.stringify(republished)).toBe(true);
+    if (!republished.ok) return;
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).publishedPlanId).toBe(republished.plan.id);
+  });
+
+  it('does not create a suffix draft when early leavers make the remaining roster too small', async () => {
+    const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
+    const draft = await generateDraftPlan(prisma, event.id, new Date(), 41);
+    if (!draft.ok) throw new Error('setup failed');
+    const published = await publishPlan(prisma, event.id, draft.plan.id);
+    if (!published.ok) throw new Error('publish setup failed');
+    const removedIds = (await prisma.roundPlanPlayer.findMany({ where: { planId: published.plan.id }, take: 3 })).map((player) => player.registrationId);
+
+    const rebuilt = await regenerateFromRound(prisma, event.id, 2, new Date(), published.plan.id, removedIds);
+
+    expect(rebuilt.ok).toBe(false);
+    expect(await prisma.roundPlan.count({ where: { eventId: event.id } })).toBe(1);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).publishedPlanId).toBe(published.plan.id);
+    expect(await prisma.registration.count({ where: { id: { in: removedIds }, status: 'PAID' } })).toBe(3);
+  });
+
   it('refuses an invalid regeneration round without changing the source revision', async () => {
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
     const first = await generateDraftPlan(prisma, event.id, new Date(), 1);

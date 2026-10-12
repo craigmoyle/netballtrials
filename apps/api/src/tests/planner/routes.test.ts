@@ -88,6 +88,32 @@ describe('planner routes', () => {
     expect(sheets.body).not.toContain('parentEmail');
   });
 
+  it('accepts explicit early-leaver IDs for an automatic suffix rebuild without changing registrations', async () => {
+    const cookie = await signInAsNewAdmin(app, 'admin@example.com');
+    const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
+    const generated = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/generate`, cookies: { nt_session: cookie } });
+    expect(generated.statusCode).toBe(201);
+    const published = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/publish`, payload: { planId: generated.json().id }, cookies: { nt_session: cookie } });
+    expect(published.statusCode).toBe(200);
+    const sourcePlanId = published.json().id as string;
+    const sourceSlots = await prisma.roundSlot.findMany({ where: { planId: sourcePlanId } });
+    const removedId = sourceSlots.find((slot) => slot.round === 1 && sourceSlots.some((later) => later.round >= 2 && later.registrationId === slot.registrationId))!.registrationId;
+    const registrationBefore = await prisma.registration.findUniqueOrThrow({ where: { id: removedId } });
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/events/${event.id}/plan/regenerate`, cookies: { nt_session: cookie },
+      payload: { fromRound: 2, sourcePlanId, removedRegistrationIds: [removedId] },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({ status: 'DRAFT', sourcePlanId, frozenThroughRound: 1 });
+    expect(response.json().slots.some((slot: { registrationId: string; round: number }) => slot.registrationId === removedId && slot.round >= 2)).toBe(false);
+    const registrationAfter = await prisma.registration.findUniqueOrThrow({ where: { id: removedId } });
+    expect(registrationAfter).toMatchObject({ status: registrationBefore.status, bibNumber: registrationBefore.bibNumber, checkedInAt: registrationBefore.checkedInAt });
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).publishedPlanId).toBe(sourcePlanId);
+  });
+
   it('explains an infeasible request', async () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
     const event = await seedEventWithPlayers(20, { courts: 2, checkedIn: 20 });

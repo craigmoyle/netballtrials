@@ -226,8 +226,10 @@ function rosterMatches(
   currentPlayers: PlannerPlayer[],
 ): boolean {
   const activeSnapshots = snapshotPlayers.filter((player) => player.active);
-  if (activeSnapshots.length !== currentPlayers.length) return false;
+  const snapshotsById = new Map(snapshotPlayers.map((player) => [player.registrationId, player]));
   const current = new Map(currentPlayers.map((player) => [player.registrationId, player]));
+  const expectedActivePlayers = currentPlayers.filter((player) => snapshotsById.get(player.registrationId)?.active !== false);
+  if (activeSnapshots.length !== expectedActivePlayers.length) return false;
   return activeSnapshots.every((snapshot) => {
     const player = current.get(snapshot.registrationId);
     return Boolean(player && snapshot.playerName === player.name && snapshot.bibNumber === (player.bibNumber || null) &&
@@ -351,6 +353,7 @@ export async function regenerateFromRound(
   fromRound: number,
   now: Date,
   sourcePlanId?: string,
+  removedRegistrationIds: string[] = [],
 ): Promise<GenerateResult> {
   const source = await prisma.roundPlan.findFirst({
     where: { eventId, ...(sourcePlanId ? { id: sourcePlanId } : { status: 'PUBLISHED' }) },
@@ -371,28 +374,43 @@ export async function regenerateFromRound(
   if (fromRound > 1 && !settingsMatch(source, built)) {
     return { ok: false, gaps: [stalePlanGap()] };
   }
-  const frozenRows = source.slots.filter((slot) => slot.round < fromRound);
-  const currentIds = new Set(built.input.players.map((player) => player.registrationId));
-  const frozenIds = new Set(frozenRows.map((slot) => slot.registrationId));
+  const uniqueRemovedIds = new Set(removedRegistrationIds);
+  if (uniqueRemovedIds.size !== removedRegistrationIds.length) {
+    return { ok: false, gaps: [{ code: 'no_solution', message: 'Early-leaver selections must be unique.' }] };
+  }
+  const currentPlayers = new Map(built.input.players.map((player) => [player.registrationId, player]));
   const sourcePlayers = new Map(source.players.map((player) => [player.registrationId, player]));
-  const retiredSnapshots = [...frozenIds]
-    .filter((registrationId) => !currentIds.has(registrationId))
-    .map((registrationId) => sourcePlayers.get(registrationId));
-  if (retiredSnapshots.some((player) => !player)) {
-    return { ok: false, gaps: [{ code: 'no_solution', message: 'A frozen slot has no roster snapshot.' }] };
+  const removedIds = [...uniqueRemovedIds];
+  if (removedIds.some((id) => !currentPlayers.has(id) || !sourcePlayers.get(id)?.active ||
+    !source.slots.some((slot) => slot.round >= fromRound && slot.registrationId === id))) {
+    return { ok: false, gaps: [{ code: 'no_solution', message: 'Each early leaver must be an active, paid and checked-in player assigned in the selected suffix.' }] };
   }
 
-  const retiredPlayers: PlannerPlayer[] = retiredSnapshots.map((player) => ({
-    registrationId: player!.registrationId,
-    name: player!.playerName,
-    bibNumber: player!.bibNumber ?? 0,
-    rank1: player!.rank1Position,
-    rank2: player!.rank2Position,
-    rank3: player!.rank3Position,
-    optInExtra: player!.optInExtraPositions,
-  }));
-  const inactiveRegistrationIds = retiredPlayers.map((player) => player.registrationId);
-  const players = [...built.input.players, ...retiredPlayers];
+  const frozenRows = source.slots.filter((slot) => slot.round < fromRound);
+  const currentIds = new Set(currentPlayers.keys());
+  const frozenIds = new Set(frozenRows.map((slot) => slot.registrationId));
+  const retiredIds = [...frozenIds].filter((registrationId) => !currentIds.has(registrationId));
+  const inactiveRegistrationIds = [...new Set([
+    ...source.players.filter((player) => !player.active).map((player) => player.registrationId),
+    ...removedIds,
+    ...retiredIds,
+  ])];
+  const inactiveSnapshots = inactiveRegistrationIds.map((registrationId) => sourcePlayers.get(registrationId));
+  if (inactiveSnapshots.some((player) => !player)) {
+    return { ok: false, gaps: [{ code: 'no_solution', message: 'An inactive or frozen slot has no roster snapshot.' }] };
+  }
+  for (const player of inactiveSnapshots) {
+    currentPlayers.set(player!.registrationId, {
+      registrationId: player!.registrationId,
+      name: player!.playerName,
+      bibNumber: player!.bibNumber ?? 0,
+      rank1: player!.rank1Position,
+      rank2: player!.rank2Position,
+      rank3: player!.rank3Position,
+      optInExtra: player!.optInExtraPositions,
+    });
+  }
+  const players = [...currentPlayers.values()];
   const input: PlannerInput = {
     ...built.input,
     rounds: source.rounds,

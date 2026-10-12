@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, EmailLogDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, MemberAssociationDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, EmailLogDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -39,10 +39,8 @@ type ManualRoundResult =
   | { ok: false; reason: 'invalid_plan'; errors: PlannerGapDTO[] }
   | { ok: false; reason: 'warnings_required'; warnings: PlannerGapDTO[] };
 
-async function manualRoundAction(baseUrl: string, eventId: string, round: number, input: ManualRoundInputDTO): Promise<ManualRoundResult> {
-  const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/plan/rounds/${round}/manual`, {
-    method: 'POST', body: JSON.stringify(input),
-  });
+async function manualPlanAction(baseUrl: string, path: string, input: ManualRoundInputDTO | ManualSuffixInputDTO): Promise<ManualRoundResult> {
+  const response = await fetchResponse(baseUrl, path, { method: 'POST', body: JSON.stringify(input) });
   const body = await response.json().catch(() => null);
   if (response.status === 422 && body?.error === 'invalid_plan') {
     return { ok: false, reason: 'invalid_plan', errors: (body.errors ?? []) as PlannerGapDTO[] };
@@ -52,6 +50,10 @@ async function manualRoundAction(baseUrl: string, eventId: string, round: number
   }
   if (!response.ok) throw new ApiError(response.status, body?.error ?? 'request_failed');
   return { ok: true, plan: body as RoundPlanDTO };
+}
+
+async function manualRoundAction(baseUrl: string, eventId: string, round: number, input: ManualRoundInputDTO): Promise<ManualRoundResult> {
+  return manualPlanAction(baseUrl, `/api/admin/events/${eventId}/plan/rounds/${round}/manual`, input);
 }
 
 async function planAction(
@@ -193,11 +195,13 @@ export function apiClient(baseUrl: string) {
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
     publishPlan: (eventId: string) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/publish`, { method: 'POST' }),
-    regeneratePlan: (eventId: string, fromRound: number) =>
+    regeneratePlan: (eventId: string, fromRound: number, removedRegistrationIds?: string[]) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/regenerate`, {
         method: 'POST',
-        body: JSON.stringify({ fromRound }),
+        body: JSON.stringify({ fromRound, ...(removedRegistrationIds ? { removedRegistrationIds } : {}) }),
       }),
+    saveManualSuffix: (eventId: string, input: ManualSuffixInputDTO) =>
+      manualPlanAction(baseUrl, `/api/admin/events/${eventId}/plan/suffix/manual`, input),
     getSheetsHtml: async (eventId: string) => {
       const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/sheets`);
       if (!response.ok) {

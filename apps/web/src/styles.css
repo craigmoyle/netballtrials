@@ -280,6 +280,21 @@ thead { background: var(--blue-pale); }
 .game-warning-list li + li { margin-top: 0.35rem; }
 .game-action-error { margin-block: 1rem; padding: 1rem; color: #721a20; background: #fde9e9; border: 1px solid #9c1c26; }
 .game-action-error p { margin-top: 0; }
+.game-roster-changes { margin-block: 1.25rem; padding-block: 0.75rem; border-block: 1px solid var(--line); }
+.game-roster-changes > h2 { margin-block: 0 0.5rem; font-size: 1.25rem; }
+.game-roster-changes > p { margin-block: 0.5rem; }
+.early-leaver-selection { display: grid; gap: 0.75rem; margin-top: 1rem; }
+.early-leaver-selection fieldset { max-height: 18rem; overflow: auto; padding: 0.75rem; border: 1px solid var(--line); }
+.early-leaver-selection legend { font-weight: 650; }
+.early-leaver-selection fieldset ul { margin: 0; padding: 0; list-style: none; }
+.early-leaver-selection fieldset li + li { border-top: 1px solid var(--line); }
+.early-leaver-selection fieldset label { display: flex; align-items: center; gap: 0.6rem; margin: 0; padding: 0.5rem 0; }
+.early-leaver-selection fieldset input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+.game-roster-changes .game-editor { margin: 1rem 0 0; padding: 0; background: transparent; border: 0; }
+.game-suffix-replacement { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 1.5fr); gap: 0.35rem 0.75rem; max-width: 52rem; margin-block: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
+.game-suffix-replacement label { grid-column: 1 / -1; margin: 0; }
+.game-suffix-replacement span { align-self: center; }
+.game-suffix-replacement select { width: 100%; }
 .game-resting-list { margin-block: 1.5rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .game-resting-list h2 { margin-top: 0; }
 .game-resting-list ul { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; padding-left: 1.2rem; }
@@ -305,6 +320,7 @@ thead { background: var(--blue-pale); }
   .full-game-position-table { font-size: 0.84rem; }
   .full-game-position-table th, .full-game-position-table td { padding: 0.4rem; }
   .game-editor, .game-empty-state, .game-history-banner { padding: 0.75rem; }
+  .game-suffix-replacement { grid-template-columns: minmax(0, 1fr); }
 }
 
 ::selection { color: #fff; background: var(--burgundy); }

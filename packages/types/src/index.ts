@@ -188,6 +188,14 @@ export interface ManualRoundInputDTO {
   overrideWarnings: boolean;
 }
 
+export interface ManualSuffixInputDTO {
+  sourcePlanId: string;
+  fromRound: number;
+  slots: PlanSlotInputDTO[];
+  removedRegistrationIds: string[];
+  overrideWarnings: boolean;
+}
+
 export interface RoundPlanDTO {
   id: string;
   eventId: string;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
+import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
@@ -23,7 +23,7 @@ function colorFor(colors: EventCourtColorDTO[], court: number, team: 0 | 1) {
 }
 
 function sortedSlots(slots: PlanSlotInputDTO[]): PlanSlotInputDTO[] {
-  return [...slots].sort((a, b) => a.court - b.court || POSITION_INDEX.get(a.position)! - POSITION_INDEX.get(b.position)! || a.team - b.team);
+  return [...slots].sort((a, b) => a.round - b.round || a.court - b.court || POSITION_INDEX.get(a.position)! - POSITION_INDEX.get(b.position)! || a.team - b.team);
 }
 
 export function FullGameListPage({ client, eventId }: { client: Client; eventId: string }) {
@@ -46,6 +46,12 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   const [actionError, setActionError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [stalePlan, setStalePlan] = useState(false);
+  const [earlyLeaverPanelOpen, setEarlyLeaverPanelOpen] = useState(false);
+  const [suffixFromRound, setSuffixFromRound] = useState(1);
+  const [earlyLeaverIds, setEarlyLeaverIds] = useState<string[]>([]);
+  const [suffixEditing, setSuffixEditing] = useState(false);
+  const [editedSuffixSlots, setEditedSuffixSlots] = useState<PlanSlotInputDTO[]>([]);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -72,6 +78,12 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     setActionError(null);
     setSavedMessage(null);
     setStalePlan(false);
+    setEarlyLeaverPanelOpen(false);
+    setSuffixFromRound(1);
+    setEarlyLeaverIds([]);
+    setSuffixEditing(false);
+    setEditedSuffixSlots([]);
+    setDraftMessage(null);
     setBusy(false);
     Promise.all([
       client.getEvent(eventId),
@@ -87,6 +99,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
         setRoster(loadedRoster);
         setRevisions(loadedRevisions);
         setCourtColors(loadedColors);
+        setSuffixFromRound(loadedPlan ? Math.max(1, Math.min(loadedPlan.rounds, loadedPlan.frozenThroughRound + 1)) : 1);
       })
       .catch(() => { if (active) setLoadError('Could not load the game list. Retry or return to event settings.'); })
       .finally(() => { if (active) setLoading(false); });
@@ -121,13 +134,24 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     : roster).filter((player) => !selectedIds.has(player.registrationId));
   const originalRoundSlots = plan?.slots.filter((slot) => slot.round === selectedRound).map(planSlot) ?? [];
   const dirty = editing && editedSlots.some((slot) => originalRoundSlots.find((original) => slotKey(original) === slotKey(slot))?.registrationId !== slot.registrationId);
+  const suffixDirty = suffixEditing && editedSuffixSlots.some((slot) => plan?.slots.find((original) => slotKey(planSlot(original)) === slotKey(slot))?.registrationId !== slot.registrationId);
+  const dirtyAny = dirty || suffixDirty;
+  const earlyLeaverSet = new Set(earlyLeaverIds);
+  const earlyLeaverCandidates = plan?.players.filter((player) => player.active && rosterById.has(player.registrationId) &&
+    plan.slots.some((slot) => slot.round >= suffixFromRound && slot.registrationId === player.registrationId)) ?? [];
+  const lateArrivalPlayers = plan ? roster.filter((player) => !snapshotById.has(player.registrationId)) : [];
+  const suffixReplacementSlots = editedSuffixSlots.filter((slot) => !slot.registrationId);
 
   function beginEdit(round: number) {
-    if (!plan || stalePlan) return;
+    if (!plan || stalePlan || suffixEditing) return;
     setSelectedRound(round);
     setViewMode('team');
     setEditedSlots(sortedSlots(plan.slots.filter((slot) => slot.round === round).map(planSlot)));
     setEditing(true);
+    setEarlyLeaverPanelOpen(false);
+    setEarlyLeaverIds([]);
+    setSuffixEditing(false);
+    setEditedSuffixSlots([]);
     setHistoryOpen(false);
     setHistoryPlan(null);
     setWarnings([]);
@@ -143,6 +167,85 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     setWarnings([]);
     if (!stalePlan) setActionError(null);
     setSavedMessage(null);
+  }
+
+  function toggleEarlyLeaver(registrationId: string, checked: boolean) {
+    setEarlyLeaverIds((current) => checked
+      ? [...current, registrationId]
+      : current.filter((id) => id !== registrationId));
+    setDraftMessage(null);
+  }
+
+  function changeSuffixFromRound(round: number) {
+    setSuffixFromRound(round);
+    setEarlyLeaverIds([]);
+    setSuffixEditing(false);
+    setEditedSuffixSlots([]);
+    setActionError(null);
+    setDraftMessage(null);
+  }
+
+  function beginManualSuffix() {
+    if (!plan || earlyLeaverIds.length === 0 || stalePlan) return;
+    const leavers = new Set(earlyLeaverIds);
+    setEditedSuffixSlots(sortedSlots(plan.slots.filter((slot) => slot.round >= suffixFromRound).map((slot) => {
+      const input = planSlot(slot);
+      return leavers.has(input.registrationId) ? { ...input, registrationId: '' } : input;
+    })));
+    setSuffixEditing(true);
+    setEditing(false);
+    setHistoryOpen(false);
+    setEarlyLeaverPanelOpen(false);
+    setSelectedRound(suffixFromRound);
+    setViewMode('team');
+    setWarnings([]);
+    setActionError(null);
+    setDraftMessage(null);
+  }
+
+  function replaceSuffixSlot(key: string, registrationId: string) {
+    if (!suffixEditing || stalePlan) return;
+    setEditedSuffixSlots((current) => current.map((slot) => slotKey(slot) === key ? { ...slot, registrationId } : slot));
+    setWarnings([]);
+    setActionError(null);
+  }
+
+  function suffixReplacementOptions(slot: PlanSlotInputDTO): GamePlayerDTO[] {
+    const assignedElsewhere = new Set(editedSuffixSlots
+      .filter((other) => other.round === slot.round && slotKey(other) !== slotKey(slot) && other.registrationId)
+      .map((other) => other.registrationId));
+    return roster.filter((player) => !earlyLeaverSet.has(player.registrationId) && !assignedElsewhere.has(player.registrationId));
+  }
+
+  function cancelSuffixEdit() {
+    setSuffixEditing(false);
+    setEditedSuffixSlots([]);
+    setWarnings([]);
+    if (!stalePlan) setActionError(null);
+    setEarlyLeaverPanelOpen(true);
+  }
+
+  function activateRevision(nextPlan: RoundPlanDTO) {
+    setPlan(nextPlan);
+    setRevisions((current) => [{
+      id: nextPlan.id,
+      revision: nextPlan.revision,
+      status: 'PUBLISHED',
+      sourcePlanId: nextPlan.sourcePlanId,
+      frozenThroughRound: nextPlan.frozenThroughRound,
+      createdAt: nextPlan.createdAt,
+      publishedAt: nextPlan.publishedAt,
+      validationWarnings: nextPlan.validationWarnings,
+    }, ...current.filter((revision) => revision.id !== nextPlan.id)]);
+    setEditing(false);
+    setEditedSlots([]);
+    setSuffixEditing(false);
+    setEditedSuffixSlots([]);
+    setEarlyLeaverPanelOpen(false);
+    setEarlyLeaverIds([]);
+    setWarnings([]);
+    setDraftMessage(null);
+    setSavedMessage(`Revision ${nextPlan.revision} is now active.`);
   }
 
   function updateEditedSlots(next: PlanSlotInputDTO[]) {
@@ -213,21 +316,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
         else setActionError(result.errors.map((error) => error.message).join(' ') || 'The round has a hard validation error.');
         return;
       }
-      setPlan(result.plan);
-      setRevisions((current) => [{
-        id: result.plan.id,
-        revision: result.plan.revision,
-        status: 'PUBLISHED',
-        sourcePlanId: result.plan.sourcePlanId,
-        frozenThroughRound: result.plan.frozenThroughRound,
-        createdAt: result.plan.createdAt,
-        publishedAt: result.plan.publishedAt,
-        validationWarnings: result.plan.validationWarnings,
-      }, ...current.filter((revision) => revision.id !== result.plan.id)]);
-      setEditing(false);
-      setEditedSlots([]);
-      setWarnings([]);
-      setSavedMessage(`Revision ${result.plan.revision} is now active.`);
+      activateRevision(result.plan);
     } catch (error) {
       if (eventIdRef.current !== submittedEventId) return;
       if (error instanceof ApiError && error.status === 409 && error.message === 'stale_plan') {
@@ -236,6 +325,66 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       } else {
         setActionError('Could not save this round. Your local changes are still here; retry or cancel.');
       }
+    } finally {
+      if (eventIdRef.current === submittedEventId) setBusy(false);
+    }
+  }
+
+  async function saveSuffix(overrideWarnings = false) {
+    if (!plan || !suffixEditing || suffixReplacementSlots.length > 0 || !suffixDirty || stalePlan) return;
+    setBusy(true);
+    setWarnings([]);
+    setActionError(null);
+    setSavedMessage(null);
+    const input: ManualSuffixInputDTO = {
+      sourcePlanId: plan.id,
+      fromRound: suffixFromRound,
+      slots: sortedSlots(editedSuffixSlots),
+      removedRegistrationIds: earlyLeaverIds,
+      overrideWarnings,
+    };
+    const submittedEventId = eventId;
+    try {
+      const result = await client.saveManualSuffix(submittedEventId, input);
+      if (eventIdRef.current !== submittedEventId) return;
+      if (!result.ok) {
+        if (result.reason === 'warnings_required') setWarnings(result.warnings);
+        else setActionError(result.errors.map((error) => error.message).join(' ') || 'The suffix has a hard validation error.');
+        return;
+      }
+      activateRevision(result.plan);
+    } catch (error) {
+      if (eventIdRef.current !== submittedEventId) return;
+      if (error instanceof ApiError && error.status === 409 && error.message === 'stale_plan') {
+        setStalePlan(true);
+        setActionError('Another Admin published a newer revision. Your local changes are not saved.');
+      } else {
+        setActionError('Could not save the suffix. Your local changes are still here; retry or cancel.');
+      }
+    } finally {
+      if (eventIdRef.current === submittedEventId) setBusy(false);
+    }
+  }
+
+  async function rebuildSuffix() {
+    if (!plan || earlyLeaverIds.length === 0 || stalePlan) return;
+    setBusy(true);
+    setActionError(null);
+    setSavedMessage(null);
+    setDraftMessage(null);
+    const submittedEventId = eventId;
+    try {
+      const result = await client.regeneratePlan(submittedEventId, suffixFromRound, earlyLeaverIds);
+      if (eventIdRef.current !== submittedEventId) return;
+      if (!result.ok) {
+        setActionError(result.gaps.map((gap) => gap.message).join(' ') || 'The suffix could not be rebuilt. The active schedule is unchanged.');
+        return;
+      }
+      setDraftMessage(`Draft revision ${result.plan.revision} is ready for review.`);
+      setEarlyLeaverPanelOpen(false);
+      setEarlyLeaverIds([]);
+    } catch {
+      if (eventIdRef.current === submittedEventId) setActionError('Could not rebuild the fixtures. The active schedule is unchanged.');
     } finally {
       if (eventIdRef.current === submittedEventId) setBusy(false);
     }
@@ -320,7 +469,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       <section className="full-game-round" aria-labelledby={`game-round-${round}`} key={round}>
         <header className="full-game-round-heading">
           <h2 id={`game-round-${round}`}>Round {round}</h2>
-          {editing && selectedRound === round ? <p>Changes are local until saved.</p> : !readOnly ? <button type="button" className="button-secondary" disabled={busy || stalePlan} onClick={() => beginEdit(round)}>Edit round {round}</button> : null}
+          {editing && selectedRound === round ? <p>Changes are local until saved.</p> : !readOnly ? <button type="button" className="button-secondary" disabled={busy || stalePlan || suffixEditing} onClick={() => beginEdit(round)}>Edit round {round}</button> : null}
         </header>
         <div className="full-game-courts">
           {courts.map((court) => (
@@ -387,8 +536,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
           </nav>
           {availablePlan && revisions.length > 0 ? (
             <section className="game-revision-history">
-              <button type="button" aria-expanded={historyOpen} disabled={busy || (editing && dirty)} onClick={() => setHistoryOpen((open) => !open)}>Revision history</button>
+              <button type="button" aria-expanded={historyOpen} disabled={busy || dirtyAny} onClick={() => setHistoryOpen((open) => !open)}>Revision history</button>
               {editing && dirty ? <p className="game-revision-subtitle">Save or cancel your round changes before viewing revision history.</p> : null}
+              {suffixEditing && suffixDirty ? <p className="game-revision-subtitle">Save or cancel suffix replacements before viewing revision history.</p> : null}
               {historyOpen ? (
                 <div>
                   <p className="game-revision-subtitle">Earlier revisions</p>
@@ -408,7 +558,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
             <div><h1 id="full-game-title">Full Game List</h1>{event ? <p>{event.division} {event.section} · {event.courts} courts</p> : null}</div>
             {!loading && availablePlan ? (
               <label htmlFor="game-view">Game view
-                <select id="game-view" aria-label="Game view" value={viewMode} disabled={editing} onChange={(changeEvent) => setViewMode(changeEvent.target.value as ViewMode)}>
+                <select id="game-view" aria-label="Game view" value={viewMode} disabled={editing || suffixEditing} onChange={(changeEvent) => setViewMode(changeEvent.target.value as ViewMode)}>
                   <option value="team">Full game list</option><option value="position">Position View</option>
                 </select>
               </label>
@@ -448,10 +598,84 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                 </section>
               ) : null}
               <label htmlFor="position-round">Round for position view
-                <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
+                <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
                   {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
                 </select>
               </label>
+
+              {plan && !historyPlan && plan.frozenThroughRound < plan.rounds ? (
+                <section className="game-roster-changes" aria-labelledby="roster-changes-heading">
+                  <h2 id="roster-changes-heading">Roster changes</h2>
+                  {lateArrivalPlayers.length > 0 ? <p>{lateArrivalPlayers.length} newly eligible player(s) are available in Resting players.</p> : null}
+                  {!earlyLeaverPanelOpen && !suffixEditing ? (
+                    <button type="button" className="button-secondary" disabled={busy || stalePlan || editing} onClick={() => setEarlyLeaverPanelOpen(true)}>Remove early leaver</button>
+                  ) : null}
+                  {earlyLeaverPanelOpen ? (
+                    <div className="early-leaver-selection">
+                      <label htmlFor="suffix-from-round">Remove future assignments from round
+                        <select id="suffix-from-round" aria-label="Remove future assignments from round" value={suffixFromRound} disabled={busy || suffixEditing} onChange={(changeEvent) => changeSuffixFromRound(Number(changeEvent.target.value))}>
+                          {Array.from({ length: plan.rounds - plan.frozenThroughRound }, (_, index) => plan.frozenThroughRound + index + 1)
+                            .map((round) => <option key={round} value={round}>Round {round}</option>)}
+                        </select>
+                      </label>
+                      {earlyLeaverCandidates.length > 0 ? (
+                        <fieldset>
+                          <legend>Players assigned from round {suffixFromRound} onward</legend>
+                          <ul>{earlyLeaverCandidates.map((player) => (
+                            <li key={player.registrationId}>
+                              <label><input type="checkbox" aria-label={`Remove ${player.playerName} from round ${suffixFromRound} onward`} checked={earlyLeaverSet.has(player.registrationId)} onChange={(changeEvent) => toggleEarlyLeaver(player.registrationId, changeEvent.target.checked)} />
+                                {player.playerName} — Number {player.bibNumber ?? '—'}
+                              </label>
+                            </li>
+                          ))}</ul>
+                        </fieldset>
+                      ) : <p>No active players are assigned after round {suffixFromRound}.</p>}
+                      <div className="game-edit-actions">
+                        <button type="button" className="button-secondary" disabled={!earlyLeaverIds.length || busy || stalePlan} onClick={beginManualSuffix}>Manual replacements</button>
+                        <button type="button" disabled={!earlyLeaverIds.length || busy || stalePlan} onClick={() => void rebuildSuffix()}>{busy ? 'Rebuilding...' : 'Rebuild fixtures from round'}</button>
+                        <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEarlyLeaverPanelOpen(false); setEarlyLeaverIds([]); }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {suffixEditing ? (
+                    <section className="game-editor" aria-labelledby="manual-suffix-heading">
+                      <h3 id="manual-suffix-heading">Manual replacements from round {suffixFromRound}</h3>
+                      <p>Replace every future assignment for the selected player(s). Their registration and check-in record will not change.</p>
+                      {suffixReplacementSlots.map((slot) => {
+                        const original = plan.slots.find((item) => slotKey(planSlot(item)) === slotKey(slot));
+                        const leaver = original ? playerDetails(original.registrationId, original) : { playerName: 'Early leaver', bibNumber: null };
+                        const team = slot.team === 0 ? 'Team A' : 'Team B';
+                        const label = `Replacement for round ${slot.round}, court ${slot.court}, ${team}, ${slot.position}`;
+                        const replacementOptions = suffixReplacementOptions(slot);
+                        return (
+                          <p className="game-suffix-replacement" key={slotKey(slot)}>
+                            <label htmlFor={`suffix-replacement-${slotKey(slot).replaceAll(':', '-')}`}>{label}</label>
+                            <span>Replacing {leaver.playerName} — Number {leaver.bibNumber ?? '—'}</span>
+                            <select id={`suffix-replacement-${slotKey(slot).replaceAll(':', '-')}`} aria-label={label} value={slot.registrationId} disabled={busy || stalePlan} onChange={(changeEvent) => replaceSuffixSlot(slotKey(slot), changeEvent.target.value)}>
+                              <option value="">Choose a paid, checked-in player</option>
+                              {replacementOptions.map((player) => <option key={player.registrationId} value={player.registrationId}>{player.playerName} — Number {player.bibNumber}</option>)}
+                            </select>
+                            {replacementOptions.length === 0 ? <span role="status">No paid and checked-in player is available for round {slot.round}.</span> : null}
+                          </p>
+                        );
+                      })}
+                      {suffixReplacementSlots.length === 0 ? <p>Every selected future assignment has a replacement.</p> : null}
+                      <div className="game-edit-actions">
+                        <button type="button" onClick={() => void saveSuffix(false)} disabled={busy || suffixReplacementSlots.length > 0 || !suffixDirty || stalePlan}>{busy ? 'Saving...' : 'Save manual suffix'}</button>
+                        <button type="button" className="button-secondary" disabled={busy} onClick={cancelSuffixEdit}>Cancel suffix changes</button>
+                      </div>
+                      {warnings.length > 0 ? (
+                        <div className="game-warning-list" role="alert">
+                          <h3>Review these planning warnings</h3>
+                          <ul>{warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}</li>)}</ul>
+                          <button type="button" onClick={() => void saveSuffix(true)} disabled={busy}>{busy ? 'Saving...' : 'Save suffix anyway'}</button>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </section>
+              ) : null}
+              {draftMessage ? <div className="message-confirmation" role="status"><p>{draftMessage}</p><Link to={`/admin/events/${eventId}/plan`}>Review draft in Plan Rounds</Link></div> : null}
 
               {editing ? (
                 <section className="game-editor" aria-labelledby="game-editor-title">
