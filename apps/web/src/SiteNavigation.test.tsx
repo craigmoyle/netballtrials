@@ -15,7 +15,7 @@ describe('site navigation', () => {
     render(<MemoryRouter><PublicAccessNav /></MemoryRouter>);
     const nav = screen.getByRole('navigation', { name: 'Sign in options' });
 
-    expect(within(nav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin/login');
+    expect(within(nav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin');
     expect(within(nav).getByRole('link', { name: 'Committee member' })).toHaveAttribute('href', '/check-in');
     expect(within(nav).getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/check-in');
   });

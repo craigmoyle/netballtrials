@@ -63,7 +63,7 @@ describe('Public home page', () => {
     expect(homeHeading).toBeInTheDocument();
     expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
     const signInNav = screen.getByRole('navigation', { name: 'Sign in options' });
-    expect(within(signInNav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin/login');
+    expect(within(signInNav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin');
     expect(within(signInNav).getByRole('link', { name: 'Committee member' })).toHaveAttribute('href', '/check-in');
     expect(within(signInNav).getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/check-in');
     expect(await screen.findByRole('heading', { name: '15/U State Titles Trial' })).toBeInTheDocument();
@@ -94,6 +94,29 @@ describe('Public home page', () => {
 });
 
 describe('App route boundaries', () => {
+  it('takes a signed-in Admin from the public menu to the dashboard', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.listEvents.mockResolvedValue([]);
+    renderApp('/');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Chisholm Admin' }));
+
+    expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a signed-out Admin menu click to email sign in', async () => {
+    apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
+    renderApp('/');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Chisholm Admin' }));
+
+    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
   it('loads public registration without checking admin authentication', async () => {
     apiMocks.getPublicEvent.mockResolvedValue({
       id: 'event-1', name: 'Trials', division: '15/U', section: 'Ladies', eventDate: '2026-09-12T00:00:00.000Z',

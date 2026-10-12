@@ -16,7 +16,9 @@ const CONTROL_ORIGIN = 'http://localhost:3001';
 let fixtures: Fixtures;
 
 async function signIn(page: Page, request: APIRequestContext): Promise<void> {
-  await page.goto('/admin/login');
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Chisholm Admin' }).click();
+  await expect(page).toHaveURL(/\/admin\/login$/);
   await page.getByLabel('Email').fill(fixtures.adminEmail);
   await page.getByRole('button', { name: /send link/i }).click();
   await expect(page.getByRole('heading', { name: /check your email/i })).toBeVisible();
@@ -27,6 +29,9 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.goto(link!);
   await expect(page.getByRole('link', { name: /go to events/i })).toBeVisible();
   await page.getByRole('link', { name: /go to events/i }).click();
+  await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Chisholm Admin' }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
 }
 
@@ -69,7 +74,9 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   await expect(logo).toHaveAttribute('href', '/');
   await expect.poll(() => logo.locator('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   const signIn = page.getByRole('navigation', { name: 'Sign in options' });
-  await expect(signIn.getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin/login');
+  await expect(signIn.getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin');
+  await signIn.getByRole('link', { name: 'Chisholm Admin' }).click();
+  await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(signIn.getByRole('link', { name: 'Committee member' })).toHaveAttribute('href', '/check-in');
   await expect(signIn.getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/check-in');
   await signIn.getByRole('link', { name: 'Committee member' }).click();

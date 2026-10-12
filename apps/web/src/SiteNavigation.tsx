@@ -12,7 +12,7 @@ export function ClubLogoLink(): ReactElement {
 export function PublicAccessNav(): ReactElement {
   return (
     <nav className="app-nav public-access-nav" aria-label="Sign in options">
-      <Link to="/admin/login">Chisholm Admin</Link>
+      <Link to="/admin">Chisholm Admin</Link>
       <Link to="/check-in">Committee member</Link>
       <Link to="/check-in">Volunteer</Link>
     </nav>
