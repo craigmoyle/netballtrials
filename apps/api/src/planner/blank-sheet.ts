@@ -24,22 +24,22 @@ export function renderBlankGameSheet(event: BlankSheetEvent): string {
 .blank-sheet__header p { margin: 1mm 0; }
 .blank-sheet__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 8mm; margin-top: 3mm; }
 .blank-sheet__line { display: inline-block; min-width: 45mm; min-height: 5mm; border-bottom: 1px solid #333; vertical-align: bottom; }
-.blank-sheet__teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8mm; }
+.blank-sheet__teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; }
 .blank-sheet__team { min-width: 0; }
 .blank-sheet__team header { display: flex; align-items: center; justify-content: space-between; gap: 3mm; }
 .blank-sheet__team h2 { margin: 0 0 2mm; color: #511631; font-size: 14px; }
 .blank-sheet__team header p { margin: 0 0 2mm; }
-.blank-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+.blank-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
 .blank-sheet caption { margin-bottom: 1mm; text-align: left; font-weight: 700; }
 .blank-sheet th, .blank-sheet td { padding: 1.3mm 1.5mm; border: 1px solid #333; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .blank-sheet thead { background: #a9bfe1; }
-.blank-sheet th:first-child { width: 12mm; }
-.blank-sheet th:nth-child(2) { width: 18mm; }
-.blank-sheet th:nth-child(3) { width: 38mm; }
-.blank-sheet th:nth-child(4) { width: 20mm; }
+.blank-sheet th:first-child { width: 20mm; }
+.blank-sheet th:nth-child(2) { width: 19mm; }
+.blank-sheet th:nth-child(3) { width: 35mm; }
+.blank-sheet th:nth-child(4) { width: 18mm; }
 .blank-sheet tbody th, .blank-sheet tbody td { height: 17mm; }
 .blank-sheet .blank-sheet__rating { width: 20mm; }
-.blank-sheet .blank-sheet__notes { width: 44mm; }
+.blank-sheet .blank-sheet__notes { width: 42mm; }
 </style></head>
 <body><main class="blank-sheet"><section class="sheet">
 <header class="blank-sheet__header"><h1>${escapeHtml(event.name)}</h1><p>${escapeHtml(event.eventDate)} · ${escapeHtml(event.venue)}</p>

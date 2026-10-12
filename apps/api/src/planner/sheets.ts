@@ -89,27 +89,27 @@ export function renderSelectorSheets(input: SelectorSheetsInput): string {
 .selector-print__header { margin-bottom: 5mm; border-bottom: 2px solid #511631; }
 .selector-print__header h1 { margin: 0; font-size: 18px; }
 .selector-print__header p { margin: 1mm 0 3mm; }
-.selector-print__teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8mm; }
+.selector-print__teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; }
 .selector-print__team { min-width: 0; }
 .selector-print__team header { display: flex; align-items: center; justify-content: space-between; gap: 3mm; }
 .selector-print__team h2 { margin: 0 0 2mm; color: #511631; font-size: 14px; }
 .selector-print__team-color { display: flex; align-items: center; gap: 2mm; margin: 0 0 2mm; font-weight: 700; }
 .selector-print__color-swatch { display: inline-block; width: 5mm; height: 5mm; border: 1px solid #222; }
-.selector-print table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.selector-print table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
 .selector-print caption { margin-bottom: 1mm; text-align: left; font-weight: 700; }
 .selector-print th, .selector-print td { padding: 1.3mm 1.5mm; border: 1px solid #333; text-align: left; vertical-align: top; }
 .selector-print thead { background: #a9bfe1; }
 .selector-print th, .selector-print td { overflow-wrap: anywhere; }
-.selector-print th:first-child { width: 9mm; }
-.selector-print th:nth-child(2) { width: 12mm; }
-.selector-print th:nth-child(3) { width: 25mm; }
-.selector-print th:nth-child(4) { width: 16mm; }
+.selector-print th:first-child { width: 20mm; }
+.selector-print th:nth-child(2) { width: 18mm; }
+.selector-print th:nth-child(3) { width: 23mm; }
+.selector-print th:nth-child(4) { width: 17mm; }
 .selector-print th:nth-child(5) { width: 14mm; }
 .selector-print tbody th, .selector-print tbody td { height: 17mm; }
 .selector-print .selector-print__rating { width: 14mm; }
-.selector-print .selector-print__notes { width: 56mm; }
+.selector-print .selector-print__notes { width: 42mm; }
 .selector-print .selector-print__extra { color: #511631; font-weight: 700; }
-.selector-print__legend { clear: both; margin: 2mm 0 0; font-size: 9px; }
+.selector-print__legend { clear: both; margin: 2mm 0 0; font-size: 10px; }
 </style></head>
 <body><main class="selector-print">${sections.join('\n')}</main></body></html>`;
 }

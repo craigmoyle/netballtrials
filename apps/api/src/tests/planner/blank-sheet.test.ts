@@ -23,8 +23,11 @@ describe('renderBlankGameSheet', () => {
     for (const position of positions) expect((html.match(new RegExp(`<th scope="row">${position}</th>`, 'g')) ?? [])).toHaveLength(2);
     expect((html.match(/class="blank-sheet__rating"/g) ?? [])).toHaveLength(14);
     expect((html.match(/class="blank-sheet__notes"/g) ?? [])).toHaveLength(14);
-    expect(html).toContain('.blank-sheet__notes { width: 44mm; }');
+    expect(html).not.toMatch(/<td>[^<]+<\/td>/);
+    expect(html).toContain('.blank-sheet__notes { width: 42mm; }');
+    expect(html).toContain('.blank-sheet th:first-child { width: 20mm; }');
     expect(html).toContain('height: 17mm;');
+    expect(html).toContain('font-size: 12px;');
     expect(html).not.toContain('data-round="');
     expect(html).not.toContain('Color not set');
   });

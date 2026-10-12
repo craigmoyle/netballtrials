@@ -47,8 +47,12 @@ describe('renderSelectorSheets', () => {
     expect((html.match(/class="selector-print__color-swatch"/g) ?? [])).toHaveLength(8);
     expect(html).toContain('background-color:#FFFFFF');
     expect(html).toContain('GS, WA, C');
-    expect(html).toContain('.selector-print__notes { width: 56mm; }');
+    expect(html).toContain('.selector-print__notes { width: 42mm; }');
+    expect(html).toContain('.selector-print th:first-child { width: 20mm; }');
+    expect(html).toContain('.selector-print th:nth-child(2) { width: 18mm; }');
+    expect(html).toContain('.selector-print th:nth-child(4) { width: 17mm; }');
     expect(html).toContain('height: 17mm;');
+    expect(html).toContain('font-size: 12px;');
     expect(html).toContain('.sheet:not(:last-child)');
     expect(html).not.toContain('.sheet { page-break-after: always; }');
   });
