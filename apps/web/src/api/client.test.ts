@@ -22,6 +22,37 @@ describe('apiClient', () => {
     }));
   });
 
+  it('uses Admin endpoints for the color catalog and event court assignments', async () => {
+    const color = { id: 'white', name: 'White', hex: '#FFFFFF', archivedAt: null };
+    const pair = { court: 1, teamAColor: color, teamBColor: { id: 'black', name: 'Black', hex: '#111111', archivedAt: null } };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify([color]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(color), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...color, hex: '#EEEEEE' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([pair]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(pair), { status: 200 }));
+    const client = apiClient('http://api.test');
+
+    await expect(client.listBibColors()).resolves.toEqual([color]);
+    await expect(client.createBibColor({ name: 'Teal', hex: '#12AB34' })).resolves.toEqual(color);
+    await expect(client.updateBibColor('white', { hex: '#EEEEEE' })).resolves.toMatchObject({ hex: '#EEEEEE' });
+    await expect(client.archiveBibColor('white')).resolves.toBeNull();
+    await expect(client.getCourtColors('event-1')).resolves.toEqual([pair]);
+    await expect(client.setCourtColors('event-1', 1, { teamAColorId: 'white', teamBColorId: 'black' })).resolves.toEqual(pair);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/bib-colors',
+      'http://api.test/api/admin/bib-colors',
+      'http://api.test/api/admin/bib-colors/white',
+      'http://api.test/api/admin/bib-colors/white',
+      'http://api.test/api/admin/events/event-1/court-colors',
+      'http://api.test/api/admin/events/event-1/court-colors/1',
+    ]);
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
+    expect(JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string)).toEqual({ teamAColorId: 'white', teamBColorId: 'black' });
+  });
+
   it('fetches the public upcoming-trial list', async () => {
     const events = [{
       id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',

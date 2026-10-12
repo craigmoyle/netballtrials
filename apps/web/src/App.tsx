@@ -20,6 +20,7 @@ import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
 import { RosterPage } from './admin/RosterPage';
 import { AssociationsPage } from './admin/AssociationsPage';
+import { BibColorsPage } from './admin/BibColorsPage';
 import { PublicHomePage } from './routes/PublicHomePage';
 import { PublicSiteHeader } from './SiteNavigation';
 
@@ -41,6 +42,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/new$/, 'New event'],
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/associations$/, 'Member associations'],
+  [/^\/admin\/bib-colors$/, 'Bib colors'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
   [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
@@ -176,6 +178,7 @@ export function App() {
         <Route path="events/:id/review" element={<ReviewRoute client={client} />} />
         <Route path="events/:id/messages" element={<MessagesRoute client={client} />} />
         <Route path="associations" element={<AssociationsPage client={client} />} />
+        <Route path="bib-colors" element={<BibColorsPage client={client} />} />
       </Route>
       <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></PageContent>} />
     </Routes>

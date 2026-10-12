@@ -51,6 +51,7 @@ export function EventFormPage({ client }: { client: Client }) {
   const [busy, setBusy] = useState(false);
   const [eventStatus, setEventStatus] = useState<EventStatus | null>(null);
   const [eventDate, setEventDate] = useState('');
+  const [savedCourts, setSavedCourts] = useState(0);
   const errorSummary = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,6 +63,7 @@ export function EventFormPage({ client }: { client: Client }) {
         if (!active) return;
         setEventStatus(event.status);
         setEventDate(event.eventDate);
+        setSavedCourts(event.courts);
         setForm({
           name: event.name,
           competitionYear: String(event.competitionYear),
@@ -144,7 +146,7 @@ export function EventFormPage({ client }: { client: Client }) {
         </div>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
-      {id && eventStatus ? <EventControls client={client} eventId={id} eventDate={eventDate} status={eventStatus} onStatusChange={setEventStatus} /> : null}
+      {id && eventStatus ? <EventControls client={client} eventId={id} eventDate={eventDate} courts={savedCourts} status={eventStatus} onStatusChange={setEventStatus} /> : null}
       <form onSubmit={onSubmit} noValidate>
         {FIELDS.map((field) => {
           const invalid = fieldErrors.includes(field.name);

@@ -13,6 +13,8 @@ export async function resetDb(): Promise<void> {
   await prisma.roundPlan.deleteMany();
   await prisma.registration.deleteMany();
   await prisma.eventPolicyDocument.deleteMany();
+  await prisma.eventCourtColor.deleteMany();
   await prisma.event.deleteMany();
+  await prisma.bibColor.deleteMany({ where: { name: { startsWith: 'Test ' } } });
   await prisma.memberAssociation.deleteMany();
 }

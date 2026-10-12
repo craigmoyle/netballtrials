@@ -13,6 +13,7 @@ import { createStripePaymentProvider } from './payments/stripe';
 import { registerAuthRoutes } from './auth/routes';
 import { registerEventRoutes } from './events/routes';
 import { registerAssociationRoutes } from './associations/routes';
+import { registerBibColorRoutes } from './colors/routes';
 import { registerPublicRoutes } from './public/routes';
 import { registerAdminRegistrationRoutes } from './registrations/admin-routes';
 import { registerCheckInRoutes } from './checkin/routes';
@@ -121,6 +122,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   registerAuthRoutes(app, deps);
   registerEventRoutes(app, deps);
   registerAssociationRoutes(app, deps);
+  registerBibColorRoutes(app, deps);
   registerPublicRoutes(app, deps);
   registerAdminRegistrationRoutes(app, deps);
   registerCheckInRoutes(app, deps);

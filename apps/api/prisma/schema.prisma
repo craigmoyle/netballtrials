@@ -89,6 +89,7 @@ model Event {
   roundPlans           RoundPlan[]
   reviewItems          ReviewItem[]
   emailLogs            EmailLog[]
+  courtColors          EventCourtColor[]
   policyDocument       EventPolicyDocument?
   publishedPlanId      String?
   publishedPlan        RoundPlan?    @relation("PublishedPlan", fields: [publishedPlanId], references: [id], onDelete: SetNull)
@@ -106,6 +107,30 @@ model MemberAssociation {
   id     String  @id @default(cuid())
   name   String  @unique
   active Boolean @default(true)
+}
+
+model BibColor {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  hex         String
+  archivedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  teamACourts EventCourtColor[] @relation("TeamAColor")
+  teamBCourts EventCourtColor[] @relation("TeamBColor")
+}
+
+model EventCourtColor {
+  eventId      String
+  court        Int
+  teamAColorId String
+  teamBColorId String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  teamAColor   BibColor @relation("TeamAColor", fields: [teamAColorId], references: [id], onDelete: Restrict)
+  teamBColor   BibColor @relation("TeamBColor", fields: [teamBColorId], references: [id], onDelete: Restrict)
+
+  @@id([eventId, court])
+  @@index([teamAColorId])
+  @@index([teamBColorId])
 }
 
 enum Position {

@@ -1,4 +1,4 @@
-import type { AuthUser, CheckInResult, CheckInSummary, EmailLogDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, EmailLogDTO, EventCourtColorDTO, EventDTO, EventInput, LookupResult, MemberAssociationDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -92,6 +92,16 @@ export function apiClient(baseUrl: string) {
       return response.blob();
     },
     listAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/admin/associations'),
+    listBibColors: () => request<BibColorDTO[]>(baseUrl, '/api/admin/bib-colors'),
+    createBibColor: (input: { name: string; hex: string }) =>
+      request<BibColorDTO>(baseUrl, '/api/admin/bib-colors', { method: 'POST', body: JSON.stringify(input) }),
+    updateBibColor: (id: string, patch: { name?: string; hex?: string }) =>
+      request<BibColorDTO>(baseUrl, `/api/admin/bib-colors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    archiveBibColor: (id: string) => request<unknown>(baseUrl, `/api/admin/bib-colors/${id}`, { method: 'DELETE' }),
+    getCourtColors: (eventId: string) => request<EventCourtColorDTO[]>(baseUrl, `/api/admin/events/${eventId}/court-colors`),
+    setCourtColors: (eventId: string, court: number, pair: { teamAColorId: string; teamBColorId: string }) =>
+      request<EventCourtColorDTO>(baseUrl, `/api/admin/events/${eventId}/court-colors/${court}`, { method: 'PUT', body: JSON.stringify(pair) }),
+
     createAssociation: (name: string) => request<MemberAssociationDTO>(baseUrl, '/api/admin/associations', { method: 'POST', body: JSON.stringify({ name }) }),
     setAssociationActive: (id: string, active: boolean) => request<MemberAssociationDTO>(baseUrl, `/api/admin/associations/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
     listPublicAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/public/associations'),

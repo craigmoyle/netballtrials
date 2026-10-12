@@ -179,6 +179,11 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: #9c1c26;
   align-items: start;
 }
 
+.bib-color-swatch { display: inline-block; width: 1.25rem; height: 1.25rem; border: 1px solid var(--line); border-radius: 0.2rem; vertical-align: middle; }
+.bib-color-choice { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; }
+.court-color-pair { max-width: 44rem; margin-block: 1rem; padding: 1rem; border: 1px solid var(--line); }
+.court-color-pair legend { padding-inline: 0.25rem; font-weight: 650; }
+
 .position-counts ul { padding-left: 1.2rem; margin-block: 0.5rem 1rem; }
 .position-counts section h3 { margin-block: 0.5rem; }
 .position-counts > p { font-weight: 650; }

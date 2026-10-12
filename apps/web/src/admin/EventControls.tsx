@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { melbourneDateKey, type EventStatus } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
+import { EventCourtColors } from './EventCourtColors';
 
 type Client = ReturnType<typeof apiClient>;
 
@@ -9,12 +10,14 @@ export function EventControls({
   client,
   eventId,
   eventDate,
+  courts,
   status,
   onStatusChange,
 }: {
   client: Client;
   eventId: string;
   eventDate: string;
+  courts: number;
   status: EventStatus;
   onStatusChange: (status: EventStatus) => void;
 }) {
@@ -127,6 +130,7 @@ export function EventControls({
       </p>
       {pinConfigured ? <button type="button" disabled={busy} onClick={clearPin}>Remove PIN</button> : null}{' '}
       {!checkInClosedAt ? <button type="button" disabled={busy} onClick={closeCheckIn}>Close check-in</button> : null}
+      <EventCourtColors client={client} eventId={eventId} courts={courts} />
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
       <nav aria-label="Event workflows" className="workflow-links">

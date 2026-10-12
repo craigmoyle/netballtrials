@@ -10,6 +10,12 @@ const apiMocks = vi.hoisted(() => ({
   checkInSettings: vi.fn(),
   checkInSummary: vi.fn(),
   openAdminCheckIn: vi.fn(),
+  listBibColors: vi.fn(),
+  createBibColor: vi.fn(),
+  updateBibColor: vi.fn(),
+  archiveBibColor: vi.fn(),
+  getCourtColors: vi.fn(),
+  setCourtColors: vi.fn(),
   dayOfRegistration: vi.fn(),
   getRoster: vi.fn(),
   downloadRoster: vi.fn(),
@@ -43,6 +49,9 @@ beforeEach(() => {
   apiMocks.listPublicAssociations.mockResolvedValue([]);
   apiMocks.checkInSummary.mockResolvedValue({ eventId: 'check-in-event', eventName: 'E2E Check-in', registered: 14, checkedIn: 0, closed: false });
   apiMocks.openAdminCheckIn.mockResolvedValue({ eventName: 'E2E Check-in' });
+  apiMocks.listBibColors.mockResolvedValue([]);
+  apiMocks.getCourtColors.mockResolvedValue([]);
+  apiMocks.setCourtColors.mockResolvedValue({});
 });
 
 describe('Public home page', () => {
@@ -178,6 +187,18 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/check-in/scan');
     expect(screen.getByRole('link', { name: 'Look up by name instead' })).toHaveAttribute('href', '/check-in/lookup');
     expect(screen.queryByLabelText('Event PIN')).not.toBeInTheDocument();
+  });
+
+  it('loads the Admin bib color catalog through the protected Admin route', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.listBibColors.mockResolvedValue([{ id: 'white', name: 'White', hex: '#FFFFFF', archivedAt: null }]);
+    renderApp('/admin/bib-colors');
+
+    expect(await screen.findByRole('heading', { name: 'Bib colors' })).toBeInTheDocument();
+    expect(screen.getByText('White')).toBeInTheDocument();
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+    expect(apiMocks.listBibColors).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: 'Bib colors' })).toHaveAttribute('href', '/admin/bib-colors');
   });
 
   it('loads the Admin-assisted day-of registration through the protected Admin route', async () => {

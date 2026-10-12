@@ -43,12 +43,43 @@ describe('EventFormPage', () => {
     const client = {
       getEvent: vi.fn().mockResolvedValue(event),
       checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt }),
+      listBibColors: vi.fn().mockResolvedValue([]),
+      getCourtColors: vi.fn().mockResolvedValue([]),
+      setCourtColors: vi.fn(),
     };
     render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
 
     await screen.findByText('PIN: Not configured');
     if (visible) expect(screen.getByRole('link', { name: 'Add day-of player' })).toHaveAttribute('href', '/admin/events/e1/day-of-registration');
     else expect(screen.queryByRole('link', { name: 'Add day-of player' })).not.toBeInTheDocument();
+  });
+
+  it('loads saved Team A/B colors for the event courts', async () => {
+    const event = {
+      id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+      eventDate: '2026-10-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
+      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 2,
+      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
+    };
+    const white = { id: 'white', name: 'White', hex: '#FFFFFF', archivedAt: null };
+    const black = { id: 'black', name: 'Black', hex: '#111111', archivedAt: null };
+    const client = {
+      getEvent: vi.fn().mockResolvedValue(event),
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
+      listBibColors: vi.fn().mockResolvedValue([white, black]),
+      getCourtColors: vi.fn().mockResolvedValue([
+        { court: 1, teamAColor: white, teamBColor: black },
+        { court: 2, teamAColor: null, teamBColor: null },
+      ]),
+      setCourtColors: vi.fn(),
+    };
+    render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByLabelText('Court 1 Team A color')).toHaveValue('white');
+    expect(screen.getByLabelText('Court 2 Team B color')).toBeInTheDocument();
+    expect(client.listBibColors).toHaveBeenCalledTimes(1);
+    expect(client.getCourtColors).toHaveBeenCalledWith('e1');
   });
 
   it('connects event lifecycle, check-in controls and links to the other workflows', async () => {
@@ -63,6 +94,9 @@ describe('EventFormPage', () => {
     const client = {
       getEvent: vi.fn().mockResolvedValue(event),
       checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
+      listBibColors: vi.fn().mockResolvedValue([]),
+      getCourtColors: vi.fn().mockResolvedValue([]),
+      setCourtColors: vi.fn(),
       openEvent: vi.fn().mockResolvedValue({ ...event, status: 'OPEN' }),
       closeEvent: vi.fn().mockResolvedValue({ ...event, status: 'CLOSED' }),
       setCheckInPin: vi.fn().mockResolvedValue(undefined),

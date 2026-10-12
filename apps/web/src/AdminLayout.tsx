@@ -12,6 +12,7 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
         <nav className="app-nav" aria-label="Administration">
           <Link to="/admin/events">Events</Link>
           <Link to="/admin/associations">Member associations</Link>
+          <Link to="/admin/bib-colors">Bib colors</Link>
         </nav>
         <button
           type="button"

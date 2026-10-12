@@ -66,6 +66,19 @@ export interface MemberAssociationDTO {
   active: boolean;
 }
 
+export interface BibColorDTO {
+  id: string;
+  name: string;
+  hex: string;
+  archivedAt: string | null;
+}
+
+export interface EventCourtColorDTO {
+  court: number;
+  teamAColor: BibColorDTO | null;
+  teamBColor: BibColorDTO | null;
+}
+
 export type EventInput = Omit<EventDTO, 'id' | 'status' | 'policyDocumentName'>;
 
 export interface PublicEventDTO {
