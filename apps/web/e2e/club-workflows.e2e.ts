@@ -234,7 +234,20 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(pageErrors).toEqual([]);
 });
 
-test('volunteer uses manual fallback, sees referral/name/bib, live count and undo without parent contacts', async ({ page }) => {
+test('Admin opens event-scoped check-in without a PIN', async ({ page, request }) => {
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'E2E Check-in' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+  await page.getByRole('link', { name: 'Admin check-in' }).click();
+  await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
+  await expect(page.getByLabel('Event PIN')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Look up by name instead' }).click();
+  await page.getByLabel('Player name').fill('Checkin1 Trial');
+  await page.getByRole('button', { name: 'Check in' }).first().click();
+  await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, Number 1 — Refer to committee/);
+});
+
+test('volunteer uses manual fallback, sees referral/name/number, live count and undo without parent contacts', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -249,7 +262,7 @@ test('volunteer uses manual fallback, sees referral/name/bib, live count and und
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Checkin1 Trial');
   await page.getByRole('button', { name: 'Check in' }).first().click();
-  await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, bib 1 — Refer to committee/);
+  await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, Number 1 — Refer to committee/);
   await expect(page.getByText('1 of 14 arrived')).toBeVisible();
   await expect(page.getByText(/checkin1@example\.test/)).toHaveCount(0);
   await expectAccessible(page);

@@ -5,6 +5,13 @@ import { apiClient } from './client';
 afterEach(() => vi.restoreAllMocks());
 
 describe('apiClient', () => {
+  it('starts an Admin-scoped event check-in session', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"eventName":"Trials"}', { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(apiClient('http://api.test').openAdminCheckIn('event-1')).resolves.toEqual({ eventName: 'Trials' });
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/check-in/session', expect.objectContaining({ method: 'POST', credentials: 'include' }));
+  });
+
   it('fetches the public upcoming-trial list', async () => {
     const events = [{
       id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',

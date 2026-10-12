@@ -10,6 +10,7 @@ import { RegisterPage } from './routes/RegisterPage';
 import { RegistrationPendingPage } from './routes/RegistrationPendingPage';
 import { TicketPage } from './routes/TicketPage';
 import { CheckInPage } from './checkin/CheckInPage';
+import { AdminCheckInPage } from './checkin/AdminCheckInPage';
 import { CheckInLayout } from './checkin/CheckInLayout';
 import { ScanPage } from './checkin/ScanPage';
 import { LookupPanel } from './checkin/LookupPanel';
@@ -35,6 +36,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/check-in$/, 'Volunteer check-in'],
   [/^\/admin\/login$/, 'Staff sign in'],
   [/^\/admin\/verify$/, 'Verify staff sign in'],
+  [/^\/admin\/events\/[^/]+\/check-in$/, 'Admin check-in'],
   [/^\/admin\/events\/new$/, 'New event'],
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/associations$/, 'Member associations'],
@@ -125,6 +127,12 @@ function RosterRoute({ client }: { client: Client }) {
   return <RosterPage client={client} eventId={id} />;
 }
 
+function AdminCheckInRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <AdminCheckInPage client={client} eventId={id} />;
+}
+
 export function App() {
   const location = useLocation();
   useEffect(() => {
@@ -154,6 +162,7 @@ export function App() {
         <Route path="events/new" element={<EventFormPage client={client} />} />
         <Route path="events/:id" element={<EventFormPage client={client} />} />
         <Route path="events/:id/roster" element={<RosterRoute client={client} />} />
+        <Route path="events/:id/check-in" element={<AdminCheckInRoute client={client} />} />
         <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
         <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
         <Route path="events/:id/review" element={<ReviewRoute client={client} />} />

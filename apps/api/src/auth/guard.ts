@@ -5,6 +5,7 @@ import { hashToken } from './tokens';
 declare module 'fastify' {
   interface FastifyRequest {
     adminUserId?: string;
+    adminSessionId?: string;
   }
 }
 
@@ -35,5 +36,6 @@ export function requireAdmin(deps: AppDeps) {
     }
 
     req.adminUserId = user.id;
+    req.adminSessionId = session.id;
   };
 }

@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   getEvent: vi.fn(),
   checkInSettings: vi.fn(),
   checkInSummary: vi.fn(),
+  openAdminCheckIn: vi.fn(),
   getRoster: vi.fn(),
   downloadRoster: vi.fn(),
   getPublicEvent: vi.fn(),
@@ -40,6 +41,7 @@ beforeEach(() => {
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
   apiMocks.checkInSummary.mockResolvedValue({ eventId: 'check-in-event', eventName: 'E2E Check-in', registered: 14, checkedIn: 0, closed: false });
+  apiMocks.openAdminCheckIn.mockResolvedValue({ eventName: 'E2E Check-in' });
 });
 
 describe('Public home page', () => {
@@ -164,6 +166,17 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/new');
     await waitFor(() => expect(document.title).toBe('New event | Chisholm Netball Trials'));
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a signed-in Admin to start event-scoped check-in without a PIN', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    renderApp('/admin/events/check-in-event/check-in');
+
+    expect(await screen.findByRole('heading', { name: 'E2E Check-in' })).toBeInTheDocument();
+    expect(apiMocks.openAdminCheckIn).toHaveBeenCalledWith('check-in-event');
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/check-in/scan');
+    expect(screen.getByRole('link', { name: 'Look up by name instead' })).toHaveAttribute('href', '/check-in/lookup');
+    expect(screen.queryByLabelText('Event PIN')).not.toBeInTheDocument();
   });
 
   it('keeps the home logo and check-in navigation without public sign-in links during a session', async () => {

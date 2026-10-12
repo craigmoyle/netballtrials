@@ -3,15 +3,15 @@ import type { CheckInResult } from '@netball-trials/types';
 export function resultLabel(result: CheckInResult): { tone: 'ok' | 'warn' | 'error'; text: string } {
   if (result.referToCommittee) {
     const player = result.playerName
-      ? `${result.playerName}, bib ${result.bibNumber ?? '?'}`
-      : result.bibNumber !== undefined ? `Bib ${result.bibNumber}` : '';
+      ? `${result.playerName}, Number ${result.bibNumber ?? '?'}`
+      : result.bibNumber !== undefined ? `Number ${result.bibNumber}` : '';
     return { tone: 'warn', text: player ? `${player} — Refer to committee` : 'Refer to committee' };
   }
   if (result.result === 'checked_in') {
-    return { tone: 'ok', text: `${result.playerName ?? 'Player'}, bib ${result.bibNumber ?? '?'}` };
+    return { tone: 'ok', text: `${result.playerName ?? 'Player'}, Number ${result.bibNumber ?? '?'}` };
   }
   if (result.result === 'already') {
-    return { tone: 'warn', text: `${result.playerName ?? 'Player'}, bib ${result.bibNumber ?? '?'} (already checked in)` };
+    return { tone: 'warn', text: `${result.playerName ?? 'Player'}, Number ${result.bibNumber ?? '?'} (already checked in)` };
   }
   if (result.reason === 'not_paid') {
     return { tone: 'error', text: 'Not paid. Send to the desk.' };

@@ -36,7 +36,7 @@ async function waitForDecoder() {
 }
 
 describe('ScanPage', () => {
-  it('retries the same failed token and shows bib/name with committee referral and undo', async () => {
+  it('retries the same failed token and shows Number/name with committee referral and undo', async () => {
     const client = {
       scan: vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(result()),
       undoCheckIn: vi.fn().mockResolvedValue(undefined),
@@ -46,7 +46,7 @@ describe('ScanPage', () => {
     await act(async () => { decoded!({ getText: () => 'same-qr-token' }); });
     expect(await screen.findByRole('alert')).toHaveTextContent(/scan failed/i);
     fireEvent.click(screen.getByRole('button', { name: /retry scan/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, bib 7 — Refer to committee');
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 7 — Refer to committee');
     expect(client.scan.mock.calls.map(([token]) => token)).toEqual(['same-qr-token', 'same-qr-token']);
     fireEvent.click(screen.getByRole('button', { name: /undo last check-in/i }));
     await waitFor(() => expect(client.undoCheckIn).toHaveBeenCalledWith('registration-1'));
@@ -93,7 +93,7 @@ describe('ScanPage', () => {
     const view = render(<MemoryRouter><ScanPage client={client as any} /></MemoryRouter>);
     await waitForDecoder();
     await act(async () => { decoded!({ getText: () => 'audio-token' }); });
-    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, bib 7');
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 7');
     expect(oscillator.stop).toHaveBeenCalled();
     expect(audioContext?.close).toHaveBeenCalledOnce();
     view.unmount();

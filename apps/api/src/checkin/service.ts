@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { generateToken, hashToken } from '../auth/tokens';
 import { ensureReviewItems } from '../review/service';
 import { consumeRateLimit, resetRateLimit } from '../security/rate-limit';
@@ -23,7 +23,7 @@ export async function setCheckInPin(
       },
     });
     if (updated.count === 0) return false;
-    await tx.checkInSession.deleteMany({ where: { eventId } });
+    await tx.checkInSession.deleteMany({ where: { eventId, adminSessionId: null } });
     return true;
   });
 }
@@ -56,18 +56,16 @@ export function checkInSessionExpiry(eventDate: Date): Date {
   return new Date(localDateTimeToUtc(midnightAfterExpiryDay, '00:00').getTime() - 1);
 }
 
-type SessionWithEvent = Prisma.CheckInSessionGetPayload<{ include: { event: true } }>;
+type SessionWithEvent = Prisma.CheckInSessionGetPayload<{ include: { event: true; adminSession: true } }>;
 
 function isActiveSession(session: SessionWithEvent | null, now: Date): session is SessionWithEvent {
-  return Boolean(
-    session &&
-    session.expiresAt.getTime() > now.getTime() &&
-    session.expiresAt.getTime() > checkInSessionExpiry(session.event.eventDate).getTime() - 1 &&
-    session.pinVersion === session.event.checkInPinVersion &&
-    session.event.checkInPinHash &&
-    !session.event.checkInClosedAt &&
-    now.getTime() <= checkInSessionExpiry(session.event.eventDate).getTime(),
-  );
+  if (!session || session.expiresAt.getTime() <= now.getTime() || session.event.checkInClosedAt) return false;
+  if (now.getTime() > checkInSessionExpiry(session.event.eventDate).getTime()) return false;
+  if (session.expiresAt.getTime() > checkInSessionExpiry(session.event.eventDate).getTime()) return false;
+
+  return session.adminSessionId
+    ? Boolean(session.adminSession && session.adminSession.expiresAt.getTime() > now.getTime())
+    : Boolean(session.pinVersion === session.event.checkInPinVersion && session.event.checkInPinHash);
 }
 
 async function findActiveSession(
@@ -78,7 +76,7 @@ async function findActiveSession(
   if (!token) return null;
   const session = await prisma.checkInSession.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { event: true },
+    include: { event: true, adminSession: true },
   });
   return isActiveSession(session, now) ? session : null;
 }
@@ -126,6 +124,38 @@ export async function openCheckInSession(
   });
   if (!session) throw new CheckInClosedError();
   return { token, expiresAt, eventName: event.name };
+}
+
+export async function openAdminCheckInSession(
+  prisma: PrismaClient,
+  eventId: string,
+  adminSessionId: string,
+  now: Date,
+): Promise<{ token: string; expiresAt: Date; eventName: string }> {
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event || now.getTime() > checkInSessionExpiry(event.eventDate).getTime()) throw new CheckInUnavailableError();
+  if (event.checkInClosedAt) throw new CheckInClosedError();
+  const adminSession = await prisma.session.findFirst({ where: { id: adminSessionId, expiresAt: { gt: now } } });
+  if (!adminSession) throw new CheckInSessionRevokedError();
+
+  const token = generateToken();
+  const session = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
+    const currentEvent = await tx.event.findFirst({ where: { id: eventId, checkInClosedAt: null } });
+    const currentAdmin = await tx.session.findFirst({ where: { id: adminSessionId, expiresAt: { gt: now } } });
+    if (!currentEvent || !currentAdmin || now.getTime() > checkInSessionExpiry(currentEvent.eventDate).getTime()) return null;
+    return tx.checkInSession.create({
+      data: {
+        eventId,
+        tokenHash: hashToken(token),
+        pinVersion: currentEvent.checkInPinVersion,
+        adminSessionId: currentAdmin.id,
+        expiresAt: new Date(Math.min(currentAdmin.expiresAt.getTime(), checkInSessionExpiry(currentEvent.eventDate).getTime())),
+      },
+    });
+  });
+  if (!session) throw new CheckInSessionRevokedError();
+  return { token, expiresAt: session.expiresAt, eventName: event.name };
 }
 
 export type CheckInSummary = {
@@ -243,13 +273,15 @@ async function checkInRegistration(
       const session = await findActiveSession(tx, sessionToken, now);
       if (!session || session.event.id !== registration.eventId) throw new CheckInSessionRevokedError();
 
-      // Lock the event bib counter and re-check closure/PIN version before claiming the registration.
+      // Lock the event counter and re-check closure and PIN version before claiming the registration.
       const advanced = await tx.event.updateMany({
         where: {
           id: registration.eventId,
           checkInClosedAt: null,
-          checkInPinHash: { not: null },
-          checkInPinVersion: session.pinVersion,
+          ...(session.adminSessionId ? {} : {
+            checkInPinVersion: session.pinVersion,
+            checkInPinHash: { not: null },
+          }),
         },
         data: { nextBibNumber: { increment: 1 } },
       });
@@ -265,7 +297,7 @@ async function checkInRegistration(
         },
         data: {
           checkedInAt: now,
-          checkedInBy: label,
+          checkedInBy: session.adminSessionId ? 'Chisholm Admin' : label,
           bibNumber: event.nextBibNumber - 1,
         },
       });
@@ -350,8 +382,10 @@ export async function undoCheckIn(
       where: {
         id: eventId,
         checkInClosedAt: null,
-        checkInPinHash: { not: null },
-        checkInPinVersion: session.pinVersion,
+        ...(session.adminSessionId ? {} : {
+          checkInPinVersion: session.pinVersion,
+          checkInPinHash: { not: null },
+        }),
       },
       data: { nextBibNumber: { increment: 0 } },
     });

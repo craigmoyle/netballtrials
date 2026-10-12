@@ -36,12 +36,13 @@ model LoginToken {
 }
 
 model Session {
-  id        String    @id @default(cuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-  user      StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String          @id @default(cuid())
+  userId          String
+  tokenHash       String          @unique
+  expiresAt       DateTime
+  createdAt       DateTime        @default(now())
+  user            StaffUser       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkInSessions CheckInSession[]
 
   @@index([userId])
 }
@@ -187,15 +188,18 @@ model RequestRateLimitBucket {
 }
 
 model CheckInSession {
-  id        String   @id @default(cuid())
-  eventId   String
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tokenHash  String   @unique
-  pinVersion Int      @default(0)
-  expiresAt  DateTime
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tokenHash      String   @unique
+  pinVersion     Int      @default(0)
+  adminSessionId String?
+  adminSession   Session? @relation(fields: [adminSessionId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
 
   @@index([eventId])
+  @@index([adminSessionId])
 }
 
 enum PlanStatus {

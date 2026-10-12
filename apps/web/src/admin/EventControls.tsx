@@ -130,6 +130,7 @@ export function EventControls({
         <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>
         <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>
         <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
+        {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}
         <Link to="/admin/associations">Member associations</Link>
         <Link to="/check-in">Volunteer check-in</Link>
       </nav>

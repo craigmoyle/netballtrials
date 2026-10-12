@@ -21,7 +21,7 @@ describe('LookupPanel', () => {
     expect(await screen.findByText('0 of 1 arrived')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/player name/i), { target: { value: 'Ada' } });
     fireEvent.click(await screen.findByRole('button', { name: /check in/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, bib 5 — Refer to committee');
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 5 — Refer to committee');
     expect(await screen.findByText('1 of 1 arrived')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /undo last check-in/i }));
     await waitFor(() => expect(client.undoCheckIn).toHaveBeenCalledWith('r1'));
@@ -50,6 +50,6 @@ describe('LookupPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /check in/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not check in/i);
     fireEvent.click(screen.getByRole('button', { name: /check in/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, bib 5');
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 5');
   });
 });

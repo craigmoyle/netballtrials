@@ -84,7 +84,7 @@ export function LookupPanel({ client }: { client: Client }) {
       <ul>
         {results.map((row) => (
           <li key={row.id}>
-            {row.playerName}{row.bibNumber ? ` (bib ${row.bibNumber})` : ''}{' '}
+            {row.playerName}{row.bibNumber ? ` (Number ${row.bibNumber})` : ''}{' '}
             <button type="button" disabled={busy} onClick={() => checkIn(row.id)}>
               {busy ? 'Working...' : row.checkedIn ? 'Already in, check again' : 'Check in'}
             </button>

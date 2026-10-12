@@ -114,6 +114,8 @@ export function apiClient(baseUrl: string) {
     getTicket: (token: string) =>
       request<TicketDTO>(baseUrl, `/api/public/ticket/${encodeURIComponent(token)}`),
     ticketCalendarUrl: (token: string) => `${baseUrl}/api/public/ticket/${encodeURIComponent(token)}/calendar`,
+    openAdminCheckIn: (eventId: string) =>
+      request<{ eventName: string }>(baseUrl, `/api/admin/events/${eventId}/check-in/session`, { method: 'POST' }),
     openCheckIn: (eventId: string, pin: string) =>
       request<{ eventName: string }>(baseUrl, '/api/check-in/session', {
         method: 'POST',

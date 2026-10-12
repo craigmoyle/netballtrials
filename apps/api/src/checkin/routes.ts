@@ -6,6 +6,7 @@ import { isValidPinFormat } from './pin';
 import {
   CheckInClosedError,
   CheckInUnavailableError,
+  CheckInSessionRevokedError,
   PinInvalidError,
   PinLockedError,
   closeCheckIn,
@@ -14,6 +15,7 @@ import {
   manualCheckIn,
   checkInByToken,
   openCheckInSession,
+  openAdminCheckInSession,
   resolveCheckInEvent,
   setCheckInPin,
   undoCheckIn,
@@ -80,6 +82,27 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(404).send({ error: 'not_found' });
     }
     return reply.code(204).send();
+  });
+
+  app.post('/api/admin/events/:id/check-in/session', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const now = nowFrom(req);
+    try {
+      const session = await openAdminCheckInSession(deps.prisma, id, req.adminSessionId!, now);
+      reply.setCookie('nt_checkin', session.token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: deps.env.SESSION_COOKIE_SECURE,
+        maxAge: Math.max(60, Math.floor((session.expiresAt.getTime() - now.getTime()) / 1000)),
+      });
+      return reply.code(200).send({ eventName: session.eventName });
+    } catch (error) {
+      if (error instanceof CheckInClosedError) return reply.code(409).send({ error: 'check_in_closed' });
+      if (error instanceof CheckInUnavailableError) return reply.code(404).send({ error: 'not_found' });
+      if (error instanceof CheckInSessionRevokedError) return reply.code(401).send({ error: 'unauthorized' });
+      throw error;
+    }
   });
 
   app.post('/api/check-in/session', async (req, reply) => {
