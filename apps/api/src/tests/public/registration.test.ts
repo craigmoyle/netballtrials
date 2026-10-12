@@ -43,6 +43,17 @@ describe('POST /api/public/events/:id/registrations', () => {
     expect(mailer.sent[0].text).toContain('checkout.test');
   });
 
+  it('does not permit public registration after registration is closed', async () => {
+    await prisma.event.update({ where: { id: eventId }, data: { status: 'CLOSED' } });
+    const response = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: 'not_found' });
+    expect(await prisma.registration.count({ where: { eventId } })).toBe(0);
+    expect(payment.checkouts).toHaveLength(0);
+    expect(mailer.sent.filter((message) => message.subject === 'Continue your Netball Trials registration')).toHaveLength(0);
+  });
+
   it('returns the same response for a duplicate and sends recovery only to the stored address', async () => {
     const first = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
     const duplicate = await app.inject({

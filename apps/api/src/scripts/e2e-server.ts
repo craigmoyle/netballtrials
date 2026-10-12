@@ -7,6 +7,7 @@ import { createDevMailer } from '../mail/dev-mailer';
 import { createFakePaymentProvider } from '../payments/fake';
 import { hashPin } from '../checkin/pin';
 import { e2eBindHost } from './e2e-runtime';
+import { melbourneDateKey } from '@netball-trials/types';
 import { COURT_POSITIONS } from '../planner/types';
 import { eventFixture, registrationFixture } from '../tests/helpers/fixtures';
 
@@ -84,12 +85,20 @@ async function resetFixtures(): Promise<Record<string, string>> {
     });
   }
 
+  const dayOfEvent = await prisma.event.create({
+    data: { ...eventFixture({
+      name: 'E2E Day-of registration', status: 'CLOSED',
+      eventDate: new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`), courts: 1,
+      rank1Min: 0, rank2Min: 0, rank3Min: 0,
+    }) },
+  });
+
   const draftEvent = await prisma.event.create({
     data: { ...eventFixture({ name: 'E2E Draft event', status: 'DRAFT', eventDate: new Date('2027-10-01T00:00:00Z'), courts: 1 }) },
   });
   const adminEmail = `e2e-admin-${++adminSequence}@example.test`;
   await prisma.staffUser.create({ data: { email: adminEmail } });
-  fixtures = { mainEventId: mainEvent.id, checkInEventId: checkInEvent.id, draftEventId: draftEvent.id, ticketToken, adminEmail };
+  fixtures = { mainEventId: mainEvent.id, checkInEventId: checkInEvent.id, dayOfEventId: dayOfEvent.id, draftEventId: draftEvent.id, ticketToken, adminEmail };
   return fixtures;
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { qrDataUrl } from '../../registrations/qr';
 import { buildIcs } from '../../registrations/ics';
+import { buildTrialCalendar } from '../../registrations/calendar';
 import { buildConfirmation, sendConfirmation } from '../../registrations/confirmation';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { GmailDeliveryError } from '../../mail/gmail-mailer';
@@ -44,6 +45,18 @@ describe('buildIcs', () => {
     expect(ics).toContain('LOCATION:Court\\; A\\, SNC');
     expect(ics).toContain('DESCRIPTION:Line one\\nLine two');
     expect(ics.split('\r\n').filter(Boolean).every((line) => new TextEncoder().encode(line).length <= 75)).toBe(true);
+  });
+});
+
+describe('trial calendar', () => {
+  it('calls the assigned identifier Number, not bib', () => {
+    const calendar = buildTrialCalendar(
+      { name: '15/U Trials', eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', endTime: '12:00', venue: 'SNC' },
+      'trial-calendar@chisholmnetball.com',
+      new Date('2026-09-01T00:00:00Z'),
+    );
+    expect(calendar.replace(/\r\n /g, '')).toContain('DESCRIPTION:Bring your QR code to check in. Your player Number will be issued at the door.');
+    expect(calendar).not.toMatch(/bib/i);
   });
 });
 

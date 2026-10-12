@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient, type Registration } from '@prisma/client';
+import { melbourneDateKey } from '@netball-trials/types';
 import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibility';
 import { DEFAULT_POLICY_URL } from '../policy';
 import { registrationInputSchema, type RegistrationInput } from './schemas';
@@ -47,83 +48,102 @@ export async function expireStalePending(
   return result.count;
 }
 
-export async function createPendingRegistration(
+async function createPendingRegistrationWithPolicy(
+  prisma: PrismaClient,
+  eventId: string,
+  input: RegistrationInput,
+  now: Date,
+  adminAssisted: boolean,
+): Promise<Registration> {
+  const parsed = registrationInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new RegistrationValidationError(parsed.error.issues.map((issue) => String(issue.path[0])));
+  }
+  const values = parsed.data;
+  const dateOfBirth = new Date(`${values.dateOfBirth}T00:00:00.000Z`);
+  const playerNameNormalized = normalizePlayerName(values.playerFirstName, values.playerLastName);
+  let duplicateWhere: Prisma.RegistrationWhereInput;
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
+      const event = await tx.event.findUnique({ where: { id: eventId } });
+      const allowed = adminAssisted
+        ? event && (event.status === 'OPEN' || event.status === 'CLOSED') && !event.checkInClosedAt && melbourneDateKey(now) === event.eventDate.toISOString().slice(0, 10)
+        : event?.status === 'OPEN';
+      if (!event || !allowed) throw new RegistrationConflictError('closed');
+
+      const association = await tx.memberAssociation.findFirst({
+        where: { name: values.memberAssociation, active: true },
+        select: { id: true },
+      });
+      if (!association) throw new RegistrationValidationError(['memberAssociation']);
+
+      await tx.registration.updateMany({
+        where: { eventId, status: 'PENDING', expiresAt: { lt: now } },
+        data: { status: 'EXPIRED' },
+      });
+      if (dateOfBirth.getTime() > now.getTime()) throw new RegistrationValidationError(['dateOfBirth']);
+      duplicateWhere = {
+        eventId,
+        playerNameNormalized,
+        dateOfBirth,
+        status: { in: ['PENDING', 'PAID'] },
+      };
+      const existing = await tx.registration.findFirst({ where: duplicateWhere });
+      if (existing) throw new RegistrationConflictError('duplicate', existing);
+
+      const age = ageAtDecember31(dateOfBirth, event.competitionYear);
+      return tx.registration.create({
+        data: {
+          eventId,
+          playerFirstName: values.playerFirstName,
+          playerLastName: values.playerLastName,
+          playerNameNormalized,
+          dateOfBirth,
+          parentName: values.parentName,
+          parentEmail: values.parentEmail,
+          parentMobile: values.parentMobile,
+          memberAssociation: values.memberAssociation,
+          rank1Position: values.rank1Position,
+          rank2Position: values.rank2Position ?? null,
+          rank3Position: values.rank3Position ?? null,
+          optInExtraPositions: values.optInExtraPositions,
+          eligibilityConfirmedAt: now,
+          policyReference: event.policyUrl ?? DEFAULT_POLICY_URL,
+          status: 'PENDING',
+          ageFlagged: !isAgeInRange(age, event.minAge, event.maxAge),
+          amountCents: event.registrationFeeCents,
+          expiresAt: new Date(now.getTime() + PENDING_TTL_MS),
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof RegistrationConflictError || error instanceof RegistrationValidationError) throw error;
+    if (isUniqueViolation(error)) {
+      const existing = await prisma.registration.findFirst({ where: duplicateWhere! });
+      throw new RegistrationConflictError('duplicate', existing);
+    }
+    throw error;
+  }
+}
+
+export function createPendingRegistration(
   prisma: PrismaClient,
   eventId: string,
   input: RegistrationInput,
   now: Date,
 ): Promise<Registration> {
-  const parsed = registrationInputSchema.safeParse(input);
-  if (!parsed.success) {
-    throw new RegistrationValidationError(
-      parsed.error.issues.map((issue) => String(issue.path[0])),
-    );
-  }
-  const values = parsed.data;
+  return createPendingRegistrationWithPolicy(prisma, eventId, input, now, false);
+}
 
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event || event.status !== 'OPEN') {
-    throw new RegistrationConflictError('closed');
-  }
-  const association = await prisma.memberAssociation.findFirst({
-    where: { name: values.memberAssociation, active: true },
-    select: { id: true },
-  });
-  if (!association) {
-    throw new RegistrationValidationError(['memberAssociation']);
-  }
-
-  await expireStalePending(prisma, eventId, now);
-
-  const dateOfBirth = new Date(`${values.dateOfBirth}T00:00:00.000Z`);
-  if (dateOfBirth.getTime() > now.getTime()) {
-    throw new RegistrationValidationError(['dateOfBirth']);
-  }
-  const age = ageAtDecember31(dateOfBirth, event.competitionYear);
-  const ageFlagged = !isAgeInRange(age, event.minAge, event.maxAge);
-  const playerNameNormalized = normalizePlayerName(values.playerFirstName, values.playerLastName);
-  const duplicateWhere: Prisma.RegistrationWhereInput = {
-    eventId,
-    playerNameNormalized,
-    dateOfBirth,
-    status: { in: ['PENDING', 'PAID'] },
-  };
-  const existing = await prisma.registration.findFirst({ where: duplicateWhere });
-  if (existing) {
-    throw new RegistrationConflictError('duplicate', existing);
-  }
-
-  try {
-    return await prisma.registration.create({
-      data: {
-        eventId,
-        playerFirstName: values.playerFirstName,
-        playerLastName: values.playerLastName,
-        playerNameNormalized,
-        dateOfBirth,
-        parentName: values.parentName,
-        parentEmail: values.parentEmail,
-        parentMobile: values.parentMobile,
-        memberAssociation: values.memberAssociation,
-        rank1Position: values.rank1Position,
-        rank2Position: values.rank2Position ?? null,
-        rank3Position: values.rank3Position ?? null,
-        optInExtraPositions: values.optInExtraPositions,
-        eligibilityConfirmedAt: now,
-        policyReference: event.policyUrl ?? DEFAULT_POLICY_URL,
-        status: 'PENDING',
-        ageFlagged,
-        amountCents: event.registrationFeeCents,
-        expiresAt: new Date(now.getTime() + PENDING_TTL_MS),
-      },
-    });
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      const existing = await prisma.registration.findFirst({ where: duplicateWhere });
-      throw new RegistrationConflictError('duplicate', existing);
-    }
-    throw err;
-  }
+export function createAdminPendingRegistration(
+  prisma: PrismaClient,
+  eventId: string,
+  input: RegistrationInput,
+  now: Date,
+): Promise<Registration> {
+  return createPendingRegistrationWithPolicy(prisma, eventId, input, now, true);
 }
 
 export async function withdrawRegistration(

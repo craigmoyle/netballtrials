@@ -104,6 +104,11 @@ export function apiClient(baseUrl: string) {
         `/api/public/events/${id}/registrations`,
         { method: 'POST', body: JSON.stringify(input) },
       ),
+    dayOfRegistration: (id: string, input: Record<string, unknown>) =>
+      request<{ status: 'received' }>(baseUrl, `/api/admin/events/${id}/day-of-registration`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
     getRegistrationStatus: (sessionId: string) =>
       request<{
         status: RegistrationStatus;

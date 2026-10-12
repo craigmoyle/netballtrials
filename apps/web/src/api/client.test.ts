@@ -12,6 +12,16 @@ describe('apiClient', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/check-in/session', expect.objectContaining({ method: 'POST', credentials: 'include' }));
   });
 
+  it('submits Admin-assisted day-of registration with session credentials', async () => {
+    const input = { playerFirstName: 'Ada' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"status":"received"}', { status: 202, headers: { 'content-type': 'application/json' } }));
+
+    await expect(apiClient('http://api.test').dayOfRegistration('event-1', input)).resolves.toEqual({ status: 'received' });
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/day-of-registration', expect.objectContaining({
+      method: 'POST', credentials: 'include', body: JSON.stringify(input),
+    }));
+  });
+
   it('fetches the public upcoming-trial list', async () => {
     const events = [{
       id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',

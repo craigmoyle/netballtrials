@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   checkInSettings: vi.fn(),
   checkInSummary: vi.fn(),
   openAdminCheckIn: vi.fn(),
+  dayOfRegistration: vi.fn(),
   getRoster: vi.fn(),
   downloadRoster: vi.fn(),
   getPublicEvent: vi.fn(),
@@ -177,6 +178,23 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/check-in/scan');
     expect(screen.getByRole('link', { name: 'Look up by name instead' })).toHaveAttribute('href', '/check-in/lookup');
     expect(screen.queryByLabelText('Event PIN')).not.toBeInTheDocument();
+  });
+
+  it('loads the Admin-assisted day-of registration through the protected Admin route', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.getEvent.mockResolvedValue({
+      id: 'event-1', name: '15/U Ladies', eventDate: '2026-09-12T00:00:00.000Z', venue: 'SNC',
+      startTime: '08:30', firstWhistle: '09:00', competitionYear: 2027, registrationFeeCents: 3500,
+      currency: 'aud', policyUrl: null, minAge: 12, maxAge: 15,
+    });
+    renderApp('/admin/events/event-1/day-of-registration');
+
+    expect(await screen.findByRole('heading', { name: '15/U Ladies' })).toBeInTheDocument();
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getEvent).toHaveBeenCalledWith('event-1');
+    expect(apiMocks.getPublicEvent).not.toHaveBeenCalled();
+    expect(apiMocks.listPublicAssociations).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(document.title).toBe('Admin-assisted registration | Chisholm Netball Trials'));
   });
 
   it('keeps the home logo and check-in navigation without public sign-in links during a session', async () => {

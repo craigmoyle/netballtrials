@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { melbourneDateKey } from '@netball-trials/types';
 import { ApiError } from '../api/client';
 import { EventFormPage } from './EventFormPage';
 
@@ -21,6 +22,33 @@ describe('EventFormPage', () => {
     expect(screen.getByLabelText(/maximum age/i)).toHaveValue(15);
     fireEvent.change(screen.getByLabelText('Division'), { target: { value: 'All Abilities' } });
     expect(screen.getByLabelText(/minimum age/i)).toHaveValue(10);
+  });
+
+  it.each([
+    ['OPEN', 0, null, true],
+    ['CLOSED', 0, null, true],
+    ['DRAFT', 0, null, false],
+    ['OPEN', -1, null, false],
+    ['CLOSED', 0, '2026-09-11T14:00:00.000Z', false],
+  ])('shows Add day-of player only for an event today with check-in open (%s, %i)', async (status, dayOffset, checkInClosedAt, visible) => {
+    const date = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + dayOffset);
+    const event = {
+      id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+      eventDate: date.toISOString(), venue: 'SNC', startTime: '08:30', endTime: '12:00',
+      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status,
+    };
+    const client = {
+      getEvent: vi.fn().mockResolvedValue(event),
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt }),
+    };
+    render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
+
+    await screen.findByText('PIN: Not configured');
+    if (visible) expect(screen.getByRole('link', { name: 'Add day-of player' })).toHaveAttribute('href', '/admin/events/e1/day-of-registration');
+    else expect(screen.queryByRole('link', { name: 'Add day-of player' })).not.toBeInTheDocument();
   });
 
   it('connects event lifecycle, check-in controls and links to the other workflows', async () => {

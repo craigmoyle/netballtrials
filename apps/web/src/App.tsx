@@ -37,6 +37,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/login$/, 'Staff sign in'],
   [/^\/admin\/verify$/, 'Verify staff sign in'],
   [/^\/admin\/events\/[^/]+\/check-in$/, 'Admin check-in'],
+  [/^\/admin\/events\/[^/]+\/day-of-registration$/, 'Admin-assisted registration'],
   [/^\/admin\/events\/new$/, 'New event'],
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/associations$/, 'Member associations'],
@@ -133,6 +134,12 @@ function AdminCheckInRoute({ client }: { client: Client }) {
   return <AdminCheckInPage client={client} eventId={id} />;
 }
 
+function DayOfRegistrationRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <RegisterPage client={client} eventId={id} adminAssisted />;
+}
+
 export function App() {
   const location = useLocation();
   useEffect(() => {
@@ -163,6 +170,7 @@ export function App() {
         <Route path="events/:id" element={<EventFormPage client={client} />} />
         <Route path="events/:id/roster" element={<RosterRoute client={client} />} />
         <Route path="events/:id/check-in" element={<AdminCheckInRoute client={client} />} />
+        <Route path="events/:id/day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
         <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
         <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
         <Route path="events/:id/review" element={<ReviewRoute client={client} />} />

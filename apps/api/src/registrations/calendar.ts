@@ -12,7 +12,7 @@ export function buildTrialCalendar(
     start: localDateTimeToUtc(event.eventDate, event.startTime),
     end: localDateTimeToUtc(event.eventDate, event.endTime),
     location: event.venue,
-    description: 'Bring your QR code to check in. Bib numbers are issued at the door.',
+    description: 'Bring your QR code to check in. Your player Number will be issued at the door.',
     stamp,
   });
 }

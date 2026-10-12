@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { EventStatus } from '@netball-trials/types';
+import { melbourneDateKey, type EventStatus } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
@@ -8,11 +8,13 @@ type Client = ReturnType<typeof apiClient>;
 export function EventControls({
   client,
   eventId,
+  eventDate,
   status,
   onStatusChange,
 }: {
   client: Client;
   eventId: string;
+  eventDate: string;
   status: EventStatus;
   onStatusChange: (status: EventStatus) => void;
 }) {
@@ -103,6 +105,9 @@ export function EventControls({
     }
   }
 
+  const canRegisterDayOf = status !== 'DRAFT' && eventDate.slice(0, 10) === melbourneDateKey(new Date()) &&
+    pinConfigured !== null && !checkInClosedAt;
+
   return (
     <section aria-labelledby="event-controls-heading">
       <h2 id="event-controls-heading">Event controls</h2>
@@ -131,6 +136,7 @@ export function EventControls({
         <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>
         <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
         {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}
+        {canRegisterDayOf ? <Link to={`/admin/events/${eventId}/day-of-registration`}>Add day-of player</Link> : null}
         <Link to="/admin/associations">Member associations</Link>
         <Link to="/check-in">Volunteer check-in</Link>
       </nav>

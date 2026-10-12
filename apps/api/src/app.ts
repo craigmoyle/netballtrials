@@ -14,6 +14,7 @@ import { registerAuthRoutes } from './auth/routes';
 import { registerEventRoutes } from './events/routes';
 import { registerAssociationRoutes } from './associations/routes';
 import { registerPublicRoutes } from './public/routes';
+import { registerAdminRegistrationRoutes } from './registrations/admin-routes';
 import { registerCheckInRoutes } from './checkin/routes';
 import { registerPlannerRoutes } from './planner/routes';
 import { registerReviewRoutes } from './review/routes';
@@ -121,6 +122,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   registerEventRoutes(app, deps);
   registerAssociationRoutes(app, deps);
   registerPublicRoutes(app, deps);
+  registerAdminRegistrationRoutes(app, deps);
   registerCheckInRoutes(app, deps);
   registerPlannerRoutes(app, deps);
   registerReviewRoutes(app, deps);

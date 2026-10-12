@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { melbourneDateKey, POSITIONS, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
+import { melbourneDateKey, POSITIONS, type EventDTO, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
 type Client = ReturnType<typeof apiClient>;
@@ -33,8 +33,8 @@ const EMPTY = {
   eligibilityConfirmed: false,
 };
 
-export function RegisterPage({ client, eventId }: { client: Client; eventId: string }) {
-  const [event, setEvent] = useState<PublicEventDTO | null>(null);
+export function RegisterPage({ client, eventId, adminAssisted = false }: { client: Client; eventId: string; adminAssisted?: boolean }) {
+  const [event, setEvent] = useState<PublicEventDTO | EventDTO | null>(null);
   const [associations, setAssociations] = useState<MemberAssociationDTO[] | null>(null);
   const [eventError, setEventError] = useState(false);
   const [associationError, setAssociationError] = useState(false);
@@ -50,12 +50,11 @@ export function RegisterPage({ client, eventId }: { client: Client; eventId: str
   useEffect(() => {
     let active = true;
     setEventError(false);
-    client
-      .getPublicEvent(eventId)
+    (adminAssisted ? client.getEvent(eventId) : client.getPublicEvent(eventId))
       .then((loaded) => { if (active) setEvent(loaded); })
       .catch(() => { if (active) setEventError(true); });
     return () => { active = false; };
-  }, [client, eventId, eventRetry]);
+  }, [adminAssisted, client, eventId, eventRetry]);
 
   useEffect(() => {
     let active = true;
@@ -90,15 +89,24 @@ export function RegisterPage({ client, eventId }: { client: Client; eventId: str
     setFieldErrors([]);
 
     try {
-      await client.register(eventId, {
+      const registration = {
         ...form,
         rank2Position: form.rank2Position || undefined,
         rank3Position: form.rank3Position || undefined,
-      });
+      };
+      if (adminAssisted) await client.dayOfRegistration(eventId, registration);
+      else await client.register(eventId, registration);
       setSubmitted(true);
     } catch (err) {
       const status = (err as { status?: number }).status;
-      if (status === 429) {
+      const message = (err as { message?: string }).message;
+      if (adminAssisted && status === 409 && message === 'already_registered') {
+        setSubmitError('This player is already registered. Contact the club if you need help.');
+      } else if (adminAssisted && status === 409 && message === 'event_unavailable') {
+        setSubmitError('Day-of registration is available only on the event date while check-in is open. Your details are still here.');
+      } else if (adminAssisted && status === 503 && message === 'checkout_unavailable') {
+        setSubmitError('Could not prepare or send the secure Checkout link. No payment has been taken. Your details are still here; try again.');
+      } else if (status === 429) {
         setSubmitError('Too many attempts. Wait a little while, then try again. Your details are still here.');
       } else if (status === 400) {
         setFieldErrors((err as { fields?: string[] }).fields ?? []);
@@ -123,14 +131,17 @@ export function RegisterPage({ client, eventId }: { client: Client; eventId: str
   if (submitted) {
     return (
       <section className="public-page">
-        <h1>Request received</h1>
-        <p>Check the parent or guardian email for secure next steps. If no message arrives, check junk mail or contact the club.</p>
+        <h1>{adminAssisted ? 'Checkout link sent' : 'Request received'}</h1>
+        {adminAssisted
+          ? <p>A secure Checkout link was sent to the parent or guardian. The registration remains pending; the player is not eligible for check-in or game planning until payment is confirmed.</p>
+          : <p>Check the parent or guardian email for secure next steps. If no message arrives, check junk mail or contact the club.</p>}
       </section>
     );
   }
 
+  const currency = 'currency' in event ? event.currency : 'aud';
   const fee = new Intl.NumberFormat('en-AU', {
-    style: 'currency', currency: event.currency.toUpperCase(),
+    style: 'currency', currency: currency.toUpperCase(),
   }).format(event.registrationFeeCents / 100);
 
   return (

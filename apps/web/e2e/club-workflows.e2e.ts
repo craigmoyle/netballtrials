@@ -6,6 +6,7 @@ import AxeBuilder from '@axe-core/playwright';
 type Fixtures = {
   mainEventId: string;
   checkInEventId: string;
+  dayOfEventId: string;
   draftEventId: string;
   ticketToken: string;
   adminEmail: string;
@@ -245,6 +246,50 @@ test('Admin opens event-scoped check-in without a PIN', async ({ page, request }
   await page.getByLabel('Player name').fill('Checkin1 Trial');
   await page.getByRole('button', { name: 'Check in' }).first().click();
   await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, Number 1 — Refer to committee/);
+});
+
+test('Admin assists a family on a closed event day and sends hosted Checkout without marking paid', async ({ page, request }) => {
+  const externalRequests: string[] = [];
+  page.on('request', (requestEvent) => {
+    const url = new URL(requestEvent.url());
+    if (['http:', 'https:'].includes(url.protocol) && !['localhost', '127.0.0.1'].includes(url.hostname)) externalRequests.push(requestEvent.url());
+  });
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'E2E Day-of registration' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+  await page.getByRole('link', { name: 'Add day-of player' }).click();
+  await expect(page.getByRole('heading', { name: 'E2E Day-of registration' })).toBeVisible();
+  await page.getByLabel('Player first name').fill('Day-of');
+  await page.getByLabel('Player last name').fill('Player');
+  await page.getByLabel('Player date of birth').fill('2012-05-04');
+  await page.getByLabel('Parent or guardian name').fill('Casey Parent');
+  await page.getByLabel('Parent or guardian email').fill('dayofparent@example.test');
+  await page.getByLabel('Parent or guardian mobile').fill('0400000000');
+  await page.getByLabel('Member association').selectOption({ label: 'MENA' });
+  await page.getByLabel('First position').selectOption('C');
+  await page.getByLabel(/I confirm the player meets the eligibility requirements/).check();
+  await page.getByRole('button', { name: 'Continue to payment' }).click();
+  await expect(page.getByRole('heading', { name: 'Checkout link sent' })).toBeVisible();
+  await expect(page.getByText(/remains pending.*not eligible for check-in or game planning until payment is confirmed/i)).toBeVisible();
+  await expectAccessible(page);
+
+  const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=dayofparent%40example.test`).then((response) => response.json());
+  const checkoutEmail = outbox.messages.find((message: { subject: string }) => message.subject === 'Continue your Netball Trials registration');
+  expect(checkoutEmail?.text).toMatch(/https:\/\/checkout\.test\/fake_\d+/);
+  const rosterResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.dayOfEventId}/roster`);
+  expect(rosterResponse.status()).toBe(200);
+  const roster = await rosterResponse.json();
+  expect(roster.registrations).toContainEqual(expect.objectContaining({ playerName: 'Day-of Player', status: 'PENDING', checkedInAt: null }));
+
+  await page.goto(`/admin/events/${fixtures.dayOfEventId}/check-in`);
+  await expect(page.getByRole('heading', { name: 'E2E Day-of registration' })).toBeVisible();
+  await expect(page.getByText('0 of 0 arrived')).toBeVisible();
+  await page.getByRole('link', { name: 'Look up by name instead' }).click();
+  const lookupResponse = page.waitForResponse((response) => response.url().includes('/api/check-in/lookup?'));
+  await page.getByLabel('Player name').fill('Day-of Player');
+  expect(await (await lookupResponse).json()).toEqual([]);
+  await expectAccessible(page);
+  expect(externalRequests).toEqual([]);
 });
 
 test('volunteer uses manual fallback, sees referral/name/number, live count and undo without parent contacts', async ({ page }) => {
