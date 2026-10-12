@@ -20,6 +20,7 @@ function plan(status: 'DRAFT' | 'PUBLISHED' = 'DRAFT'): RoundPlanDTO {
     seed: 1, rounds: 2, courts: 2, playMinutes: 8, changeoverMinutes: 2, windowMinutes: 150,
     rank1Min: 1, rank2Min: 0, rank3Min: 0, eventName: 'Trials', eventDate: event.eventDate,
     venue: 'SNC', firstWhistle: '09:00', createdAt: '2026-10-10T00:00:00.000Z', publishedAt: status === 'PUBLISHED' ? '2026-10-10T00:00:00.000Z' : null,
+    players: [], validationWarnings: [],
     slots: [{ id: 'slot-1', round: 1, court: 1, position: 'GS', team: 0, registrationId: 'r1', playerName: 'Ada Lovelace', bibNumber: 5 }],
   };
 }

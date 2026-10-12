@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { RoundPlan, RoundPlanPlayer, RoundSlot } from '@prisma/client';
-import type { RoundPlanDTO } from '@netball-trials/types';
+import { POSITIONS } from '@netball-trials/types';
+import type { ManualRoundInputDTO, PlanRevisionSummaryDTO, PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
+import { getGameRoster, saveManualRoundRevision } from './games';
 import { generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
 import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
@@ -17,6 +19,18 @@ const POSITION_ORDER: Record<string, number> = {
   GD: 5,
   GK: 6,
 };
+
+const manualRoundSchema = z.object({
+  sourcePlanId: z.string().min(1),
+  slots: z.array(z.object({
+    round: z.number().int(),
+    court: z.number().int(),
+    position: z.enum(POSITIONS),
+    team: z.union([z.literal(0), z.literal(1)]),
+    registrationId: z.string().min(1),
+  }).strict()),
+  overrideWarnings: z.boolean().default(false),
+}).strict();
 
 function serializePlan(plan: RoundPlan & { slots: RoundSlot[]; players: RoundPlanPlayer[] }): RoundPlanDTO {
   const playersById = new Map(plan.players.map((player) => [player.registrationId, player]));
@@ -62,6 +76,19 @@ function serializePlan(plan: RoundPlan & { slots: RoundSlot[]; players: RoundPla
     rank2Min: plan.rank2Min,
     rank3Min: plan.rank3Min,
     slots,
+    players: [...plan.players]
+      .sort((a, b) => (a.bibNumber ?? Number.MAX_SAFE_INTEGER) - (b.bibNumber ?? Number.MAX_SAFE_INTEGER))
+      .map((player) => ({
+        registrationId: player.registrationId,
+        playerName: player.playerName,
+        bibNumber: player.bibNumber,
+        rank1Position: player.rank1Position,
+        rank2Position: player.rank2Position,
+        rank3Position: player.rank3Position,
+        optInExtraPositions: player.optInExtraPositions,
+        active: player.active,
+      })),
+    validationWarnings: Array.isArray(plan.validationWarnings) ? plan.validationWarnings as unknown as PlannerGapDTO[] : [],
   };
 }
 
@@ -117,6 +144,51 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(404).send({ error: 'not_found' });
     }
     return serializePlan(plan);
+  });
+
+  app.get('/api/admin/events/:id/plan/revisions', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const event = await deps.prisma.event.findUnique({ where: { id }, select: { id: true } });
+    if (!event) return reply.code(404).send({ error: 'not_found' });
+    const plans = await deps.prisma.roundPlan.findMany({ where: { eventId: id }, orderBy: { revision: 'desc' } });
+    const history: PlanRevisionSummaryDTO[] = plans.map((plan) => ({
+      id: plan.id,
+      revision: plan.revision,
+      status: plan.status,
+      sourcePlanId: plan.sourcePlanId,
+      frozenThroughRound: plan.frozenThroughRound,
+      createdAt: plan.createdAt.toISOString(),
+      publishedAt: plan.publishedAt?.toISOString() ?? null,
+      validationWarnings: Array.isArray(plan.validationWarnings) ? plan.validationWarnings as unknown as PlannerGapDTO[] : [],
+    }));
+    return history;
+  });
+
+  app.get('/api/admin/events/:id/plan/revisions/:planId', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id, planId } = req.params as { id: string; planId: string };
+    const plan = await loadPlan(deps, id, planId);
+    if (!plan) return reply.code(404).send({ error: 'not_found' });
+    return serializePlan(plan);
+  });
+
+  app.get('/api/admin/events/:id/game-roster', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const roster = await getGameRoster(deps.prisma, id);
+    if (!roster) return reply.code(404).send({ error: 'not_found' });
+    return roster;
+  });
+
+  app.post('/api/admin/events/:id/plan/rounds/:round/manual', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = manualRoundSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const { id, round: rawRound } = req.params as { id: string; round: string };
+    const result = await saveManualRoundRevision(deps.prisma, id, Number(rawRound), parsed.data as ManualRoundInputDTO, new Date());
+    if (!result.ok) {
+      if (result.reason === 'stale_plan') return reply.code(409).send({ error: 'stale_plan' });
+      if (result.reason === 'invalid_plan') return reply.code(422).send({ error: 'invalid_plan', errors: result.errors });
+      return reply.code(422).send({ error: 'warnings_require_confirmation', warnings: result.warnings });
+    }
+    return reply.code(201).send(serializePlan(result.plan));
   });
 
   app.post(

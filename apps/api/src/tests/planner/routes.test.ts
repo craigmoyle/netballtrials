@@ -47,6 +47,9 @@ describe('planner routes', () => {
       cookies: { nt_session: cookie },
     });
     expect(read.json().slots).toHaveLength(2 * 2 * 14);
+    expect(read.json().players).toHaveLength(28);
+    expect(read.json().validationWarnings).toEqual([]);
+    expect(JSON.stringify(read.json())).not.toMatch(/parentEmail|parentMobile|amountCents/);
     const published = await app.inject({
       method: 'POST',
       url: `/api/admin/events/${event.id}/plan/publish`,

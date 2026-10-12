@@ -163,6 +163,31 @@ export interface RoundSlotDTO {
   bibNumber: number | null;
 }
 
+export interface RoundPlanPlayerDTO {
+  registrationId: string;
+  playerName: string;
+  bibNumber: number | null;
+  rank1Position: Position;
+  rank2Position: Position | null;
+  rank3Position: Position | null;
+  optInExtraPositions: boolean;
+  active: boolean;
+}
+
+export interface PlanSlotInputDTO {
+  round: number;
+  court: number;
+  position: Position;
+  team: 0 | 1;
+  registrationId: string;
+}
+
+export interface ManualRoundInputDTO {
+  sourcePlanId: string;
+  slots: PlanSlotInputDTO[];
+  overrideWarnings: boolean;
+}
+
 export interface RoundPlanDTO {
   id: string;
   eventId: string;
@@ -186,6 +211,8 @@ export interface RoundPlanDTO {
   createdAt: string;
   publishedAt: string | null;
   slots: RoundSlotDTO[];
+  players: RoundPlanPlayerDTO[];
+  validationWarnings: PlannerGapDTO[];
 }
 
 export interface PlannerPreviewDTO {
@@ -200,6 +227,27 @@ export interface PlannerGapDTO {
   code: string;
   message: string;
   detail?: Record<string, unknown>;
+}
+
+export interface PlanRevisionSummaryDTO {
+  id: string;
+  revision: number;
+  status: 'DRAFT' | 'PUBLISHED';
+  sourcePlanId: string | null;
+  frozenThroughRound: number;
+  createdAt: string;
+  publishedAt: string | null;
+  validationWarnings: PlannerGapDTO[];
+}
+
+export interface GamePlayerDTO {
+  registrationId: string;
+  playerName: string;
+  bibNumber: number;
+  rank1Position: Position;
+  rank2Position: Position | null;
+  rank3Position: Position | null;
+  optInExtraPositions: boolean;
 }
 
 export interface ReviewItemDTO {

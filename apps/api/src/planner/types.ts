@@ -48,6 +48,8 @@ export type PlannerGapCode =
   | 'too_many_players'
   | 'unmet_position_minimum'
   | 'missing_court_visit'
+  | 'position_preference_warning'
+  | 'game_count_fairness_warning'
   | 'time_window'
   | 'no_solution';
 
