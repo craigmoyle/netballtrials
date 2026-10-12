@@ -1,13 +1,12 @@
 import type { BibColorDTO, EventCourtColorDTO, RoundPlanPlayerDTO } from '@netball-trials/types';
-import { COURT_POSITIONS, type PlanSlot, type PlannerPlayer } from './types';
+import { COURT_POSITIONS, type PlanSlot } from './types';
 
 type EventLabel = { name: string; eventDate: string; venue: string };
-type SelectorPlayer = RoundPlanPlayerDTO | PlannerPlayer;
 type SelectorSheetsInput = {
   event: EventLabel;
   slots: PlanSlot[];
-  players: SelectorPlayer[];
-  courtColors?: EventCourtColorDTO[];
+  players: RoundPlanPlayerDTO[];
+  courtColors: EventCourtColorDTO[];
 };
 type SheetInput = {
   event: EventLabel;
@@ -17,20 +16,6 @@ type SheetInput = {
   players: RoundPlanPlayerDTO[];
   courtColors: EventCourtColorDTO[];
 };
-
-function snapshotPlayer(player: SelectorPlayer): RoundPlanPlayerDTO {
-  if ('playerName' in player) return player;
-  return {
-    registrationId: player.registrationId,
-    playerName: player.name,
-    bibNumber: player.bibNumber || null,
-    rank1Position: player.rank1,
-    rank2Position: player.rank2,
-    rank3Position: player.rank3,
-    optInExtraPositions: player.optInExtra,
-    active: true,
-  };
-}
 
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -80,8 +65,8 @@ function renderSection(input: SheetInput): string {
 }
 
 export function renderSelectorSheets(input: SelectorSheetsInput): string {
-  const players = input.players.map(snapshotPlayer);
-  const courtColors = input.courtColors ?? [];
+  const players = input.players;
+  const courtColors = input.courtColors;
   const rounds = [...new Set(input.slots.map((slot) => slot.round))].sort((a, b) => a - b);
   const courts = [...new Set(input.slots.map((slot) => slot.court))].sort((a, b) => a - b);
   const sections: string[] = [];

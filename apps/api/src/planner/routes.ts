@@ -5,8 +5,10 @@ import { POSITIONS } from '@netball-trials/types';
 import type { ManualRoundInputDTO, ManualSuffixInputDTO, PlanRevisionSummaryDTO, PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
+import { getEventCourtColors } from '../colors/service';
 import { getGameRoster, saveManualRoundRevision, saveManualSuffixRevision } from './games';
 import { generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
+import { renderBlankGameSheet } from './blank-sheet';
 import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
 
@@ -257,14 +259,20 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(404).send({ error: 'not_found' });
     }
 
+    const courtColors = await getEventCourtColors(deps.prisma, id);
+    if (!courtColors) return reply.code(404).send({ error: 'not_found' });
+    const missingCourts = courtColors.filter((pair) => !pair.teamAColor || !pair.teamBColor).map((pair) => pair.court);
+    if (missingCourts.length > 0) return reply.code(409).send({ error: 'court_colors_unassigned', courts: missingCourts });
+
     const players = plan.players.map((player) => ({
       registrationId: player.registrationId,
-      name: player.playerName,
-      bibNumber: player.bibNumber ?? 0,
-      rank1: player.rank1Position,
-      rank2: player.rank2Position,
-      rank3: player.rank3Position,
-      optInExtra: player.optInExtraPositions,
+      playerName: player.playerName,
+      bibNumber: player.bibNumber,
+      rank1Position: player.rank1Position,
+      rank2Position: player.rank2Position,
+      rank3Position: player.rank3Position,
+      optInExtraPositions: player.optInExtraPositions,
+      active: player.active,
     }));
     const slots: PlanSlot[] = plan.slots.map((slot) => ({
       round: slot.round,
@@ -281,7 +289,16 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
       },
       slots,
       players,
+      courtColors,
     });
+    return reply.type('text/html; charset=utf-8').send(html);
+  });
+
+  app.get('/api/admin/events/:id/sheets/blank', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const event = await deps.prisma.event.findUnique({ where: { id }, select: { name: true, eventDate: true, venue: true } });
+    if (!event) return reply.code(404).send({ error: 'not_found' });
+    const html = renderBlankGameSheet({ name: event.name, eventDate: event.eventDate.toISOString().slice(0, 10), venue: event.venue });
     return reply.type('text/html; charset=utf-8').send(html);
   });
 }

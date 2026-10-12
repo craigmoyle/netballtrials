@@ -10,11 +10,22 @@ const app = createApp();
 
 beforeEach(resetDb);
 
+async function configureCourtColors(eventId: string, courts: Array<[number, string, string]> = [[1, 'White', 'Black'], [2, 'Grey', 'Orange']]) {
+  const names = [...new Set(courts.flatMap(([, teamA, teamB]) => [teamA, teamB]))];
+  const colors = await prisma.bibColor.findMany({ where: { name: { in: names } }, select: { id: true, name: true } });
+  const ids = new Map(colors.map((color) => [color.name, color.id]));
+  await prisma.eventCourtColor.createMany({ data: courts.map(([court, teamA, teamB]) => ({
+    eventId, court, teamAColorId: ids.get(teamA)!, teamBColorId: ids.get(teamB)!,
+  })) });
+}
+
 describe('planner routes', () => {
   it('requires an admin session', async () => {
     expect(
       (await app.inject({ method: 'POST', url: '/api/admin/events/x/plan/generate' })).statusCode,
     ).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/api/admin/events/x/sheets' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/api/admin/events/x/sheets/blank' })).statusCode).toBe(401);
   });
   it('previews the lower bound and exposes a published-only plan for printing', async () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
@@ -67,6 +78,32 @@ describe('planner routes', () => {
     expect(sheets.statusCode).toBe(404);
   });
 
+  it('serves a blank game sheet without a plan and protects the route', async () => {
+    const cookie = await signInAsNewAdmin(app, 'admin@example.com');
+    const event = await seedEventWithPlayers(0, { courts: 2 });
+    expect((await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/sheets`, cookies: { nt_session: cookie } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/sheets/blank` })).statusCode).toBe(401);
+    const blank = await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/sheets/blank`, cookies: { nt_session: cookie } });
+    expect(blank.statusCode).toBe(200);
+    expect(blank.headers['content-type']).toContain('text/html');
+    expect((blank.body.match(/class="sheet"/g) ?? [])).toHaveLength(1);
+    expect(blank.body).toContain('Round:');
+    expect((await app.inject({ method: 'GET', url: '/api/admin/events/not-an-event/sheets/blank', cookies: { nt_session: cookie } })).statusCode).toBe(404);
+  });
+
+  it('refuses selector sheets when a published plan has an uncolored court', async () => {
+    const cookie = await signInAsNewAdmin(app, 'admin@example.com');
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const generated = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/generate`, cookies: { nt_session: cookie } });
+    const published = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/publish`, payload: { planId: generated.json().id }, cookies: { nt_session: cookie } });
+    expect(published.statusCode).toBe(200);
+    await configureCourtColors(event.id, [[1, 'White', 'Black']]);
+
+    const sheets = await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/sheets`, cookies: { nt_session: cookie } });
+    expect(sheets.statusCode).toBe(409);
+    expect(sheets.json()).toEqual({ error: 'court_colors_unassigned', courts: [2] });
+  });
+
   it('prints the published snapshot after a registration is withdrawn', async () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
@@ -79,12 +116,22 @@ describe('planner routes', () => {
     expect(published.statusCode).toBe(200);
     await withdrawRegistration(prisma, event.id, firstSlot.registrationId, new Date());
 
+    await configureCourtColors(event.id);
     const sheets = await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/sheets`, cookies: { nt_session: cookie } });
     expect(sheets.statusCode).toBe(200);
+    expect(sheets.body).toContain('White');
+    expect(sheets.body).toContain('Black');
+    expect(sheets.body).toContain('Grey');
+    expect(sheets.body).toContain('Orange');
+    expect(sheets.body).toContain('selector-print__color-swatch');
+    expect(sheets.body).toContain('Choices');
+    expect(sheets.body).toContain('Rating');
+    expect(sheets.body).toContain('Notes/Feedback');
     expect((sheets.body.match(/<!doctype html>/gi) ?? [])).toHaveLength(1);
     expect((sheets.body.match(/class="sheet"/g) ?? [])).toHaveLength(4);
     expect(sheets.body).toContain(before.playerName);
     expect(sheets.body).toContain(`>${before.bibNumber}<`);
+    expect(sheets.body).toContain('<th scope="col">Number</th>');
     expect(sheets.body).not.toContain('parentEmail');
   });
 

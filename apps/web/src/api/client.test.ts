@@ -170,6 +170,19 @@ describe('apiClient', () => {
     await expect(apiClient('http://api.test').getSheetsHtml('event-1')).resolves.toBe(html);
   });
 
+  it('fetches the blank game sheet as HTML with session credentials', async () => {
+    const html = '<!doctype html><section class="sheet">Blank</section>';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(html, { status: 200, headers: { 'content-type': 'text/html' } }));
+
+    await expect(apiClient('http://api.test').getBlankSheetHtml('event-1')).resolves.toBe(html);
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/sheets/blank', expect.objectContaining({ credentials: 'include' }));
+  });
+
+  it('preserves selector-sheet API errors for color guidance', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: 'court_colors_unassigned', courts: [2] }), { status: 409, headers: { 'content-type': 'application/json' } }));
+    await expect(apiClient('http://api.test').getSheetsHtml('event-1')).rejects.toMatchObject({ status: 409, message: 'court_colors_unassigned' });
+  });
+
   it('keeps malformed JSON response behavior characterized', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{bad', { status: 200, headers: { 'content-type': 'application/json' } }));
     await expect(apiClient('http://api.test').me()).rejects.toBeInstanceOf(SyntaxError);

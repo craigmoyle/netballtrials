@@ -34,6 +34,17 @@ async function request<T>(baseUrl: string, path: string, init?: RequestInit): Pr
   return body as T;
 }
 
+async function requestHtml(baseUrl: string, path: string): Promise<string> {
+  const response = await fetchResponse(baseUrl, path);
+  const text = await response.text();
+  if (!response.ok) {
+    let message = 'request_failed';
+    try { message = JSON.parse(text)?.error ?? message; } catch { /* retain the generic error for non-JSON responses */ }
+    throw new ApiError(response.status, message);
+  }
+  return text;
+}
+
 type ManualRoundResult =
   | { ok: true; plan: RoundPlanDTO }
   | { ok: false; reason: 'invalid_plan'; errors: PlannerGapDTO[] }
@@ -202,13 +213,8 @@ export function apiClient(baseUrl: string) {
       }),
     saveManualSuffix: (eventId: string, input: ManualSuffixInputDTO) =>
       manualPlanAction(baseUrl, `/api/admin/events/${eventId}/plan/suffix/manual`, input),
-    getSheetsHtml: async (eventId: string) => {
-      const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/sheets`);
-      if (!response.ok) {
-        throw new ApiError(response.status, 'request_failed');
-      }
-      return response.text();
-    },
+    getSheetsHtml: (eventId: string) => requestHtml(baseUrl, `/api/admin/events/${eventId}/sheets`),
+    getBlankSheetHtml: (eventId: string) => requestHtml(baseUrl, `/api/admin/events/${eventId}/sheets/blank`),
     listReview: (eventId: string) =>
       request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/review`),
     resolveReview: (eventId: string, itemId: string, note: string) =>
