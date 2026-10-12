@@ -35,9 +35,16 @@ async function resetFixtures(): Promise<Record<string, string>> {
   const mainEvent = await prisma.event.create({
     data: { ...eventFixture({
       name: 'E2E 15/U Ladies', status: 'OPEN', eventDate: new Date('2027-09-12T00:00:00Z'),
-      courts: 2, rank1Min: 1, rank2Min: 0, rank3Min: 0,
+      courts: 2, nextBibNumber: 29, rank1Min: 1, rank2Min: 0, rank3Min: 0,
     }) },
   });
+  const [white, black, grey, orange] = await Promise.all(['White', 'Black', 'Grey', 'Orange'].map((name) =>
+    prisma.bibColor.findUniqueOrThrow({ where: { name }, select: { id: true } }),
+  ));
+  await prisma.eventCourtColor.createMany({ data: [
+    { eventId: mainEvent.id, court: 1, teamAColorId: white.id, teamBColorId: black.id },
+    { eventId: mainEvent.id, court: 2, teamAColorId: grey.id, teamBColorId: orange.id },
+  ] });
   for (let index = 0; index < 28; index++) {
     const parentEmail = index === 27 ? 'PARENT1@example.test' : `parent${index + 1}@example.test`;
     await prisma.registration.create({

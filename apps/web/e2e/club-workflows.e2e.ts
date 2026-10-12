@@ -42,6 +42,12 @@ async function adminGet(page: Page, request: APIRequestContext, url: string) {
   return request.get(url, { headers: { cookie: `nt_session=${session!.value}` } });
 }
 
+async function adminPost(page: Page, request: APIRequestContext, url: string, data: unknown) {
+  const session = (await page.context().cookies(API_ORIGIN)).find((cookie) => cookie.name === 'nt_session');
+  expect(session, 'verified browser session cookie').toBeTruthy();
+  return request.post(url, { headers: { cookie: `nt_session=${session!.value}` }, data });
+}
+
 async function expectAccessible(page: Page): Promise<void> {
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -367,6 +373,214 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   expect(latest.id).toBe(publishedBefore.id);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expectAccessible(page);
+});
+
+test('Admin manages a live plan safely after a late arrival and early leaver', async ({ page, request }) => {
+  const externalRequests: string[] = [];
+  page.on('request', (requestEvent) => {
+    const url = new URL(requestEvent.url());
+    if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && !['localhost', '127.0.0.1'].includes(url.hostname)) externalRequests.push(requestEvent.url());
+  });
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
+  await page.getByRole('link', { name: 'Plan rounds' }).click();
+  await page.getByRole('button', { name: 'Generate draft' }).click();
+  await page.getByRole('button', { name: 'Publish revision' }).click();
+
+  const eventUrl = `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`;
+  const planUrl = `${eventUrl}/plan`;
+  const publishedResponse = await adminGet(page, request, `${planUrl}?published=true`);
+  expect(publishedResponse.status()).toBe(200);
+  const originalPlan = await publishedResponse.json();
+  const playerOneId = originalPlan.players.find((player: { playerName: string }) => player.playerName === 'Player1 Trial')?.registrationId;
+  expect(playerOneId).toBeTruthy();
+  const firstSlot = originalPlan.slots.find((slot: { round: number; registrationId: string }) => slot.round === 1 && slot.registrationId === playerOneId);
+  const targetSlot = originalPlan.slots.find((slot: { round: number; registrationId: string }) => slot.round === 1 && slot.registrationId !== playerOneId);
+  expect(firstSlot).toBeTruthy();
+  expect(targetSlot).toBeTruthy();
+  const keyFor = (slot: { round: number; court: number; position: string; team: number }) => `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
+  const planRoundInput = (plan: { slots: Array<{ round: number; court: number; position: string; team: number; registrationId: string }> }, round: number) =>
+    plan.slots.filter((slot) => slot.round === round).map(({ round: slotRound, court, position, team, registrationId }) => ({ round: slotRound, court, position, team, registrationId }));
+  const performMove = async (round: number, registrationId: string, slot: { round: number; court: number; position: string; team: number }) => {
+    await page.getByRole('button', { name: `Edit round ${round}` }).click();
+    await page.getByLabel('Player to move').selectOption(registrationId);
+    await page.getByLabel('Destination slot').selectOption(keyFor(slot));
+    await page.getByRole('button', { name: 'Move or substitute' }).click();
+  };
+
+  await page.goto(`/admin/events/${fixtures.mainEventId}/games`);
+  await expect(page.getByRole('heading', { name: 'Full Game List' })).toBeVisible();
+  await expectAccessible(page);
+  for (const color of ['White', 'Black', 'Grey', 'Orange']) await expect(page.getByText(color).first()).toBeVisible();
+
+  await performMove(1, playerOneId, targetSlot);
+  await page.getByRole('button', { name: 'Cancel changes' }).click();
+  const afterCancel = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
+  expect(afterCancel.id).toBe(originalPlan.id);
+
+  await performMove(1, playerOneId, targetSlot);
+  await page.getByRole('button', { name: 'Save round 1' }).click();
+  const saveAnyway = page.getByRole('button', { name: 'Save anyway' });
+  await expect.poll(async () => (await saveAnyway.isVisible()) || (await page.getByText('Revision 2 is now active.').isVisible())).toBe(true);
+  if (await saveAnyway.isVisible()) await saveAnyway.click();
+  await expect(page.getByText('Revision 2 is now active.')).toBeVisible();
+  const afterSwap = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
+  expect(afterSwap.id).not.toBe(originalPlan.id);
+  expect(afterSwap.slots.find((slot: { round: number; court: number; position: string; team: number }) => keyFor(slot) === keyFor(firstSlot)).registrationId).toBe(targetSlot.registrationId);
+  expect(afterSwap.slots.find((slot: { round: number; court: number; position: string; team: number }) => keyFor(slot) === keyFor(targetSlot)).registrationId).toBe(playerOneId);
+
+  const oldRevision = await adminGet(page, request, `${planUrl}/revisions/${originalPlan.id}`);
+  expect(oldRevision.status()).toBe(200);
+  expect((await oldRevision.json()).slots).toEqual(originalPlan.slots);
+  const invalidSlots = planRoundInput(afterSwap, 1);
+  invalidSlots[1]!.registrationId = invalidSlots[0]!.registrationId;
+  const invalid = await adminPost(page, request, `${planUrl}/rounds/1/manual`, {
+    sourcePlanId: afterSwap.id, slots: invalidSlots, overrideWarnings: true,
+  });
+  expect(invalid.status()).toBe(422);
+  const stale = await adminPost(page, request, `${planUrl}/rounds/1/manual`, {
+    sourcePlanId: originalPlan.id, slots: planRoundInput(originalPlan, 1), overrideWarnings: true,
+  });
+  expect(stale.status()).toBe(409);
+  expect((await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json())).id).toBe(afterSwap.id);
+
+  await page.getByRole('button', { name: 'Revision history' }).click();
+  await page.getByRole('button', { name: 'View revision 1' }).click();
+  await expect(page.getByText('Viewing revision 1 — read-only')).toBeVisible();
+  await page.getByRole('button', { name: 'Return to active revision' }).click();
+  await expect(page.getByText('Active revision 2')).toBeVisible();
+
+  const parentEmail = 'late-parent@example.test';
+  await page.goto(`/register/${fixtures.mainEventId}`);
+  await page.getByLabel('Player first name').fill('Late Arrival');
+  await page.getByLabel('Player last name').fill('Trial');
+  await page.getByLabel('Player date of birth').fill('2012-05-04');
+  await page.getByLabel('Parent or guardian name').fill('Late Parent');
+  await page.getByLabel('Parent or guardian email').fill(parentEmail);
+  await page.getByLabel('Parent or guardian mobile').fill('0400000001');
+  await page.getByLabel('Member association').selectOption({ label: 'MENA' });
+  await page.getByLabel('First position').selectOption('GS');
+  await page.getByLabel(/I confirm the player meets the eligibility requirements/).check();
+  await page.getByRole('button', { name: 'Continue to payment' }).click();
+  await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
+  const checkoutOutbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=${encodeURIComponent(parentEmail)}`).then((response) => response.json());
+  const checkoutMessage = checkoutOutbox.messages.find((message: { subject: string }) => message.subject === 'Continue your Netball Trials registration');
+  const sessionId = checkoutMessage?.text.match(/checkout\.test\/(fake_\d+)/)?.[1];
+  expect(sessionId).toBeTruthy();
+  const pendingRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
+  const lateRegistration = pendingRoster.registrations.find((registration: { playerName: string }) => registration.playerName === 'Late Arrival Trial');
+  expect(lateRegistration).toMatchObject({ status: 'PENDING', bibNumber: null, checkedInAt: null });
+  const pendingGameRoster = await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json());
+  expect(pendingGameRoster.some((player: { registrationId: string }) => player.registrationId === lateRegistration.id)).toBe(false);
+  await page.goto(`/admin/events/${fixtures.mainEventId}/games`);
+  await expect(page.getByText('Late Arrival Trial')).toHaveCount(0);
+
+  const payment = await request.post(`${API_ORIGIN}/api/webhooks/stripe`, {
+    headers: { 'stripe-signature': 'ok' },
+    data: {
+      kind: 'checkout_completed', stripeEventId: 'e2e-late-arrival-payment', registrationId: lateRegistration.id,
+      sessionId, amountCents: 3500, currency: 'aud', paymentStatus: 'paid', paymentIntentId: 'pi_e2e_late_arrival',
+    },
+  });
+  expect(payment.status()).toBe(200);
+  expect((await payment.json()).status).toBe('ok');
+  const paidRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
+  expect(paidRoster.registrations.find((registration: { id: string }) => registration.id === lateRegistration.id)).toMatchObject({ status: 'PAID', bibNumber: null, checkedInAt: null });
+  const paidGameRoster = await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json());
+  expect(paidGameRoster.some((player: { registrationId: string }) => player.registrationId === lateRegistration.id)).toBe(false);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Full Game List' })).toBeVisible();
+  await expect(page.getByText('Late Arrival Trial')).toHaveCount(0);
+
+  await page.goto(`/admin/events/${fixtures.mainEventId}`);
+  await page.getByRole('link', { name: 'Admin check-in' }).click();
+  await page.getByRole('link', { name: 'Look up by name instead' }).click();
+  await page.getByLabel('Player name').fill('Late Arrival Trial');
+  await page.getByRole('button', { name: 'Check in' }).click();
+  await expect(page.getByText(/Late Arrival Trial, Number 29/)).toBeVisible();
+  const checkedInRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
+  expect(checkedInRoster.registrations.find((registration: { id: string }) => registration.id === lateRegistration.id)).toMatchObject({ status: 'PAID', bibNumber: 29 });
+  const checkedInGameRoster = await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json());
+  expect(checkedInGameRoster).toContainEqual(expect.objectContaining({ registrationId: lateRegistration.id, playerName: 'Late Arrival Trial', bibNumber: 29 }));
+
+  await page.goto(`/admin/events/${fixtures.mainEventId}/games`);
+  await expect(page.getByText('Late Arrival Trial')).toBeVisible();
+  const beforeSubstitution = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
+  const lateTarget = beforeSubstitution.slots.find((slot: { round: number; position: string; registrationId: string }) => slot.round === 2 && slot.position !== 'GS' && slot.registrationId !== playerOneId);
+  expect(lateTarget).toBeTruthy();
+  await performMove(2, lateRegistration.id, lateTarget);
+  await page.getByRole('button', { name: 'Save round 2' }).click();
+  await expect(page.getByRole('alert')).toContainText('Late Arrival Trial is not opted in to');
+  await page.getByRole('button', { name: 'Save anyway' }).click();
+  await expect(page.getByText('Revision 3 is now active.')).toBeVisible();
+  const beforeRebuild = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
+  const playerOneBefore = (await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json())).registrations.find((registration: { id: string }) => registration.id === playerOneId);
+
+  await page.getByRole('button', { name: 'Remove early leaver' }).click();
+  await page.getByLabel('Remove future assignments from round').selectOption('2');
+  await page.getByLabel('Remove Player1 Trial from round 2 onward').check();
+  await page.getByRole('button', { name: 'Rebuild fixtures from round' }).click();
+  await expect(page.getByText('Draft revision 4 is ready for review.')).toBeVisible();
+  const activeDuringDraft = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
+  const draft = await adminGet(page, request, planUrl).then((response) => response.json());
+  expect(activeDuringDraft.id).toBe(beforeRebuild.id);
+  expect(draft.status).toBe('DRAFT');
+  const roundOneSignature = (plan: { slots: Array<{ round: number; court: number; position: string; team: number; registrationId: string }> }) =>
+    plan.slots.filter((slot) => slot.round === 1).map((slot) => `${slot.court}:${slot.position}:${slot.team}:${slot.registrationId}`).sort();
+  expect(roundOneSignature(draft)).toEqual(roundOneSignature(beforeRebuild));
+  expect(draft.slots.some((slot: { round: number; registrationId: string }) => slot.round === 2 && slot.registrationId === playerOneId)).toBe(false);
+  await page.getByRole('link', { name: 'Review draft in Plan Rounds' }).click();
+  await page.getByRole('button', { name: 'Publish revision' }).click();
+  await expect(page.locator('p').filter({ hasText: /^Published revision 4/ })).toBeVisible();
+
+  const finalPlan = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
+  expect(finalPlan.id).toBe(draft.id);
+  expect(finalPlan.players.find((player: { registrationId: string }) => player.registrationId === playerOneId)?.active).toBe(false);
+  expect(finalPlan.slots.some((slot: { round: number; registrationId: string }) => slot.round === 1 && slot.registrationId === playerOneId)).toBe(true);
+  expect(finalPlan.slots.some((slot: { round: number; registrationId: string }) => slot.round >= 2 && slot.registrationId === playerOneId)).toBe(false);
+  const playerOneAfter = (await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json())).registrations.find((registration: { id: string }) => registration.id === playerOneId);
+  expect(playerOneAfter).toMatchObject({ status: 'PAID', bibNumber: 1, checkedInAt: playerOneBefore.checkedInAt });
+  expect((await adminGet(page, request, `${planUrl}/revisions/${originalPlan.id}`).then((response) => response.json())).slots).toEqual(originalPlan.slots);
+  expect((await adminGet(page, request, `${planUrl}/revisions/${beforeRebuild.id}`).then((response) => response.json())).slots).toEqual(beforeRebuild.slots);
+
+  await page.goto(`/admin/events/${fixtures.mainEventId}/games`);
+  const reportRoster = JSON.stringify(await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json()));
+  expect(reportRoster).not.toMatch(/parentEmail|parentName|amountCents|paymentIntentId|checkoutSessionId/i);
+  expect(JSON.stringify(finalPlan)).not.toMatch(/parentEmail|parentName|parentMobile|amountCents|paymentIntentId|checkoutSessionId/i);
+  await page.getByLabel('Game view').selectOption('statistics');
+  const statistics = page.getByRole('table', { name: 'Player Statistics' });
+  await expect(statistics).toBeVisible();
+  const earlyStats = statistics.getByRole('row', { name: /Player1 Trial/ });
+  const lateStats = statistics.getByRole('row', { name: /Late Arrival Trial/ });
+  expect((await earlyStats.getByRole('cell').allTextContents()).slice(0, 2)).toEqual(['1', '1']);
+  const lateGameCount = finalPlan.slots.filter((slot: { registrationId: string }) => slot.registrationId === lateRegistration.id).length;
+  expect(lateGameCount).toBeGreaterThan(0);
+  expect((await lateStats.getByRole('cell').allTextContents()).slice(0, 2)).toEqual(['29', String(lateGameCount)]);
+  expect(await statistics.innerText()).not.toMatch(/late-parent@example\.test|parent\d+@example\.test|amount|payment/i);
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await expectAccessible(page);
+  }
+
+  await page.getByLabel('Game view').selectOption('reference');
+  const reference = page.getByRole('table', { name: 'Player Reference' });
+  await expect(reference).toBeVisible();
+  const earlyReference = await reference.getByRole('row', { name: /Player1 Trial/ }).getByRole('cell').allTextContents();
+  const lateReference = await reference.getByRole('row', { name: /Late Arrival Trial/ }).getByRole('cell').allTextContents();
+  expect(earlyReference[0]).toBe('1');
+  expect(earlyReference.slice(2)).toEqual(Array.from({ length: finalPlan.rounds - 1 }, () => 'Not playing'));
+  expect(lateReference[0]).toBe('29');
+  expect(lateReference[1]).toBe('Not playing');
+  expect(lateReference.slice(2).every((cell: string) => /Court \d, .* — (White|Black|Grey|Orange)/.test(cell))).toBe(true);
+  for (const color of ['White', 'Black', 'Grey', 'Orange']) await expect(reference).toContainText(color);
+  expect(await reference.innerText()).not.toMatch(/late-parent@example\.test|parent\d+@example\.test|amount|payment/i);
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await expectAccessible(page);
+  }
+  expect(externalRequests).toEqual([]);
 });
 
 test('planner previews, publishes, regenerates without changing the prefix, and prints four landscape sheets', async ({ page, request }) => {
