@@ -127,6 +127,32 @@ describe('FullGameListPage', () => {
     expect(screen.queryByRole('button', { name: 'View revision 1' })).not.toBeInTheDocument();
   });
 
+  it('does not apply a save response to a different event after navigation', async () => {
+    let resolveSave!: (result: { ok: true; plan: RoundPlanDTO }) => void;
+    const delayedSave = new Promise<{ ok: true; plan: RoundPlanDTO }>((resolve) => { resolveSave = resolve; });
+    const nextEvent = { ...event, id: 'event-2', name: 'New Event', division: '17/U' };
+    const nextPlan = makePlan({ id: 'plan-3', eventId: 'event-2', eventName: nextEvent.name, revision: 3, sourcePlanId: 'plan-1' });
+    const client = makeClient({
+      getEvent: vi.fn().mockResolvedValueOnce(event).mockResolvedValueOnce(nextEvent),
+      getPublishedPlan: vi.fn().mockResolvedValueOnce(plan).mockResolvedValueOnce(nextPlan),
+      saveManualRound: vi.fn(() => delayedSave),
+    });
+    const view = render(<MemoryRouter><FullGameListPage client={client as any} eventId="event-1" /></MemoryRouter>);
+    await screen.findByText('Active revision 2');
+    makeMove();
+    fireEvent.click(screen.getByRole('button', { name: 'Save round 1' }));
+    await waitFor(() => expect(client.saveManualRound).toHaveBeenCalledTimes(1));
+
+    view.rerender(<MemoryRouter><FullGameListPage client={client as any} eventId="event-2" /></MemoryRouter>);
+    await screen.findByText('Active revision 3');
+    resolveSave({ ok: true, plan });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByText('New Event')).toBeInTheDocument();
+    expect(screen.getByText('Active revision 3')).toBeInTheDocument();
+    expect(screen.queryByText('Revision 2 is now active.')).not.toBeInTheDocument();
+  });
+
   it('groups rounds, courts, Team A/B and positions, showing color names and player Numbers', async () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });

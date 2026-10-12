@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
@@ -27,6 +27,8 @@ function sortedSlots(slots: PlanSlotInputDTO[]): PlanSlotInputDTO[] {
 }
 
 export function FullGameListPage({ client, eventId }: { client: Client; eventId: string }) {
+  const eventIdRef = useRef(eventId);
+  eventIdRef.current = eventId;
   const [event, setEvent] = useState<EventDTO | null>(null);
   const [plan, setPlan] = useState<RoundPlanDTO | null>(null);
   const [roster, setRoster] = useState<GamePlayerDTO[]>([]);
@@ -202,8 +204,10 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       slots: sortedSlots(editedSlots),
       overrideWarnings,
     };
+    const submittedEventId = eventId;
     try {
-      const result = await client.saveManualRound(eventId, selectedRound, input);
+      const result = await client.saveManualRound(submittedEventId, selectedRound, input);
+      if (eventIdRef.current !== submittedEventId) return;
       if (!result.ok) {
         if (result.reason === 'warnings_required') setWarnings(result.warnings);
         else setActionError(result.errors.map((error) => error.message).join(' ') || 'The round has a hard validation error.');
@@ -225,6 +229,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       setWarnings([]);
       setSavedMessage(`Revision ${result.plan.revision} is now active.`);
     } catch (error) {
+      if (eventIdRef.current !== submittedEventId) return;
       if (error instanceof ApiError && error.status === 409 && error.message === 'stale_plan') {
         setStalePlan(true);
         setActionError('Another Admin published a newer revision. Your local changes are not saved.');
@@ -232,23 +237,26 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
         setActionError('Could not save this round. Your local changes are still here; retry or cancel.');
       }
     } finally {
-      setBusy(false);
+      if (eventIdRef.current === submittedEventId) setBusy(false);
     }
   }
 
   async function openRevision(revision: PlanRevisionSummaryDTO) {
+    const requestedEventId = eventId;
     setBusy(true);
     setActionError(null);
     try {
-      setHistoryPlan(await client.getPlanRevision(eventId, revision.id));
+      const revisionPlan = await client.getPlanRevision(requestedEventId, revision.id);
+      if (eventIdRef.current !== requestedEventId) return;
+      setHistoryPlan(revisionPlan);
       setEditing(false);
       setEditedSlots([]);
       setSelectedRound(1);
       setViewMode('team');
     } catch {
-      setActionError('Could not load that revision. The active schedule is unchanged.');
+      if (eventIdRef.current === requestedEventId) setActionError('Could not load that revision. The active schedule is unchanged.');
     } finally {
-      setBusy(false);
+      if (eventIdRef.current === requestedEventId) setBusy(false);
     }
   }
 
