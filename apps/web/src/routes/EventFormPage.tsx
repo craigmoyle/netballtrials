@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { defaultAgeRange, type EventStatus } from '@netball-trials/types';
 import { EventControls } from '../admin/EventControls';
 import { ApiError, type apiClient } from '../api/client';
@@ -50,6 +50,7 @@ export function EventFormPage({ client }: { client: Client }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [eventStatus, setEventStatus] = useState<EventStatus | null>(null);
+  const [savedEventName, setSavedEventName] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [savedCourts, setSavedCourts] = useState(0);
   const errorSummary = useRef<HTMLDivElement>(null);
@@ -62,6 +63,7 @@ export function EventFormPage({ client }: { client: Client }) {
       .then((event) => {
         if (!active) return;
         setEventStatus(event.status);
+        setSavedEventName(event.name);
         setEventDate(event.eventDate);
         setSavedCourts(event.courts);
         setForm({
@@ -136,8 +138,34 @@ export function EventFormPage({ client }: { client: Client }) {
     }
   }
 
+  function cancelEditing() {
+    navigate('/admin/events');
+  }
+
+  async function removeEvent() {
+    if (!id || busy) return;
+    const confirmed = window.confirm(`Delete "${savedEventName}"? This permanently removes the event, its plans, court colors, policy document, check-in sessions and email history. Only events with no registrations can be deleted.`);
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    setFieldErrors([]);
+    try {
+      await client.deleteEvent(id);
+      navigate('/admin/events');
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409 && reason.message === 'event_has_registrations') {
+        setError('This event cannot be deleted because registration records exist. No event data was changed.');
+      } else {
+        setError('Could not delete this event. No event data was changed; try again.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section>
+      <p><Link to="/admin/events">Back to events</Link></p>
       <h1>{id ? 'Edit event' : 'New event'}</h1>
       {fieldErrors.length > 0 ? (
         <div ref={errorSummary} role="alert" aria-labelledby="event-errors-title" tabIndex={-1} className="error-summary">
@@ -170,8 +198,18 @@ export function EventFormPage({ client }: { client: Client }) {
             </p>
           );
         })}
-        <button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save event'}</button>
+        <p className="workflow-links">
+          <button type="button" className="button-secondary" disabled={busy} onClick={cancelEditing}>Cancel</button>
+          <button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save event'}</button>
+        </p>
       </form>
+      {id && eventStatus ? (
+        <section aria-labelledby="delete-event-heading">
+          <h2 id="delete-event-heading">Delete event</h2>
+          <p>Deleting an event removes its settings, plans, court colors, policy document, check-in sessions and email history. Any registration record, including withdrawn or pending, blocks deletion.</p>
+          <button type="button" className="button-secondary" disabled={busy} onClick={() => void removeEvent()}>{busy ? 'Deleting...' : 'Delete event'}</button>
+        </section>
+      ) : null}
     </section>
   );
 }

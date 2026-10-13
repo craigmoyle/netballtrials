@@ -1,4 +1,4 @@
-import type { Event, EventStatus, PrismaClient } from '@prisma/client';
+import { Prisma, type Event, type EventStatus, type PrismaClient } from '@prisma/client';
 import { DEFAULT_POLICY_URL } from '../policy';
 import { ageAtDecember31, isAgeInRange } from '../registrations/eligibility';
 import {
@@ -161,4 +161,16 @@ export function openEvent(prisma: PrismaClient, id: string): Promise<Event | nul
 
 export function closeEvent(prisma: PrismaClient, id: string): Promise<Event | null> {
   return transitionEvent(prisma, id, 'OPEN', 'CLOSED');
+}
+
+export type DeleteEventResult = 'deleted' | 'not_found' | 'has_registrations';
+
+export async function deleteEvent(prisma: PrismaClient, id: string): Promise<DeleteEventResult> {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${id} FOR UPDATE`);
+    if (locked.length !== 1) return 'not_found';
+    if (await tx.registration.count({ where: { eventId: id } }) > 0) return 'has_registrations';
+    await tx.event.delete({ where: { id } });
+    return 'deleted';
+  });
 }

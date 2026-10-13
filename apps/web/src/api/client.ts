@@ -111,6 +111,7 @@ export function apiClient(baseUrl: string) {
       }),
     openEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/open`, { method: 'POST' }),
     closeEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/close`, { method: 'POST' }),
+    deleteEvent: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}`, { method: 'DELETE' }),
     checkInSettings: (id: string) => request<{ pinConfigured: boolean; checkInClosedAt: string | null }>(baseUrl, `/api/admin/events/${id}/check-in-settings`),
     setCheckInPin: (id: string, pin: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'PUT', body: JSON.stringify({ pin }) }),
     clearCheckInPin: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'DELETE' }),

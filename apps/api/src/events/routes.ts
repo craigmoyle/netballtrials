@@ -4,7 +4,7 @@ import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { EventValidationError, type EventInput, type EventPatch } from './schemas';
 import { DEFAULT_POLICY_URL } from '../policy';
-import { createEvent, closeEvent, EventLifecycleError, getEvent, listEvents, openEvent, updateEvent } from './service';
+import { createEvent, closeEvent, deleteEvent, EventLifecycleError, getEvent, listEvents, openEvent, updateEvent } from './service';
 
 const policyUploadSchema = z.object({
   fileName: z.string().trim().min(5).max(120).regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]*\.pdf$/i),
@@ -130,5 +130,13 @@ export function registerEventRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       throw err;
     }
+  });
+
+  app.delete('/api/admin/events/:id', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const result = await deleteEvent(deps.prisma, id);
+    if (result === 'not_found') return reply.code(404).send({ error: 'not_found' });
+    if (result === 'has_registrations') return reply.code(409).send({ error: 'event_has_registrations' });
+    return reply.code(204).send();
   });
 }

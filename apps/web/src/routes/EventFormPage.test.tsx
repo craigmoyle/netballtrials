@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { melbourneDateKey } from '@netball-trials/types';
 import { ApiError } from '../api/client';
 import { EventFormPage } from './EventFormPage';
@@ -14,7 +14,95 @@ function renderForm(client: Record<string, unknown>) {
   return render(<MemoryRouter><EventFormPage client={client as any} /></MemoryRouter>);
 }
 
+function CurrentPath() {
+  return <output aria-label="Current path">{useLocation().pathname}</output>;
+}
+
+const savedEvent = {
+  id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
+  eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
+  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+  rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
+  minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
+};
+
+function editEventClient(overrides: Record<string, unknown> = {}) {
+  return {
+    getEvent: vi.fn().mockResolvedValue(savedEvent),
+    checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
+    listBibColors: vi.fn().mockResolvedValue([]),
+    getCourtColors: vi.fn().mockResolvedValue([]),
+    setCourtColors: vi.fn(),
+    updateEvent: vi.fn().mockResolvedValue(savedEvent),
+    deleteEvent: vi.fn().mockResolvedValue(null),
+    ...overrides,
+  };
+}
+
+function renderEditRoute(client: Record<string, unknown>) {
+  return render(
+    <MemoryRouter initialEntries={['/admin/events/e1']}>
+      <Routes>
+        <Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} />
+        <Route path="/admin/events" element={<h1>Events list</h1>} />
+      </Routes>
+      <CurrentPath />
+    </MemoryRouter>,
+  );
+}
+
 describe('EventFormPage', () => {
+  it('cancels unsaved changes and exposes a separate link back to the event list', async () => {
+    const updateEvent = vi.fn();
+    renderEditRoute(editEventClient({ updateEvent }));
+    await screen.findByDisplayValue('15/U Ladies');
+    expect(screen.getByRole('link', { name: 'Back to events' })).toHaveAttribute('href', '/admin/events');
+    fireEvent.change(screen.getByLabelText('Event name'), { target: { value: 'Unsaved event name' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
+    expect(updateEvent).not.toHaveBeenCalled();
+  });
+
+  it('deletes an event after confirmation and returns to the event list', async () => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
+    const deleteEvent = vi.fn().mockResolvedValue(null);
+    renderEditRoute(editEventClient({ deleteEvent }));
+    await screen.findByDisplayValue('15/U Ladies');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete event' }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/15\/U Ladies.*no registrations/i));
+    await waitFor(() => expect(deleteEvent).toHaveBeenCalledWith('e1'));
+    expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
+  });
+
+  it('stays on the event and explains when registration history blocks deletion', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const deleteEvent = vi.fn().mockRejectedValue(new ApiError(409, 'event_has_registrations'));
+    renderEditRoute(editEventClient({ deleteEvent }));
+    await screen.findByDisplayValue('15/U Ladies');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete event' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/cannot be deleted because registration records exist/i);
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/e1');
+  });
+
+  it('does not call the delete endpoint when the confirmation is declined', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false));
+    const deleteEvent = vi.fn();
+    renderEditRoute(editEventClient({ deleteEvent }));
+    await screen.findByDisplayValue('15/U Ladies');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete event' }));
+
+    expect(deleteEvent).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/e1');
+  });
+
   it('sets policy age defaults when the division is selected', () => {
     renderForm({ createEvent: vi.fn() });
     fireEvent.change(screen.getByLabelText('Division'), { target: { value: '15/U' } });

@@ -12,6 +12,22 @@ describe('apiClient', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/check-in/session', expect.objectContaining({ method: 'POST', credentials: 'include' }));
   });
 
+  it('deletes an event with session credentials and preserves the registration guard error', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response('{"error":"event_has_registrations"}', { status: 409, headers: { 'content-type': 'application/json' } }));
+    const client = apiClient('http://api.test');
+
+    await expect(client.deleteEvent('event-1')).resolves.toBeNull();
+    await expect(client.deleteEvent('event-1')).rejects.toMatchObject({ status: 409, message: 'event_has_registrations' });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/events/event-1',
+      'http://api.test/api/admin/events/event-1',
+    ]);
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
+  });
+
   it('submits Admin-assisted day-of registration with session credentials', async () => {
     const input = { playerFirstName: 'Ada' };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"status":"received"}', { status: 202, headers: { 'content-type': 'application/json' } }));
@@ -135,6 +151,22 @@ describe('apiClient', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://api.test/api/admin/events/event-1/messages');
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ subject: 'Update', text: 'Details', batchId: summary.batchId });
+  });
+
+  it('deletes an event with session credentials and preserves the registration guard error', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response('{"error":"event_has_registrations"}', { status: 409, headers: { 'content-type': 'application/json' } }));
+    const client = apiClient('http://api.test');
+
+    await expect(client.deleteEvent('event-1')).resolves.toBeNull();
+    await expect(client.deleteEvent('event-1')).rejects.toMatchObject({ status: 409, message: 'event_has_registrations' });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/events/event-1',
+      'http://api.test/api/admin/events/event-1',
+    ]);
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
   });
 
   it('does not send an empty JSON body for no-payload admin actions', async () => {
