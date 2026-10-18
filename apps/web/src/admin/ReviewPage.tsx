@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import type { ReviewItemDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
@@ -63,13 +62,6 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
   return (
     <section>
       <h1>Review queue</h1>
-      <nav aria-label="Event workflows" className="workflow-links">
-        <Link to={`/admin/events/${eventId}`}>Event controls</Link>
-        <Link to={`/admin/events/${eventId}/roster`}>Roster and export</Link>
-        <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>
-        <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>
-        <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
-      </nav>
       {error ? <p role="alert">{error}</p> : null}
       {items.length === 0 ? <p>Nothing to review.</p> : null}
       <ul>

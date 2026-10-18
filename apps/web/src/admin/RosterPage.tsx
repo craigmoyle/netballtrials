@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { POSITIONS, type Position, type RosterDTO } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
 
@@ -79,13 +78,6 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
   return (
     <section>
       <h1>Event roster</h1>
-      <nav aria-label="Event workflows">
-        <Link to={`/admin/events/${eventId}`}>Event controls</Link>{' · '}
-        <Link to={`/admin/events/${eventId}/review`}>Review queue</Link>{' · '}
-        <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>{' · '}
-        <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>{' · '}
-        <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
-      </nav>
       <section aria-labelledby="position-counts-heading">
         <h2 id="position-counts-heading">Position choices</h2>
         <div className="position-counts">

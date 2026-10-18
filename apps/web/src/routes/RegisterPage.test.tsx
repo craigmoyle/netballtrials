@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { RegisterPage } from './RegisterPage';
 
 afterEach(cleanup);
@@ -35,12 +35,13 @@ async function fillRegistrationForm() {
   fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
   fireEvent.change(screen.getByLabelText(/player last name/i), { target: { value: 'Lovelace' } });
   fireEvent.change(screen.getByLabelText(/player date of birth/i), { target: { value: '2012-04-02' } });
+  fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GA' } });
   fireEvent.change(screen.getByLabelText(/parent or guardian name/i), { target: { value: 'Anne' } });
   fireEvent.change(screen.getByLabelText(/parent or guardian email/i), { target: { value: 'anne@example.com' } });
   fireEvent.change(screen.getByLabelText(/parent or guardian mobile/i), { target: { value: '0400000000' } });
   await screen.findByRole('option', { name: 'MENA' });
   fireEvent.change(screen.getByLabelText(/member association/i), { target: { value: 'MENA' } });
-  fireEvent.click(screen.getByLabelText(/I confirm the player meets the eligibility requirements/));
+  fireEvent.click(screen.getByLabelText(/I confirm the player meets these eligibility requirements/));
 }
 
 describe('RegisterPage', () => {
@@ -49,6 +50,7 @@ describe('RegisterPage', () => {
     const api = client(register);
     render(<RegisterPage client={api} eventId="e1" />);
     fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+    fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GA' } });
     await screen.findByRole('option', { name: 'MENA' });
     fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
     expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
@@ -56,6 +58,42 @@ describe('RegisterPage', () => {
     expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
     expect(api.getPublicEvent).toHaveBeenCalledWith('e1');
     expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ eligibilityConfirmed: false }));
+  });
+
+  it('requires an explicit first-position choice and explains the available positions', async () => {
+    const register = vi.fn().mockResolvedValue({ status: 'received' });
+    render(<RegisterPage client={client(register)} eventId="e1" />);
+
+    const firstPosition = await screen.findByLabelText(/first position/i);
+    expect(firstPosition).toHaveValue('');
+    expect(firstPosition).toBeRequired();
+    expect(screen.getByRole('option', { name: 'Choose a first position' })).toHaveValue('');
+    expect(within(firstPosition).getByRole('option', { name: 'Goal shooter (GS)' })).toHaveValue('GS');
+    await screen.findByRole('option', { name: 'MENA' });
+    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+
+    const summary = await screen.findByRole('alert');
+    expect(summary).toHaveTextContent('First position');
+    expect(screen.getByText('Choose a first position for the player.')).toBeInTheDocument();
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it('groups registration details and keeps eligibility criteria beside confirmation', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    expect(await screen.findByRole('group', { name: 'Player details' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Parent or guardian details' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Position preferences' })).toBeInTheDocument();
+    const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
+    expect(within(eligibility).getByText(/six association games between 1 January 2027 and the day before the trial/i)).toBeInTheDocument();
+    expect(within(eligibility).getByLabelText(/I confirm the player meets these eligibility requirements/i)).toBeInTheDocument();
+  });
+
+  it('shows the event date in the same Australian long-date format as the home listing', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    expect(await screen.findByText(/12 September 2026 at SNC/)).toBeInTheDocument();
+    expect(screen.queryByText(/2026-09-12 at SNC/)).not.toBeInTheDocument();
   });
 
   it('uses the Admin event and day-of endpoint, and explains payment is still pending', async () => {
@@ -114,7 +152,9 @@ describe('RegisterPage', () => {
     expect(association.tagName).toBe('SELECT');
     expect(screen.getByRole('option', { name: 'MENA' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Old Club' })).not.toBeInTheDocument();
-    expect(screen.getByText(/permanent player in a domestic or representative competition/i)).toHaveTextContent('2027');
+    expect(screen.getByText(/the full eligibility criteria appear beside the confirmation at the end of this form/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View eligibility criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
+    expect(screen.getAllByText(/permanent player in a domestic or representative competition/i)).toHaveLength(1);
     expect(screen.getByRole('link', { name: /selection policy/i })).toHaveAttribute('href', publicEvent().policyUrl);
     expect(screen.getByText(/12 calendar months after the event date/i)).toBeInTheDocument();
   });
@@ -124,6 +164,7 @@ describe('RegisterPage', () => {
     render(<RegisterPage client={client(register)} eventId="e1" />);
     fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
     fireEvent.change(screen.getByLabelText(/player date of birth/i), { target: { value: '2011-04-02' } });
+    fireEvent.change(screen.getByLabelText(/first position/i), { target: { value: 'GS' } });
     fireEvent.change(screen.getByLabelText(/second position/i), { target: { value: 'WA' } });
     fireEvent.change(screen.getByLabelText(/member association/i), { target: { value: 'MENA' } });
     await waitFor(() => expect(screen.getByRole('button', { name: /continue to payment/i })).toBeEnabled());
@@ -146,6 +187,7 @@ describe('RegisterPage', () => {
     render(<RegisterPage client={client(register)} eventId="e1" />);
     const firstName = await screen.findByLabelText(/player first name/i);
     fireEvent.change(firstName, { target: { value: 'Ada' } });
+    fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GS' } });
     fireEvent.change(screen.getByLabelText(/parent or guardian email/i), { target: { value: 'anne@example.com' } });
     await waitFor(() => expect(screen.getByRole('button', { name: /continue to payment/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));

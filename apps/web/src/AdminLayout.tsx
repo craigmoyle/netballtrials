@@ -16,6 +16,7 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
         </nav>
         <button
           type="button"
+          data-confirm-unsaved-navigation
           onClick={async () => {
             await client.logout();
             onSignOut();

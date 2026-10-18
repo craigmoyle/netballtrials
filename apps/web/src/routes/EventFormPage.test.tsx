@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { melbourneDateKey } from '@netball-trials/types';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { EventFormPage } from './EventFormPage';
 
@@ -11,7 +10,11 @@ afterEach(() => {
 });
 
 function renderForm(client: Record<string, unknown>) {
-  return render(<MemoryRouter><EventFormPage client={client as any} /></MemoryRouter>);
+  const router = createMemoryRouter([
+    { path: '/admin/events/new', element: <EventFormPage client={client as any} /> },
+    { path: '/admin/events', element: <h1>Events list</h1> },
+  ], { initialEntries: ['/admin/events/new'] });
+  return render(<RouterProvider router={router} />);
 }
 
 function CurrentPath() {
@@ -39,20 +42,62 @@ function editEventClient(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderEditRoute(client: Record<string, unknown>) {
-  return render(
-    <MemoryRouter initialEntries={['/admin/events/e1']}>
-      <Routes>
-        <Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} />
-        <Route path="/admin/events" element={<h1>Events list</h1>} />
-      </Routes>
-      <CurrentPath />
-    </MemoryRouter>,
-  );
+function renderEditRoute(
+  client: Record<string, unknown>,
+  initialEntries = ['/admin/events/e1'],
+  initialIndex = initialEntries.length - 1,
+) {
+  const router = createMemoryRouter([
+    { path: '/admin/events/:id', element: <><EventFormPage client={client as any} /><CurrentPath /></> },
+    { path: '/admin/events', element: <><h1>Events list</h1><CurrentPath /></> },
+  ], { initialEntries, initialIndex });
+  render(<RouterProvider router={router} />);
+  return router;
 }
 
 describe('EventFormPage', () => {
-  it('cancels unsaved changes and exposes a separate link back to the event list', async () => {
+  it('keeps existing-event fields unavailable until saved details load', async () => {
+    let resolveEvent!: (event: typeof savedEvent) => void;
+    const pendingEvent = new Promise<typeof savedEvent>((resolve) => { resolveEvent = resolve; });
+    const client = editEventClient({ getEvent: vi.fn(() => pendingEvent) });
+    renderEditRoute(client);
+
+    expect(screen.getByText(/loading event details/i)).toHaveAttribute('role', 'status');
+    expect(screen.queryByLabelText('Event name')).not.toBeInTheDocument();
+
+    await act(async () => { resolveEvent(savedEvent); });
+
+    expect(await screen.findByLabelText('Event name')).toHaveValue('15/U Ladies');
+  });
+
+  it('offers retry and keeps the form unavailable when event loading fails', async () => {
+    const getEvent = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(savedEvent);
+    renderEditRoute(editEventClient({ getEvent }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the event.');
+    expect(screen.queryByLabelText('Event name')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByLabelText('Event name')).toHaveValue('15/U Ladies');
+    expect(getEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows event identity and grouped settings while keeping operations separate', async () => {
+    renderEditRoute(editEventClient());
+
+    expect(await screen.findByText('15/U Ladies · 12 September 2027')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Event details' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Trial format' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Selection settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Event controls' })).not.toBeInTheDocument();
+    const venue = screen.getByLabelText('Venue');
+    const deleteHeading = screen.getByRole('heading', { name: 'Delete event' });
+    expect(venue.compareDocumentPosition(deleteHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('prompts before the Cancel button discards unsaved changes', async () => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
     const updateEvent = vi.fn();
     renderEditRoute(editEventClient({ updateEvent }));
     await screen.findByDisplayValue('15/U Ladies');
@@ -62,7 +107,124 @@ describe('EventFormPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith('You have unsaved event changes. Leave without saving?');
     expect(updateEvent).not.toHaveBeenCalled();
+  });
+
+  it('asks before a dirty edit leaves through a link and retains it when navigation is canceled', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    renderEditRoute(editEventClient());
+
+    const venue = await screen.findByLabelText('Venue');
+    fireEvent.change(venue, { target: { value: 'Updated venue' } });
+    fireEvent.click(screen.getByRole('link', { name: 'Back to events' }));
+
+    expect(confirm).toHaveBeenCalledWith('You have unsaved event changes. Leave without saving?');
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/e1');
+    expect(screen.getByLabelText('Venue')).toHaveValue('Updated venue');
+  });
+
+  it('blocks browser Back and retains edits when the user stays', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    const router = renderEditRoute(editEventClient(), ['/admin/events', '/admin/events/e1'], 1);
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Unsaved before Back' } });
+
+    await act(async () => { await router.navigate(-1); });
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('You have unsaved event changes. Leave without saving?'));
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/e1');
+    expect(screen.getByLabelText('Venue')).toHaveValue('Unsaved before Back');
+  });
+
+  it('follows browser Back and discards edits when the user confirms', async () => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
+    const router = renderEditRoute(editEventClient(), ['/admin/events', '/admin/events/e1'], 1);
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Unsaved before Back' } });
+
+    await act(async () => { await router.navigate(-1); });
+
+    expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
+  });
+
+  it('blocks browser Forward and retains edits when the user stays', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    const router = renderEditRoute(editEventClient(), ['/admin/events/e1?state=back', '/admin/events/e1?state=forward'], 0);
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Unsaved before Forward' } });
+
+    await act(async () => { await router.navigate(1); });
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('You have unsaved event changes. Leave without saving?'));
+    expect(router.state.location.search).toBe('?state=back');
+    expect(screen.getByLabelText('Venue')).toHaveValue('Unsaved before Forward');
+  });
+
+  it('follows browser Forward and discards edits when the user confirms', async () => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
+    const router = renderEditRoute(editEventClient(), ['/admin/events/e1?state=back', '/admin/events/e1?state=forward'], 0);
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Unsaved before Forward' } });
+
+    await act(async () => { await router.navigate(1); });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(router.state.location.search).toBe('?state=forward');
+  });
+
+  it('guards page unload after an event edit becomes dirty', async () => {
+    renderEditRoute(editEventClient());
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Updated venue' } });
+
+    const beforeUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  it('returns to the event list after a successful dirty update without a second prompt', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    const updateEvent = vi.fn().mockResolvedValue(savedEvent);
+    renderEditRoute(editEventClient({ updateEvent }));
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Updated venue' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+
+    expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('preserves a dirty event edit and route when an update fails', async () => {
+    const updateEvent = vi.fn().mockRejectedValue(new Error('offline'));
+    renderEditRoute(editEventClient({ updateEvent }));
+    const venue = await screen.findByLabelText('Venue');
+    fireEvent.change(venue, { target: { value: 'Unsaved venue' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changes are still here/i);
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/e1');
+    expect(screen.getByLabelText('Venue')).toHaveValue('Unsaved venue');
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns to the event list after a successful create without a dirty prompt', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    const createEvent = vi.fn().mockResolvedValue(savedEvent);
+    renderForm({ createEvent });
+    fireEvent.change(screen.getByLabelText('Event name'), { target: { value: 'New trials' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+
+    expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('deletes an event after confirmation and returns to the event list', async () => {
@@ -70,13 +232,14 @@ describe('EventFormPage', () => {
     vi.stubGlobal('confirm', confirm);
     const deleteEvent = vi.fn().mockResolvedValue(null);
     renderEditRoute(editEventClient({ deleteEvent }));
-    await screen.findByDisplayValue('15/U Ladies');
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'Unsaved venue' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete event' }));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/15\/U Ladies.*no registrations/i));
     await waitFor(() => expect(deleteEvent).toHaveBeenCalledWith('e1'));
     expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 
   it('stays on the event and explains when registration history blocks deletion', async () => {
@@ -110,105 +273,6 @@ describe('EventFormPage', () => {
     expect(screen.getByLabelText(/maximum age/i)).toHaveValue(15);
     fireEvent.change(screen.getByLabelText('Division'), { target: { value: 'All Abilities' } });
     expect(screen.getByLabelText(/minimum age/i)).toHaveValue(10);
-  });
-
-  it.each([
-    ['OPEN', 0, null, true],
-    ['CLOSED', 0, null, true],
-    ['DRAFT', 0, null, false],
-    ['OPEN', -1, null, false],
-    ['CLOSED', 0, '2026-09-11T14:00:00.000Z', false],
-  ])('shows Add day-of player only for an event today with check-in open (%s, %i)', async (status, dayOffset, checkInClosedAt, visible) => {
-    const date = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`);
-    date.setUTCDate(date.getUTCDate() + dayOffset);
-    const event = {
-      id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
-      eventDate: date.toISOString(), venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
-      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
-      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status,
-    };
-    const client = {
-      getEvent: vi.fn().mockResolvedValue(event),
-      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt }),
-      listBibColors: vi.fn().mockResolvedValue([]),
-      getCourtColors: vi.fn().mockResolvedValue([]),
-      setCourtColors: vi.fn(),
-    };
-    render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
-
-    await screen.findByText('PIN: Not configured');
-    if (visible) expect(screen.getByRole('link', { name: 'Add day-of player' })).toHaveAttribute('href', '/admin/events/e1/day-of-registration');
-    else expect(screen.queryByRole('link', { name: 'Add day-of player' })).not.toBeInTheDocument();
-  });
-
-  it('loads saved Team A/B colors for the event courts', async () => {
-    const event = {
-      id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
-      eventDate: '2026-10-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 2,
-      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
-      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
-    };
-    const white = { id: 'white', name: 'White', hex: '#FFFFFF', archivedAt: null };
-    const black = { id: 'black', name: 'Black', hex: '#111111', archivedAt: null };
-    const client = {
-      getEvent: vi.fn().mockResolvedValue(event),
-      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
-      listBibColors: vi.fn().mockResolvedValue([white, black]),
-      getCourtColors: vi.fn().mockResolvedValue([
-        { court: 1, teamAColor: white, teamBColor: black },
-        { court: 2, teamAColor: null, teamBColor: null },
-      ]),
-      setCourtColors: vi.fn(),
-    };
-    render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
-
-    expect(await screen.findByLabelText('Court 1 Team A color')).toHaveValue('white');
-    expect(screen.getByLabelText('Court 2 Team B color')).toBeInTheDocument();
-    expect(client.listBibColors).toHaveBeenCalledTimes(1);
-    expect(client.getCourtColors).toHaveBeenCalledWith('e1');
-  });
-
-  it('connects event lifecycle, check-in controls and links to the other workflows', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
-    const event = {
-      id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
-      eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
-      rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
-      minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'DRAFT',
-    };
-    const client = {
-      getEvent: vi.fn().mockResolvedValue(event),
-      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
-      listBibColors: vi.fn().mockResolvedValue([]),
-      getCourtColors: vi.fn().mockResolvedValue([]),
-      setCourtColors: vi.fn(),
-      openEvent: vi.fn().mockResolvedValue({ ...event, status: 'OPEN' }),
-      closeEvent: vi.fn().mockResolvedValue({ ...event, status: 'CLOSED' }),
-      setCheckInPin: vi.fn().mockResolvedValue(undefined),
-      clearCheckInPin: vi.fn().mockResolvedValue(undefined),
-      closeCheckIn: vi.fn().mockResolvedValue(undefined),
-    };
-    render(<MemoryRouter initialEntries={['/admin/events/e1']}><Routes><Route path="/admin/events/:id" element={<EventFormPage client={client as any} />} /></Routes></MemoryRouter>);
-    expect(await screen.findByText(/status: draft/i)).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Admin check-in' })).toHaveAttribute('href', '/admin/events/e1/check-in');
-    expect(screen.getByRole('link', { name: 'Full Game List' })).toHaveAttribute('href', '/admin/events/e1/games');
-    for (const name of ['Roster and export', 'Review queue', 'Plan rounds', 'Full Game List', 'Messages', 'Print selector sheets', 'Member associations']) {
-      expect(screen.getByRole('link', { name })).toBeInTheDocument();
-    }
-    fireEvent.click(screen.getByRole('button', { name: /open registration/i }));
-    await waitFor(() => expect(client.openEvent).toHaveBeenCalledWith('e1'));
-    fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '4821' } });
-    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
-    await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
-    expect(screen.getByLabelText(/check-in pin/i)).toHaveValue('4821');
-    fireEvent.click(screen.getByRole('button', { name: /close check-in/i }));
-    await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
-    fireEvent.click(screen.getByRole('button', { name: /close event/i }));
-    await waitFor(() => expect(client.closeEvent).toHaveBeenCalledWith('e1'));
-    expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
   it('shows fees in dollars, submits cents, and focuses a server-error summary', async () => {

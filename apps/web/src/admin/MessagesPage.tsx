@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import type { EmailLogDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 
@@ -144,13 +143,6 @@ export function MessagesPage({ client, eventId }: { client: Client; eventId: str
   return (
     <section>
       <h1>Message registrants</h1>
-      <nav aria-label="Event workflows" className="workflow-links">
-        <Link to={`/admin/events/${eventId}`}>Event controls</Link>
-        <Link to={`/admin/events/${eventId}/roster`}>Roster and export</Link>
-        <Link to={`/admin/events/${eventId}/review`}>Review queue</Link>
-        <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>
-        <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
-      </nav>
       {error ? <p role="alert">{error}</p> : null}
       <form
         onSubmit={(submitEvent) => { submitEvent.preventDefault(); void reviewRecipients(); }}

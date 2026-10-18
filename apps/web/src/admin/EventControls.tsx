@@ -133,18 +133,12 @@ export function EventControls({
       <EventCourtColors client={client} eventId={eventId} courts={courts} />
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
-      <nav aria-label="Event workflows" className="workflow-links">
-        <Link to={`/admin/events/${eventId}/roster`}>Roster and export</Link>
-        <Link to={`/admin/events/${eventId}/review`}>Review queue</Link>
-        <Link to={`/admin/events/${eventId}/plan`}>Plan rounds</Link>
-        <Link to={`/admin/events/${eventId}/games`}>Full Game List</Link>
-        <Link to={`/admin/events/${eventId}/messages`}>Messages</Link>
-        <Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link>
-        {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}
-        {canRegisterDayOf ? <Link to={`/admin/events/${eventId}/day-of-registration`}>Add day-of player</Link> : null}
-        <Link to="/admin/associations">Member associations</Link>
-        <Link to="/check-in">Volunteer check-in</Link>
-      </nav>
+      {(pinConfigured !== null && !checkInClosedAt) || canRegisterDayOf ? (
+        <nav aria-label="Event actions" className="workflow-links">
+          {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}
+          {canRegisterDayOf ? <Link to={`/admin/events/${eventId}/day-of-registration`}>Add day-of player</Link> : null}
+        </nav>
+      ) : null}
     </section>
   );
 }

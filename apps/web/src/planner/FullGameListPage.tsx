@@ -592,10 +592,6 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       <div className="full-game-layout">
         <aside className="full-game-sidebar">
           <p className="full-game-event-name">{event?.name ?? 'Loading event details...'}</p>
-          <nav aria-label="Game list navigation">
-            <Link to={`/admin/events/${eventId}/plan`}>Plan Rounds</Link>
-            <Link to={`/admin/events/${eventId}`}>Event settings</Link>
-          </nav>
           {availablePlan && revisions.length > 0 ? (
             <section className="game-revision-history">
               <button type="button" aria-expanded={historyOpen} disabled={busy || dirtyAny} onClick={() => setHistoryOpen((open) => !open)}>Revision history</button>

@@ -2,14 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { PublicTrialDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
+import { formatTrialDate } from '../formatTrialDate';
 
 type Client = ReturnType<typeof apiClient>;
 
 const CHISHOLM_HOME = 'https://chisholmnetball.com/';
-const dateFormat = new Intl.DateTimeFormat('en-AU', {
-  dateStyle: 'long',
-  timeZone: 'Australia/Melbourne',
-});
 
 function fee(trial: PublicTrialDTO): string {
   return new Intl.NumberFormat('en-AU', {
@@ -60,7 +57,7 @@ export function PublicHomePage({ client }: { client: Client }) {
                       <h2>{trial.name}</h2>
                       <p className="public-trial-category">{trial.division} · {trial.section}</p>
                       <dl className="public-trial-details">
-                        <div><dt>Date</dt><dd>{dateFormat.format(new Date(trial.eventDate))}</dd></div>
+                        <div><dt>Date</dt><dd>{formatTrialDate(trial.eventDate)}</dd></div>
                         <div><dt>Venue</dt><dd>{trial.venue}</dd></div>
                         <div><dt>Arrival</dt><dd>{trial.startTime}</dd></div>
                         <div><dt>First whistle</dt><dd>{trial.firstWhistle}</dd></div>

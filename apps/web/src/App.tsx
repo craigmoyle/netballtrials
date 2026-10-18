@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient } from './api/client';
 import { AdminLayout } from './AdminLayout';
+import { EventWorkflowNav } from './admin/EventWorkflowNav';
+import { EventOperationsPage } from './admin/EventOperationsPage';
 import { LoginPage } from './routes/LoginPage';
 import { VerifyPage } from './routes/VerifyPage';
 import { EventsPage } from './routes/EventsPage';
@@ -39,6 +41,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/check-in$/, 'Volunteer check-in'],
   [/^\/admin\/login$/, 'Staff sign in'],
   [/^\/admin\/verify$/, 'Verify staff sign in'],
+  [/^\/admin\/events\/[^/]+\/operations$/, 'Event operations'],
   [/^\/admin\/events\/[^/]+\/check-in$/, 'Admin check-in'],
   [/^\/admin\/events\/[^/]+\/day-of-registration$/, 'Admin-assisted registration'],
   [/^\/admin\/events\/new$/, 'New event'],
@@ -104,6 +107,12 @@ function PageContent({ children, showPublicHeader = true }: { children: ReactNod
   );
 }
 
+function EventWorkspaceLayout() {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <><EventWorkflowNav eventId={id} /><Outlet /></>;
+}
+
 function PlannerRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -146,6 +155,12 @@ function RosterRoute({ client }: { client: Client }) {
   return <RosterPage client={client} eventId={id} />;
 }
 
+function EventOperationsRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <EventOperationsPage client={client} eventId={id} />;
+}
+
 function AdminCheckInRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -185,16 +200,19 @@ export function App() {
         <Route index element={<Navigate to="events" replace />} />
         <Route path="events" element={<EventsPage client={client} />} />
         <Route path="events/new" element={<EventFormPage client={client} />} />
-        <Route path="events/:id" element={<EventFormPage client={client} />} />
-        <Route path="events/:id/roster" element={<RosterRoute client={client} />} />
-        <Route path="events/:id/check-in" element={<AdminCheckInRoute client={client} />} />
-        <Route path="events/:id/day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
-        <Route path="events/:id/plan" element={<PlannerRoute client={client} />} />
-        <Route path="events/:id/games" element={<GamesRoute client={client} />} />
-        <Route path="events/:id/sheets/blank" element={<BlankSheetRoute client={client} />} />
-        <Route path="events/:id/sheets" element={<SheetsRoute client={client} />} />
-        <Route path="events/:id/review" element={<ReviewRoute client={client} />} />
-        <Route path="events/:id/messages" element={<MessagesRoute client={client} />} />
+        <Route path="events/:id" element={<EventWorkspaceLayout />}>
+          <Route index element={<EventFormPage client={client} />} />
+          <Route path="operations" element={<EventOperationsRoute client={client} />} />
+          <Route path="roster" element={<RosterRoute client={client} />} />
+          <Route path="check-in" element={<AdminCheckInRoute client={client} />} />
+          <Route path="day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
+          <Route path="plan" element={<PlannerRoute client={client} />} />
+          <Route path="games" element={<GamesRoute client={client} />} />
+          <Route path="sheets/blank" element={<BlankSheetRoute client={client} />} />
+          <Route path="sheets" element={<SheetsRoute client={client} />} />
+          <Route path="review" element={<ReviewRoute client={client} />} />
+          <Route path="messages" element={<MessagesRoute client={client} />} />
+        </Route>
         <Route path="associations" element={<AssociationsPage client={client} />} />
         <Route path="bib-colors" element={<BibColorsPage client={client} />} />
       </Route>

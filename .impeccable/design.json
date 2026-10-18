@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-16T21:33:09Z",
+  "title": "Design System: Chisholm Netball Trials",
+  "extensions": {
+    "colorMeta": {
+      "chisholm-blue": {
+        "role": "secondary",
+        "displayName": "Chisholm Blue",
+        "canonical": "#618ec8",
+        "tonalRamp": [
+          "oklch(15% 0.101 255.2)",
+          "oklch(26% 0.101 255.2)",
+          "oklch(37% 0.101 255.2)",
+          "oklch(49% 0.101 255.2)",
+          "oklch(61% 0.101 255.2)",
+          "oklch(72% 0.101 255.2)",
+          "oklch(84% 0.101 255.2)",
+          "oklch(95% 0.101 255.2)"
+        ]
+      },
+      "light-blue": {
+        "role": "tertiary",
+        "displayName": "Light Blue",
+        "canonical": "#a9bfe1",
+        "tonalRamp": [
+          "oklch(15% 0.054 259.0)",
+          "oklch(26% 0.054 259.0)",
+          "oklch(37% 0.054 259.0)",
+          "oklch(49% 0.054 259.0)",
+          "oklch(61% 0.054 259.0)",
+          "oklch(72% 0.054 259.0)",
+          "oklch(84% 0.054 259.0)",
+          "oklch(95% 0.054 259.0)"
+        ]
+      },
+      "deep-plum": {
+        "role": "primary",
+        "displayName": "Deep Plum",
+        "canonical": "#511631",
+        "tonalRamp": [
+          "oklch(15% 0.093 355.8)",
+          "oklch(26% 0.093 355.8)",
+          "oklch(37% 0.093 355.8)",
+          "oklch(49% 0.093 355.8)",
+          "oklch(61% 0.093 355.8)",
+          "oklch(72% 0.093 355.8)",
+          "oklch(84% 0.093 355.8)",
+          "oklch(95% 0.093 355.8)"
+        ]
+      },
+      "dark-plum": {
+        "role": "primary",
+        "displayName": "Dark Plum",
+        "canonical": "#3c1025",
+        "tonalRamp": [
+          "oklch(15% 0.074 354.0)",
+          "oklch(26% 0.074 354.0)",
+          "oklch(37% 0.074 354.0)",
+          "oklch(49% 0.074 354.0)",
+          "oklch(61% 0.074 354.0)",
+          "oklch(72% 0.074 354.0)",
+          "oklch(84% 0.074 354.0)",
+          "oklch(95% 0.074 354.0)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#211b20",
+        "tonalRamp": [
+          "oklch(15% 0.013 331.6)",
+          "oklch(26% 0.013 331.6)",
+          "oklch(37% 0.013 331.6)",
+          "oklch(49% 0.013 331.6)",
+          "oklch(61% 0.013 331.6)",
+          "oklch(72% 0.013 331.6)",
+          "oklch(84% 0.013 331.6)",
+          "oklch(95% 0.013 331.6)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 89.9)",
+          "oklch(26% 0.000 89.9)",
+          "oklch(37% 0.000 89.9)",
+          "oklch(49% 0.000 89.9)",
+          "oklch(61% 0.000 89.9)",
+          "oklch(72% 0.000 89.9)",
+          "oklch(84% 0.000 89.9)",
+          "oklch(95% 0.000 89.9)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "#f0f5fc",
+        "tonalRamp": [
+          "oklch(15% 0.011 256.7)",
+          "oklch(26% 0.011 256.7)",
+          "oklch(37% 0.011 256.7)",
+          "oklch(49% 0.011 256.7)",
+          "oklch(61% 0.011 256.7)",
+          "oklch(72% 0.011 256.7)",
+          "oklch(84% 0.011 256.7)",
+          "oklch(95% 0.011 256.7)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#78869a",
+        "tonalRamp": [
+          "oklch(15% 0.035 257.3)",
+          "oklch(26% 0.035 257.3)",
+          "oklch(37% 0.035 257.3)",
+          "oklch(49% 0.035 257.3)",
+          "oklch(61% 0.035 257.3)",
+          "oklch(72% 0.035 257.3)",
+          "oklch(84% 0.035 257.3)",
+          "oklch(95% 0.035 257.3)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display headline", "purpose": "The public-home headline only." },
+      "headline": { "displayName": "Page headline", "purpose": "Page titles across public and Admin screens." },
+      "body": { "displayName": "System body", "purpose": "Forms, guidance, event details and data." },
+      "label": { "displayName": "Control label", "purpose": "Form labels, navigation and buttons." }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      { "name": "mobile-header", "value": "38rem" },
+      { "name": "admin-sidebar-collapse", "value": "56rem" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action in a form or workflow.",
+      "html": "<button class=\"ds-button-primary\">Save event</button>",
+      "css": ".ds-button-primary{min-height:2.75rem;padding:.55rem 1rem;color:var(--paper);font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;font-size:1rem;font-weight:650;line-height:1.5;background:var(--burgundy);border:1px solid var(--burgundy);border-radius:.3rem;cursor:pointer}.ds-button-primary:hover:not(:disabled){background:var(--burgundy-dark)}.ds-button-primary:focus-visible{outline:3px solid #a65c00;outline-offset:3px}.ds-button-primary:disabled{opacity:.62;cursor:not-allowed}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A lower-emphasis action beside a primary action.",
+      "html": "<button class=\"ds-button-secondary\">Cancel</button>",
+      "css": ".ds-button-secondary{min-height:2.75rem;padding:.55rem 1rem;color:var(--burgundy);font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;font-size:1rem;font-weight:650;line-height:1.5;background:#fff;border:1px solid var(--burgundy);border-radius:.3rem;cursor:pointer}.ds-button-secondary:hover:not(:disabled){color:#fff;background:var(--burgundy-dark)}.ds-button-secondary:focus-visible{outline:3px solid #a65c00;outline-offset:3px}.ds-button-secondary:disabled{opacity:.62;cursor:not-allowed}"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "refersTo": "form-control",
+      "description": "A labeled, full-width form control on a white surface.",
+      "html": "<label class=\"ds-field-label\">Event name<input class=\"ds-field\" value=\"15/U Ladies\"></label>",
+      "css": ".ds-field-label{display:block;margin-bottom:.3rem;color:var(--ink);font-weight:650}.ds-field{width:min(100%,36rem);min-height:2.75rem;padding:.55rem .7rem;color:var(--ink);font:inherit;background:var(--paper);border:1px solid var(--line);border-radius:.25rem}.ds-field:focus-visible{outline:3px solid #a65c00;outline-offset:3px}.ds-field[aria-invalid=true]{border-color:#9c1c26}"
+    },
+    {
+      "name": "Admin navigation",
+      "kind": "nav",
+      "refersTo": "app-bar",
+      "description": "A blue app bar with compact, underlined navigation.",
+      "html": "<nav class=\"ds-admin-nav\"><a href=\"#\">Events</a><a href=\"#\">Member associations</a><a href=\"#\">Bib colors</a></nav>",
+      "css": ".ds-admin-nav{display:flex;flex-wrap:wrap;align-items:center;gap:1rem;min-height:4.5rem;padding:.75rem clamp(1rem,4vw,3rem);color:var(--ink);background:var(--club-blue);border-bottom:.25rem solid var(--burgundy)}.ds-admin-nav a{color:var(--ink);font-weight:650;text-underline-offset:.18em}.ds-admin-nav a:hover{text-decoration-thickness:2px}.ds-admin-nav a:focus-visible{outline:3px solid var(--ink);outline-offset:3px}"
+    },
+    {
+      "name": "Public home banner",
+      "kind": "custom",
+      "refersTo": "public-banner",
+      "description": "A full-width blue opening for the public trials list.",
+      "html": "<header class=\"ds-public-banner\"><div class=\"ds-public-banner-inner\"><p>Chisholm Netball home</p><h1>Upcoming trials</h1></div></header>",
+      "css": ".ds-public-banner{color:var(--ink);background:var(--club-blue);border-bottom:.25rem solid var(--burgundy)}.ds-public-banner-inner{width:min(100% - 2rem,76rem);margin-inline:auto;padding-block:clamp(2rem,7vw,4rem)}.ds-public-banner-inner p{margin:0;font-weight:650}.ds-public-banner h1{max-width:16ch;margin:.5rem 0 0;font-size:clamp(2.25rem,7vw,4.5rem);line-height:1.2;letter-spacing:-.035em}.ds-public-banner a{color:var(--ink)}"
+    },
+    {
+      "name": "Data table",
+      "kind": "custom",
+      "refersTo": "table-head",
+      "description": "A square, scan-friendly table with a pale-blue header row.",
+      "html": "<table class=\"ds-table\"><thead><tr><th scope=\"col\">Position</th><th scope=\"col\">Number</th><th scope=\"col\">Player</th></tr></thead><tbody><tr><th scope=\"row\">GS</th><td>1</td><td>Player name</td></tr></tbody></table>",
+      "css": ".ds-table{width:100%;border-collapse:collapse;text-align:left}.ds-table th,.ds-table td{padding:.65rem .75rem;border-bottom:1px solid var(--line);vertical-align:top}.ds-table thead{background:var(--blue-pale);color:var(--ink)}"
+    },
+    {
+      "name": "Error summary",
+      "kind": "custom",
+      "refersTo": "error-summary",
+      "description": "A plain bordered panel that points to fields needing correction.",
+      "html": "<section class=\"ds-error-summary\"><h2>Check these event details</h2><ul><li>Enter a valid event date.</li></ul></section>",
+      "css": ".ds-error-summary{max-width:44rem;margin-block:1.25rem;padding:1rem 1.25rem;color:var(--ink);background:var(--paper);border:2px solid var(--burgundy);border-radius:.25rem}.ds-error-summary h2{margin-top:0}.ds-error-summary li+li{margin-top:.25rem}"
+    },
+    {
+      "name": "Message confirmation",
+      "kind": "custom",
+      "refersTo": "message-confirmation",
+      "description": "A pale-blue confirmation panel with a restrained border.",
+      "html": "<section class=\"ds-message-confirmation\"><h2>Message sent</h2><p>Your update is saved.</p></section>",
+      "css": ".ds-message-confirmation{max-width:44rem;margin-block:1.25rem;padding:1rem 1.25rem;color:var(--ink);background:var(--blue-pale);border:1px solid var(--line);border-radius:.25rem}.ds-message-confirmation h2{margin-top:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Sideline Clipboard",
+    "overview": "The interface is a calm, practical clipboard for match day: committee members can scan registrations, court assignments and player numbers quickly, while families get clear next steps on a phone. The Chisholm wordmark and blue-and-plum palette provide recognition; the rest of the interface stays straightforward so trial information leads.\n\nPublic pages are welcoming and reassuring. Admin pages favor clear status, compact workflows and explainable data. Printed selectors carry the same hierarchy onto paper, with strong grids, writable fields and team-color names that remain useful in grayscale.",
+    "keyCharacteristics": [
+      "Operational, task-first layouts with familiar controls.",
+      "Blue surfaces identify the club shell; plum identifies actions and links.",
+      "Data tables and print sheets prioritize legibility over decoration.",
+      "A single system sans-serif voice across screens and forms."
+    ],
+    "rules": [
+      { "name": "The Written Color Rule", "body": "A team-color swatch always appears with its written name. Grayscale printing must not remove the distinction between teams.", "section": "colors" },
+      { "name": "The One Accent Rule", "body": "Deep Plum carries the main action; Chisholm Blue belongs to the shell and broad club surfaces. Keep both purposeful.", "section": "colors" },
+      { "name": "The Single Voice Rule", "body": "Do not introduce a display font or an unrelated type family; the interface uses one system sans-serif stack.", "section": "typography" },
+      { "name": "The Flat Surface Rule", "body": "Use borders and tonal surfaces for structure; do not add shadows to controls or panels.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do preserve the supplied club wordmark and its white backing.",
+      "Do use Number for a player's assigned identifier; reserve “bib color” for team uniforms.",
+      "Do pair each team-color swatch with its written name.",
+      "Do retain visible keyboard focus and text labels for statuses.",
+      "Do keep the public form calm and the Admin tables dense but readable."
+    ],
+    "donts": [
+      "Don't use color as the only team identifier.",
+      "Don't add decorative photography, remote fonts or unprovided brand assets.",
+      "Don't add drop shadows, gradients or rounded-card scaffolding to the otherwise flat interface.",
+      "Don't treat the legacy browser theme-color metadata as the canonical plum for interface components."
+    ]
+  }
+}

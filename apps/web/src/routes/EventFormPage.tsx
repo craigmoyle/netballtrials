@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { defaultAgeRange, type EventStatus } from '@netball-trials/types';
-import { EventControls } from '../admin/EventControls';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { defaultAgeRange } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
+import { formatTrialDate } from '../formatTrialDate';
 
 type Client = ReturnType<typeof apiClient>;
 type FormState = Record<string, string>;
@@ -19,28 +19,44 @@ const NUMERIC = new Set([
   'changeoverMinutes', 'minAge', 'maxAge',
 ]);
 
-const FIELDS: { name: string; label: string; type: string }[] = [
-  { name: 'name', label: 'Event name', type: 'text' },
-  { name: 'competitionYear', label: 'Competition year', type: 'number' },
-  { name: 'division', label: 'Division', type: 'text' },
-  { name: 'section', label: 'Section', type: 'text' },
-  { name: 'eventDate', label: 'Event date', type: 'date' },
-  { name: 'venue', label: 'Venue', type: 'text' },
-  { name: 'startTime', label: 'Arrival time', type: 'time' },
-  { name: 'endTime', label: 'Finish time', type: 'time' },
-  { name: 'firstWhistle', label: 'First whistle', type: 'time' },
-  { name: 'lastWhistle', label: 'Last whistle', type: 'time' },
-  { name: 'registrationFeeCents', label: 'Registration fee (AUD)', type: 'number' },
-  { name: 'courts', label: 'Courts', type: 'number' },
-  { name: 'rank1Min', label: 'Minimum games in first choice', type: 'number' },
-  { name: 'rank2Min', label: 'Minimum games in second choice', type: 'number' },
-  { name: 'rank3Min', label: 'Minimum games in third choice', type: 'number' },
-  { name: 'playMinutes', label: 'Playing minutes', type: 'number' },
-  { name: 'changeoverMinutes', label: 'Changeover minutes', type: 'number' },
-  { name: 'minAge', label: 'Minimum age at 31 December', type: 'number' },
-  { name: 'maxAge', label: 'Maximum age at 31 December', type: 'number' },
-  { name: 'policyUrl', label: 'Selection policy URL', type: 'url' },
+const FIELD_GROUPS: { legend: string; fields: { name: string; label: string; type: string }[] }[] = [
+  {
+    legend: 'Event details',
+    fields: [
+      { name: 'name', label: 'Event name', type: 'text' },
+      { name: 'competitionYear', label: 'Competition year', type: 'number' },
+      { name: 'division', label: 'Division', type: 'text' },
+      { name: 'section', label: 'Section', type: 'text' },
+      { name: 'eventDate', label: 'Event date', type: 'date' },
+      { name: 'venue', label: 'Venue', type: 'text' },
+      { name: 'startTime', label: 'Arrival time', type: 'time' },
+      { name: 'endTime', label: 'Finish time', type: 'time' },
+      { name: 'firstWhistle', label: 'First whistle', type: 'time' },
+      { name: 'lastWhistle', label: 'Last whistle', type: 'time' },
+      { name: 'registrationFeeCents', label: 'Registration fee (AUD)', type: 'number' },
+    ],
+  },
+  {
+    legend: 'Trial format',
+    fields: [
+      { name: 'courts', label: 'Courts', type: 'number' },
+      { name: 'playMinutes', label: 'Playing minutes', type: 'number' },
+      { name: 'changeoverMinutes', label: 'Changeover minutes', type: 'number' },
+    ],
+  },
+  {
+    legend: 'Selection settings',
+    fields: [
+      { name: 'rank1Min', label: 'Minimum games in first choice', type: 'number' },
+      { name: 'rank2Min', label: 'Minimum games in second choice', type: 'number' },
+      { name: 'rank3Min', label: 'Minimum games in third choice', type: 'number' },
+      { name: 'minAge', label: 'Minimum age at 31 December', type: 'number' },
+      { name: 'maxAge', label: 'Maximum age at 31 December', type: 'number' },
+      { name: 'policyUrl', label: 'Selection policy URL', type: 'url' },
+    ],
+  },
 ];
+const FIELDS = FIELD_GROUPS.flatMap((group) => group.fields);
 
 export function EventFormPage({ client }: { client: Client }) {
   const { id } = useParams();
@@ -49,24 +65,79 @@ export function EventFormPage({ client }: { client: Client }) {
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [eventStatus, setEventStatus] = useState<EventStatus | null>(null);
   const [savedEventName, setSavedEventName] = useState('');
   const [eventDate, setEventDate] = useState('');
-  const [savedCourts, setSavedCourts] = useState(0);
+  const [loadedEventId, setLoadedEventId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const errorSummary = useRef<HTMLDivElement>(null);
+  const savedForm = useRef<FormState>(EMPTY);
+  const navigationBlocked = useRef(false);
+  const allowedDestination = useRef<string | null>(null);
+  const promptedLocation = useRef<string | null>(null);
+
+  navigationBlocked.current = Object.entries(form).some(([field, value]) => savedForm.current[field] !== value);
+  const shouldBlockNavigation = useCallback(({ nextLocation }: { nextLocation: { pathname: string } }) => {
+    if (allowedDestination.current === nextLocation.pathname) {
+      allowedDestination.current = null;
+      return false;
+    }
+    return navigationBlocked.current;
+  }, []);
+  const blocker = useBlocker(shouldBlockNavigation);
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') {
+      promptedLocation.current = null;
+      return;
+    }
+    const destination = `${blocker.location.pathname}${blocker.location.search}${blocker.location.hash}`;
+    if (promptedLocation.current === destination) return;
+    promptedLocation.current = destination;
+    if (window.confirm('You have unsaved event changes. Leave without saving?')) blocker.proceed();
+    else blocker.reset();
+  }, [blocker]);
+
+  useEffect(() => {
+    const confirmSignOut = (event: MouseEvent) => {
+      if (!navigationBlocked.current || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const guardedButton = target.closest<HTMLButtonElement>('button[data-confirm-unsaved-navigation]');
+      if (!guardedButton) return;
+      if (!window.confirm('You have unsaved event changes. Leave without saving?')) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      } else {
+        allowedDestination.current = '/admin/login';
+      }
+    };
+    const confirmUnload = (event: BeforeUnloadEvent) => {
+      if (!navigationBlocked.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    document.addEventListener('click', confirmSignOut, true);
+    window.addEventListener('beforeunload', confirmUnload);
+    return () => {
+      document.removeEventListener('click', confirmSignOut, true);
+      window.removeEventListener('beforeunload', confirmUnload);
+    };
+  }, []);
 
   useEffect(() => {
     if (!id) return;
     let active = true;
+    setLoadError(false);
     client
       .getEvent(id)
       .then((event) => {
         if (!active) return;
-        setEventStatus(event.status);
         setSavedEventName(event.name);
         setEventDate(event.eventDate);
-        setSavedCourts(event.courts);
-        setForm({
+        const loadedForm: FormState = {
           name: event.name,
           competitionYear: String(event.competitionYear),
           division: event.division,
@@ -87,11 +158,14 @@ export function EventFormPage({ client }: { client: Client }) {
           minAge: String(event.minAge),
           maxAge: String(event.maxAge),
           policyUrl: event.policyUrl ?? '',
-        });
+        };
+        savedForm.current = loadedForm;
+        setForm(loadedForm);
+        setLoadedEventId(id);
       })
-      .catch(() => { if (active) setError('Could not load the event.'); });
+      .catch(() => { if (active) setLoadError(true); });
     return () => { active = false; };
-  }, [client, id]);
+  }, [client, id, loadAttempt]);
 
   useEffect(() => {
     if (fieldErrors.length > 0) errorSummary.current?.focus();
@@ -125,6 +199,9 @@ export function EventFormPage({ client }: { client: Client }) {
     try {
       if (id) await client.updateEvent(id, payload as never);
       else await client.createEvent(payload as never);
+      savedForm.current = form;
+      navigationBlocked.current = false;
+      allowedDestination.current = '/admin/events';
       navigate('/admin/events');
     } catch (err) {
       if (err instanceof ApiError) {
@@ -151,6 +228,8 @@ export function EventFormPage({ client }: { client: Client }) {
     setFieldErrors([]);
     try {
       await client.deleteEvent(id);
+      navigationBlocked.current = false;
+      allowedDestination.current = '/admin/events';
       navigate('/admin/events');
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409 && reason.message === 'event_has_registrations') {
@@ -167,6 +246,13 @@ export function EventFormPage({ client }: { client: Client }) {
     <section>
       <p><Link to="/admin/events">Back to events</Link></p>
       <h1>{id ? 'Edit event' : 'New event'}</h1>
+      {id && loadedEventId !== id ? (loadError ? (
+        <>
+          <p role="alert">Could not load the event.</p>
+          <button type="button" className="button-secondary" onClick={() => { setLoadError(false); setLoadAttempt((attempt) => attempt + 1); }}>Try again</button>
+        </>
+      ) : <p role="status">Loading event details...</p>) : <>
+      {id && savedEventName && eventDate ? <p className="event-form-context">{savedEventName} · {formatTrialDate(eventDate)}</p> : null}
       {fieldErrors.length > 0 ? (
         <div ref={errorSummary} role="alert" aria-labelledby="event-errors-title" tabIndex={-1} className="error-summary">
           <h2 id="event-errors-title">Check these event details</h2>
@@ -174,42 +260,47 @@ export function EventFormPage({ client }: { client: Client }) {
         </div>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
-      {id && eventStatus ? <EventControls client={client} eventId={id} eventDate={eventDate} courts={savedCourts} status={eventStatus} onStatusChange={setEventStatus} /> : null}
       <form onSubmit={onSubmit} noValidate>
-        {FIELDS.map((field) => {
-          const invalid = fieldErrors.includes(field.name);
-          return (
-            <p key={field.name}>
-              <label htmlFor={field.name}>{field.label}</label>
-              <input
-                id={field.name}
-                name={field.name}
-                type={field.type}
-                min={field.name === 'registrationFeeCents' ? '0' : undefined}
-                step={field.name === 'registrationFeeCents' ? '0.01' : undefined}
-                list={field.name === 'division' ? 'trial-divisions' : undefined}
-                value={form[field.name] ?? ''}
-                onChange={(changeEvent) => updateField(field.name, changeEvent.target.value)}
-                aria-invalid={invalid || undefined}
-                aria-describedby={invalid ? `${field.name}-error` : undefined}
-              />
-              {field.name === 'division' ? <datalist id="trial-divisions"><option value="15/U" /><option value="17/U" /><option value="Open" /><option value="All Abilities" /></datalist> : null}
-              {invalid ? <span id={`${field.name}-error`}>{field.label} is not valid.</span> : null}
-            </p>
-          );
-        })}
+        {FIELD_GROUPS.map((group) => (
+          <fieldset className="form-group" key={group.legend}>
+            <legend>{group.legend}</legend>
+            {group.fields.map((field) => {
+              const invalid = fieldErrors.includes(field.name);
+              return (
+                <p key={field.name}>
+                  <label htmlFor={field.name}>{field.label}</label>
+                  <input
+                    id={field.name}
+                    name={field.name}
+                    type={field.type}
+                    min={field.name === 'registrationFeeCents' ? '0' : undefined}
+                    step={field.name === 'registrationFeeCents' ? '0.01' : undefined}
+                    list={field.name === 'division' ? 'trial-divisions' : undefined}
+                    value={form[field.name] ?? ''}
+                    onChange={(changeEvent) => updateField(field.name, changeEvent.target.value)}
+                    aria-invalid={invalid || undefined}
+                    aria-describedby={invalid ? `${field.name}-error` : undefined}
+                  />
+                  {field.name === 'division' ? <datalist id="trial-divisions"><option value="15/U" /><option value="17/U" /><option value="Open" /><option value="All Abilities" /></datalist> : null}
+                  {invalid ? <span id={`${field.name}-error`}>{field.label} is not valid.</span> : null}
+                </p>
+              );
+            })}
+          </fieldset>
+        ))}
         <p className="workflow-links">
           <button type="button" className="button-secondary" disabled={busy} onClick={cancelEditing}>Cancel</button>
           <button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save event'}</button>
         </p>
       </form>
-      {id && eventStatus ? (
+      {id && loadedEventId === id ? (
         <section aria-labelledby="delete-event-heading">
           <h2 id="delete-event-heading">Delete event</h2>
           <p>Deleting an event removes its settings, plans, court colors, policy document, check-in sessions and email history. Any registration record, including withdrawn or pending, blocks deletion.</p>
           <button type="button" className="button-secondary" disabled={busy} onClick={() => void removeEvent()}>{busy ? 'Deleting...' : 'Delete event'}</button>
         </section>
       ) : null}
+      </>}
     </section>
   );
 }

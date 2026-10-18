@@ -29,7 +29,7 @@ function renderPage(client: Record<string, unknown>) {
 }
 
 describe('RosterPage', () => {
-  it('shows choice counts, minimal contact/payment/check-in data and workflow links', async () => {
+  it('shows choice counts and minimal contact/payment/check-in data', async () => {
     renderPage({ getRoster: vi.fn().mockResolvedValue(roster), downloadRoster: vi.fn() });
     expect(await screen.findByRole('heading', { name: /roster/i })).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
@@ -39,9 +39,6 @@ describe('RosterPage', () => {
     expect(screen.queryByText(/bib 4/i)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'First choice' })).toBeInTheDocument();
     expect(screen.getByText('GS: 2')).toBeInTheDocument();
-    for (const link of ['Review queue', 'Plan rounds', 'Messages', 'Print selector sheets']) {
-      expect(screen.getByRole('link', { name: link })).toBeInTheDocument();
-    }
   });
 
   it('shows a genuine empty state and retries a roster load error', async () => {
