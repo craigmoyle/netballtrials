@@ -9,6 +9,18 @@ export async function createRegistrationCheckout(
   registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
 ): Promise<CheckoutSession | null> {
   try {
+    if (deps.env.PAYMENT_PROVIDER === 'fake' && registration.checkoutSessionId?.startsWith('fake_sim_')) {
+      const current = await deps.prisma.registration.findUnique({
+        where: { id: registration.id },
+        select: { status: true, checkoutSessionId: true },
+      });
+      if (current?.status !== 'PENDING' || current.checkoutSessionId !== registration.checkoutSessionId) return null;
+      return {
+        sessionId: registration.checkoutSessionId,
+        url: `https://checkout.test/${registration.checkoutSessionId}`,
+      };
+    }
+
     const checkout = await deps.payment.createCheckout({
       registrationId: registration.id,
       amountCents: registration.amountCents,

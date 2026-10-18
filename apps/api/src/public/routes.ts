@@ -169,7 +169,21 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       );
       if (fakeSimulationEnabled) {
         const checkout = await createRegistrationCheckout(deps, registration);
-        return reply.code(202).send(fakeSimulationAcknowledgement(checkout?.sessionId ?? `fake_${randomUUID()}`));
+        let simulationToken = checkout?.sessionId;
+        if (!simulationToken) {
+          const fallbackSessionId = `fake_sim_${randomUUID()}`;
+          const saved = await deps.prisma.registration.updateMany({
+            where: {
+              id: registration.id,
+              status: 'PENDING',
+              checkoutSessionId: registration.checkoutSessionId,
+              expiresAt: { gt: now },
+            },
+            data: { checkoutSessionId: fallbackSessionId },
+          });
+          simulationToken = saved.count === 1 ? fallbackSessionId : `fake_${randomUUID()}`;
+        }
+        return reply.code(202).send(fakeSimulationAcknowledgement(simulationToken));
       }
       await sendCheckoutContinuation(deps, registration);
       return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);

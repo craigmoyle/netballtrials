@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import { createApp } from '../../app';
 import { prisma } from '../../db';
 import { createFakePaymentProvider } from '../../payments/fake';
@@ -10,6 +10,8 @@ let app: ReturnType<typeof createApp>;
 let eventId: string;
 let payment: ReturnType<typeof createFakePaymentProvider>;
 let mailer: ReturnType<typeof createDevMailer>;
+
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(async () => {
   await resetDb();
@@ -124,27 +126,53 @@ describe('POST /api/public/events/:id/registrations', () => {
     expect(mailer.sent[0].text).toContain(`https://checkout.test/${registration.checkoutSessionId}`);
   });
 
-  it('recovers from a transient Checkout-provider failure on the same request', async () => {
+  it('keeps a fake simulation usable after Checkout setup fails and a duplicate retry', async () => {
     const fake = createFakePaymentProvider();
     const createCheckout = vi.fn()
       .mockRejectedValueOnce(new Error('provider unavailable'))
       .mockImplementation((request, idempotencyKey) => fake.createCheckout(request, idempotencyKey));
-    app = createApp({
-      mailer,
-      payment: { ...fake, createCheckout },
-      env: testEnv(),
-    });
+    app = createApp({ mailer, payment: { ...fake, createCheckout }, env: testEnv() });
+
     const first = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+    const firstToken = first.json().simulationToken as string;
+    const afterFirst = await prisma.registration.findFirstOrThrow({ where: { eventId } });
     const retry = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+    const afterRetry = await prisma.registration.findFirstOrThrow({ where: { eventId } });
+    const completion = await app.inject({
+      method: 'POST', url: '/api/public/fake-checkouts/complete', payload: { simulationToken: firstToken },
+    });
+
     expect(first.statusCode).toBe(202);
+    expect(firstToken).toMatch(/^fake_sim_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(afterFirst.checkoutSessionId).toBe(firstToken);
     expect(retry.statusCode).toBe(202);
-    expect(first.json().status).toBe('received');
     expect(retry.json().status).toBe('received');
-    expect(Object.keys(first.json()).sort()).toEqual(['simulationToken', 'status']);
-    expect(Object.keys(retry.json()).sort()).toEqual(['simulationToken', 'status']);
-    expect(retry.json().simulationToken).not.toBe(first.json().simulationToken);
-    expect(createCheckout).toHaveBeenCalledTimes(2);
-    expect(mailer.sent.map((message) => message.to)).toEqual(['anne@example.com']);
+    expect(retry.json().simulationToken).not.toBe(firstToken);
+    expect(afterRetry.checkoutSessionId).toBe(firstToken);
+    expect(createCheckout).toHaveBeenCalledTimes(1);
+    expect(mailer.sent[0].to).toBe('anne@example.com');
+    expect(mailer.sent[0].text).toContain(`https://checkout.test/${firstToken}`);
+    expect(completion.json()).toEqual({ status: 'paid' });
+    expect((await prisma.registration.findFirstOrThrow({ where: { eventId } })).status).toBe('PAID');
+  });
+
+  it('persists a bound simulation token after a transient Checkout-session write failure', async () => {
+    const updateMany = prisma.registration.updateMany.bind(prisma.registration);
+    vi.spyOn(prisma.registration, 'updateMany')
+      .mockRejectedValueOnce(new Error('transient session write failure'))
+      .mockImplementation((args) => updateMany(args));
+
+    const response = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+    const simulationToken = response.json().simulationToken as string;
+    const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
+    const completion = await app.inject({
+      method: 'POST', url: '/api/public/fake-checkouts/complete', payload: { simulationToken },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(registration.checkoutSessionId).toBe(simulationToken);
+    expect(completion.json()).toEqual({ status: 'paid' });
+    expect((await prisma.registration.findFirstOrThrow({ where: { eventId } })).status).toBe('PAID');
   });
 
   it('limits repeated registration and recovery attempts by client address', async () => {
