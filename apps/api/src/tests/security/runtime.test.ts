@@ -76,6 +76,23 @@ describe('production runtime boundary', () => {
     expect(() => createApp({ env: env({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'fake', SESSION_COOKIE_SECURE: 'true', WEB_ORIGIN: 'https://trials.example', API_PUBLIC_URL: 'https://api.example' }), payment: fake })).toThrow(/fake.*production|production.*fake/i);
   });
 
+  it('does not register fake completion when Stripe is selected', async () => {
+    const app = createApp({
+      env: env({ PAYMENT_PROVIDER: 'stripe', STRIPE_SECRET_KEY: 'sk_test_configured', STRIPE_WEBHOOK_SECRET: 'whsec_configured' }),
+      payment: createFakePaymentProvider(),
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/public/fake-checkouts/complete',
+        payload: { simulationToken: 'fake_test' },
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('selects Gmail in production and rejects an injected development mailer', async () => {
     const productionEnv = env({
       NODE_ENV: 'production',

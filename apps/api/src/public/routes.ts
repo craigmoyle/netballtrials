@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app';
-import { sendCheckoutContinuation } from '../registrations/checkout';
+import { createRegistrationCheckout, sendCheckoutContinuation } from '../registrations/checkout';
 import { sendConfirmation } from '../registrations/confirmation';
 import {
   RegistrationConflictError,
@@ -10,12 +10,17 @@ import {
 } from '../registrations/service';
 import type { RegistrationInput } from '../registrations/schemas';
 import { consumeRateLimit } from '../security/rate-limit';
-import { registerStripeWebhookRoute } from '../payments/webhook';
+import { processPaymentEvent, registerStripeWebhookRoute } from '../payments/webhook';
+import type { WebhookEvent } from '../payments/provider';
 import { getPublicEvent, getTicket, getTicketCalendar, listPublicEvents } from './service';
 
 const REGISTRATION_LIMIT = 10;
 const REGISTRATION_WINDOW_MS = 15 * 60_000;
 const NEUTRAL_ACKNOWLEDGEMENT = { status: 'received' } as const;
+
+function fakeSimulationAcknowledgement(simulationToken: string) {
+  return { ...NEUTRAL_ACKNOWLEDGEMENT, simulationToken };
+}
 
 function registrationRateKey(eventId: string, clientIp: string): string {
   return createHash('sha256')
@@ -60,6 +65,42 @@ async function sendDuplicateGuidance(
 
 export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void {
   registerStripeWebhookRoute(app, deps);
+
+  if (deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.NODE_ENV !== 'production') {
+    app.post('/api/public/fake-checkouts/complete', async (req) => {
+      const body = req.body as { simulationToken?: unknown } | null;
+      const simulationToken = body?.simulationToken;
+      if (typeof simulationToken !== 'string' || simulationToken.length === 0) {
+        return { status: 'not_completed' as const };
+      }
+
+      const registration = await deps.prisma.registration.findUnique({
+        where: { checkoutSessionId: simulationToken },
+      });
+      if (!registration) return { status: 'not_completed' as const };
+      if (registration.status === 'PAID') return { status: 'paid' as const };
+
+      const now = new Date();
+      if (registration.status !== 'PENDING' || registration.expiresAt <= now) {
+        return { status: 'not_completed' as const };
+      }
+
+      const event: WebhookEvent = {
+        kind: 'checkout_completed',
+        stripeEventId: `fake:${simulationToken}:completed`,
+        registrationId: registration.id,
+        sessionId: simulationToken,
+        amountCents: registration.amountCents,
+        currency: registration.currency,
+        paymentStatus: 'paid',
+        paymentIntentId: null,
+      };
+      const result = await processPaymentEvent(deps, event, now);
+      return {
+        status: result?.outcome === 'paid' || result?.outcome === 'already_paid' ? 'paid' : 'not_completed',
+      } as const;
+    });
+  }
 
   app.get('/api/public/events', async () => listPublicEvents(deps.prisma));
 
@@ -118,6 +159,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       return reply.code(429).send({ error: 'try_again_later' });
     }
 
+    const fakeSimulationEnabled = deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.NODE_ENV !== 'production';
     try {
       const registration = await createPendingRegistration(
         deps.prisma,
@@ -125,6 +167,10 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
         req.body as RegistrationInput,
         now,
       );
+      if (fakeSimulationEnabled) {
+        const checkout = await createRegistrationCheckout(deps, registration);
+        return reply.code(202).send(fakeSimulationAcknowledgement(checkout?.sessionId ?? `fake_${randomUUID()}`));
+      }
       await sendCheckoutContinuation(deps, registration);
       return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);
     } catch (error) {
@@ -137,6 +183,9 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
             await sendCheckoutContinuation(deps, error.existing);
           } else if (error.existing?.status === 'PAID') {
             await sendDuplicateGuidance(deps, error.existing);
+          }
+          if (fakeSimulationEnabled) {
+            return reply.code(202).send(fakeSimulationAcknowledgement(`fake_${randomUUID()}`));
           }
           return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);
         }

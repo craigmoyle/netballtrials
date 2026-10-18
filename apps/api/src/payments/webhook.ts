@@ -145,6 +145,29 @@ export async function confirmPayment(
   }
 }
 
+export async function processPaymentEvent(
+  deps: AppDeps,
+  event: WebhookEvent,
+  now: Date,
+): Promise<PaymentConfirmationResult | null> {
+  const result = await confirmPayment(deps.prisma, event, now);
+  if (!result || result.outcome !== 'paid') return result;
+
+  const registration = await deps.prisma.registration.findUnique({
+    where: { id: result.registrationId },
+    include: { event: true },
+  });
+  if (registration?.qrToken) {
+    const ticketUrl = `${deps.env.WEB_ORIGIN}/ticket/${registration.qrToken}`;
+    try {
+      await sendConfirmation(deps, registration, registration.event, ticketUrl);
+    } catch {
+      // Delivery is made durable/retryable by the email log.
+    }
+  }
+  return result;
+}
+
 export function registerStripeWebhookRoute(app: FastifyInstance, deps: AppDeps): void {
   // Scoped raw-body parser so the signature sees the exact bytes. Other scopes
   // keep Fastify's normal JSON parsing.
@@ -170,7 +193,7 @@ export function registerStripeWebhookRoute(app: FastifyInstance, deps: AppDeps):
         return reply.code(400).send({ error: 'invalid_signature' });
       }
 
-      const result = await confirmPayment(deps.prisma, event, new Date());
+      const result = await processPaymentEvent(deps, event, new Date());
       if (!result || result.outcome === 'ignored') {
         return reply.code(200).send({ status: 'ignored' });
       }
@@ -179,20 +202,6 @@ export function registerStripeWebhookRoute(app: FastifyInstance, deps: AppDeps):
       }
       if (result.outcome !== 'paid') {
         return reply.code(200).send({ status: result.outcome });
-      }
-
-      const registration = await deps.prisma.registration.findUnique({
-        where: { id: result.registrationId },
-        include: { event: true },
-      });
-
-      if (registration?.qrToken) {
-        const ticketUrl = `${deps.env.WEB_ORIGIN}/ticket/${registration.qrToken}`;
-        try {
-          await sendConfirmation(deps, registration, registration.event, ticketUrl);
-        } catch {
-          // Delivery is made durable/retryable by the Gmail delivery workstream.
-        }
       }
 
       return reply.code(200).send({ status: 'ok' });
