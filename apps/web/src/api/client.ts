@@ -143,11 +143,16 @@ export function apiClient(baseUrl: string) {
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),
     register: (id: string, input: Record<string, unknown>) =>
-      request<{ status: 'received' }>(
+      request<{ status: 'received'; simulationToken?: string }>(
         baseUrl,
         `/api/public/events/${id}/registrations`,
         { method: 'POST', body: JSON.stringify(input) },
       ),
+    completeFakePayment: (simulationToken: string) =>
+      request<{ status: 'paid' | 'not_completed' }>(baseUrl, '/api/public/fake-checkouts/complete', {
+        method: 'POST',
+        body: JSON.stringify({ simulationToken }),
+      }),
     dayOfRegistration: (id: string, input: Record<string, unknown>) =>
       request<{ status: 'received' }>(baseUrl, `/api/admin/events/${id}/day-of-registration`, {
         method: 'POST',

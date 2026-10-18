@@ -51,6 +51,10 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [associationError, setAssociationError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [simulationToken, setSimulationToken] = useState<string | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [simulationBusy, setSimulationBusy] = useState(false);
+  const [simulationCompleted, setSimulationCompleted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [eventRetry, setEventRetry] = useState(0);
@@ -109,9 +113,14 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         rank2Position: form.rank2Position || undefined,
         rank3Position: form.rank3Position || undefined,
       };
-      if (adminAssisted) await client.dayOfRegistration(eventId, registration);
-      else await client.register(eventId, registration);
-      setSubmitted(true);
+      if (adminAssisted) {
+        await client.dayOfRegistration(eventId, registration);
+        setSubmitted(true);
+      } else {
+        const acknowledgement = await client.register(eventId, registration);
+        if (acknowledgement.simulationToken) setSimulationToken(acknowledgement.simulationToken);
+        else setSubmitted(true);
+      }
     } catch (err) {
       const status = (err as { status?: number }).status;
       const message = (err as { message?: string }).message;
@@ -133,6 +142,21 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     }
   }
 
+  async function simulateFakePayment() {
+    if (!simulationToken) return;
+    setSimulationError(null);
+    setSimulationBusy(true);
+    try {
+      const result = await client.completeFakePayment(simulationToken);
+      if (result.status === 'paid') setSimulationCompleted(true);
+      else setSimulationError('Could not complete this test payment. No payment was taken. Contact the club if you need help.');
+    } catch {
+      setSimulationError('Could not complete this test payment. No payment was taken. Contact the club if you need help.');
+    } finally {
+      setSimulationBusy(false);
+    }
+  }
+
   if (eventError) {
     return (
       <section className="public-page">
@@ -143,6 +167,34 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     );
   }
   if (!event) return <p role="status">Loading trial details...</p>;
+  const currency = 'currency' in event ? event.currency : 'aud';
+  const fee = new Intl.NumberFormat('en-AU', {
+    style: 'currency', currency: currency.toUpperCase(),
+  }).format(event.registrationFeeCents / 100);
+
+  if (simulationToken) {
+    return (
+      <section className="public-page">
+        <h1>Test payment simulation</h1>
+        <p>Registration fee: {fee}</p>
+        <p>No real payment will be taken. Do not enter card details.</p>
+        {simulationCompleted ? (
+          <>
+            <p role="status">Test payment simulated. No payment was taken.</p>
+            <p><a href={`/register/${encodeURIComponent(eventId)}/pending?session=${encodeURIComponent(simulationToken)}`}>View test ticket</a></p>
+          </>
+        ) : (
+          <>
+            {simulationError ? <p role="alert">{simulationError}</p> : null}
+            <button type="button" onClick={() => void simulateFakePayment()} disabled={simulationBusy}>
+              {simulationBusy ? 'Simulating payment...' : 'Simulate successful payment'}
+            </button>
+          </>
+        )}
+      </section>
+    );
+  }
+
   if (submitted) {
     return (
       <section className="public-page">
@@ -153,11 +205,6 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       </section>
     );
   }
-
-  const currency = 'currency' in event ? event.currency : 'aud';
-  const fee = new Intl.NumberFormat('en-AU', {
-    style: 'currency', currency: currency.toUpperCase(),
-  }).format(event.registrationFeeCents / 100);
 
   return (
     <section className="public-page">

@@ -198,4 +198,38 @@ describe('RegisterPage', () => {
     expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
     expect(register).toHaveBeenCalledTimes(2);
   });
+
+  it('shows a card-free test simulation and links to the pending ticket after success', async () => {
+    const simulationToken = 'fake_session_opaque';
+    const register = vi.fn().mockResolvedValue({ status: 'received', simulationToken });
+    const completeFakePayment = vi.fn().mockResolvedValue({ status: 'paid' });
+    render(<RegisterPage client={client(register, { completeFakePayment })} eventId="e1" />);
+    await fillRegistrationForm();
+    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Test payment simulation' })).toBeInTheDocument();
+    expect(screen.getByText(/no real payment/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/card number|card expiry|security code|cvc/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate successful payment' }));
+
+    expect(await screen.findByRole('link', { name: 'View test ticket' })).toHaveAttribute(
+      'href',
+      `/register/e1/pending?session=${encodeURIComponent(simulationToken)}`,
+    );
+    expect(completeFakePayment).toHaveBeenCalledWith(simulationToken);
+  });
+
+  it('shows generic recovery copy when fake payment cannot be completed', async () => {
+    const register = vi.fn().mockResolvedValue({ status: 'received', simulationToken: 'fake_unbound' });
+    const completeFakePayment = vi.fn().mockResolvedValue({ status: 'not_completed' });
+    render(<RegisterPage client={client(register, { completeFakePayment })} eventId="e1" />);
+    await fillRegistrationForm();
+    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Simulate successful payment' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/could not complete this test payment/i);
+    expect(alert).not.toHaveTextContent(/duplicate|already registered|parent email/i);
+    expect(screen.queryByRole('link', { name: 'View test ticket' })).not.toBeInTheDocument();
+  });
 });

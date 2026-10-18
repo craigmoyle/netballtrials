@@ -38,6 +38,30 @@ describe('apiClient', () => {
     }));
   });
 
+  it('preserves the optional fake simulation token from public registration', async () => {
+    const response = { status: 'received', simulationToken: 'fake_session_opaque' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(response), { status: 202 }));
+    const client = apiClient('http://api.test');
+
+    const receipt = await client.register('event-1', { playerFirstName: 'Ada' });
+
+    expect(receipt).toEqual(response);
+    expect(receipt.simulationToken).toBe('fake_session_opaque');
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/public/events/event-1/registrations', expect.objectContaining({
+      method: 'POST', credentials: 'include', body: JSON.stringify({ playerFirstName: 'Ada' }),
+    }));
+  });
+
+  it('posts the fake simulation token to the local completion endpoint', async () => {
+    const result = { status: 'paid' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(result), { status: 200 }));
+
+    await expect(apiClient('http://api.test').completeFakePayment('fake_session_opaque')).resolves.toEqual(result);
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/public/fake-checkouts/complete', expect.objectContaining({
+      method: 'POST', credentials: 'include', body: JSON.stringify({ simulationToken: 'fake_session_opaque' }),
+    }));
+  });
+
   it('uses Admin endpoints for the color catalog and event court assignments', async () => {
     const color = { id: 'white', name: 'White', hex: '#FFFFFF', archivedAt: null };
     const pair = { court: 1, teamAColor: color, teamBColor: { id: 'black', name: 'Black', hex: '#111111', archivedAt: null } };
