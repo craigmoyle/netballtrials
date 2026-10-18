@@ -236,7 +236,7 @@ describe('FullGameListPage', () => {
 
   it('opens revision history as a read-only view', async () => {
     const client = renderPage();
-    await screen.findByRole('heading', { name: 'Full Game List' });
+    await screen.findByRole('button', { name: 'Revision history' });
     fireEvent.click(screen.getByRole('button', { name: 'Revision history' }));
     fireEvent.click(await screen.findByRole('button', { name: 'View revision 1' }));
 

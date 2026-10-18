@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { melbourneDateKey } from '@netball-trials/types';
 import { EventOperationsPage } from './EventOperationsPage';
@@ -87,6 +87,24 @@ describe('EventOperationsPage', () => {
     await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
     fireEvent.click(screen.getByRole('button', { name: /close check-in/i }));
     await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
+  });
+
+  it('places conditional check-in actions before PIN and court settings', async () => {
+    const today = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`).toISOString();
+    const client = operationsClient({
+      getEvent: vi.fn().mockResolvedValue({ ...savedEvent, status: 'OPEN', eventDate: today }),
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: true, checkInClosedAt: null }),
+    });
+    renderOperations(client);
+
+    const actions = await screen.findByRole('navigation', { name: 'Event actions' });
+    const adminCheckIn = within(actions).getByRole('link', { name: 'Admin check-in' });
+    const dayOfRegistration = within(actions).getByRole('link', { name: 'Add day-of player' });
+    const pin = screen.getByLabelText(/set or rotate check-in pin/i);
+    const teamColors = screen.getByRole('heading', { name: 'Team colors' });
+    expect(adminCheckIn.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dayOfRegistration.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(adminCheckIn.compareDocumentPosition(teamColors) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it.each([

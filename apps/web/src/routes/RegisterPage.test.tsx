@@ -89,6 +89,22 @@ describe('RegisterPage', () => {
     expect(within(eligibility).getByLabelText(/I confirm the player meets these eligibility requirements/i)).toBeInTheDocument();
   });
 
+  it('offers section links to the four registration groups', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    const sectionsNav = await screen.findByRole('navigation', { name: 'Registration sections' });
+    const sections = [
+      ['Player details', '#player-details'],
+      ['Parent or guardian details', '#parent-details'],
+      ['Position preferences', '#position-preferences'],
+      ['Eligibility confirmation', '#eligibility-confirmation'],
+    ];
+    for (const [label, href] of sections) {
+      expect(within(sectionsNav).getByRole('link', { name: label })).toHaveAttribute('href', href);
+      expect(screen.getByRole('group', { name: label })).toHaveAttribute('id', href.slice(1));
+    }
+  });
+
   it('shows the event date in the same Australian long-date format as the home listing', async () => {
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
 

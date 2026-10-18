@@ -114,6 +114,12 @@ export function EventControls({
   return (
     <section aria-labelledby="event-controls-heading">
       <h2 id="event-controls-heading">Event controls</h2>
+      {(pinConfigured !== null && !checkInClosedAt) || canRegisterDayOf ? (
+        <nav aria-label="Event actions" className="workflow-links">
+          {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}
+          {canRegisterDayOf ? <Link to={`/admin/events/${eventId}/day-of-registration`}>Add day-of player</Link> : null}
+        </nav>
+      ) : null}
       <p>Status: {status.toLowerCase()}</p>
       {status !== 'CLOSED' ? (
         <button type="button" disabled={busy} onClick={changeLifecycle}>
@@ -133,12 +139,6 @@ export function EventControls({
       <EventCourtColors client={client} eventId={eventId} courts={courts} />
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
-      {(pinConfigured !== null && !checkInClosedAt) || canRegisterDayOf ? (
-        <nav aria-label="Event actions" className="workflow-links">
-          {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}
-          {canRegisterDayOf ? <Link to={`/admin/events/${eventId}/day-of-registration`}>Add day-of player</Link> : null}
-        </nav>
-      ) : null}
     </section>
   );
 }

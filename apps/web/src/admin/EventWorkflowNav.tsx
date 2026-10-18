@@ -42,9 +42,10 @@ export function EventWorkflowNav({ eventId }: Props) {
     ? 'settings'
     : workflows.find(({ path: suffix }) => suffix !== '' && path === `${basePath}${suffix}`)?.id
       ?? (path.startsWith(`${basePath}/sheets/`) ? 'sheets' : null);
-  const currentLabel = workflows.find((workflow) => workflow.id === current)?.label
-    ?? (path === `${basePath}/check-in` ? 'Admin check-in' : null)
-    ?? (path === `${basePath}/day-of-registration` ? 'Day-of registration' : null);
+  const specialCurrent = path === `${basePath}/check-in`
+    ? 'Admin check-in'
+    : path === `${basePath}/day-of-registration` ? 'Day-of registration' : null;
+  const currentLabel = workflows.find((workflow) => workflow.id === current)?.label ?? specialCurrent;
 
   useEffect(() => setOpen(false), [pathname]);
 
@@ -72,6 +73,7 @@ export function EventWorkflowNav({ eventId }: Props) {
                 {workflow.label}
               </Link>
             ))}
+            {group.label === 'Trial day' && specialCurrent ? <span aria-current="page">{specialCurrent}</span> : null}
             {group.label === 'Trial day' ? <Link to={`/check-in?eventId=${encodeURIComponent(eventId)}`}>Volunteer check-in</Link> : null}
           </div>
         ))}

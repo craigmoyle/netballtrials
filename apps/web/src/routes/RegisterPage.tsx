@@ -222,6 +222,14 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         Privacy: these details are used for registration, payment, check-in and event messages. Parent contact details are not shown to volunteers. The app removes or anonymises personal details 12 calendar months after the event date.{' '}
         <a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.
       </p>
+      <nav className="registration-sections" aria-label="Registration sections">
+        <ol>
+          <li><a href="#player-details">Player details</a></li>
+          <li><a href="#parent-details">Parent or guardian details</a></li>
+          <li><a href="#position-preferences">Position preferences</a></li>
+          <li><a href="#eligibility-confirmation">Eligibility confirmation</a></li>
+        </ol>
+      </nav>
 
       {fieldErrors.length > 0 ? (
         <div ref={errorSummary} role="alert" aria-labelledby="registration-errors-title" tabIndex={-1} className="error-summary">
@@ -242,7 +250,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       ) : null}
 
       <form onSubmit={onSubmit} noValidate>
-        <fieldset className="form-group">
+        <fieldset id="player-details" className="form-group">
           <legend>Player details</legend>
           <p>
             <label htmlFor="playerFirstName">Player first name</label>
@@ -270,7 +278,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           </p>
         </fieldset>
 
-        <fieldset className="form-group">
+        <fieldset id="parent-details" className="form-group">
           <legend>Parent or guardian details</legend>
           <p>
             <label htmlFor="parentName">Parent or guardian name</label>
@@ -289,7 +297,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           </p>
         </fieldset>
 
-        <fieldset className="form-group">
+        <fieldset id="position-preferences" className="form-group">
           <legend>Position preferences</legend>
           <p>Choose up to three ranked positions. The first choice is required; the other two are optional.</p>
           {(['rank1Position', 'rank2Position', 'rank3Position'] as const).map((field, index) => (
@@ -314,7 +322,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           </p>
         </fieldset>
 
-        <fieldset className="form-group">
+        <fieldset id="eligibility-confirmation" className="form-group">
           <legend>Eligibility confirmation</legend>
           <p id="eligibility-confirmation-summary">
             The player must be a permanent player in a domestic or representative competition at a Chisholm Region member association and have played at least six association games between 1 January {event.competitionYear} and the day before the trial.

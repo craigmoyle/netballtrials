@@ -1,9 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { EventWorkflowNav } from './EventWorkflowNav';
 
+afterEach(() => { cleanup(); });
+
 describe('EventWorkflowNav', () => {
+  it.each([
+    ['/admin/events/e1/check-in', 'Admin check-in'],
+    ['/admin/events/e1/day-of-registration', 'Day-of registration'],
+  ])('marks the current special trial-day route %s', (path, label) => {
+    render(<MemoryRouter initialEntries={[path]}><EventWorkflowNav eventId="e1" /></MemoryRouter>);
+    const nav = screen.getByRole('navigation', { name: 'Event workflows' });
+    const trialDayGroup = within(nav).getByRole('group', { name: 'Trial day' });
+
+    expect(within(trialDayGroup).getByText(label)).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('button', { name: `Event tools: ${label}` })).toBeInTheDocument();
+  });
+
   it('groups event, planning, and trial-day workflows and marks the current route', () => {
     render(
       <MemoryRouter initialEntries={['/admin/events/e1/operations']}>
