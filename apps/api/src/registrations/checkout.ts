@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { Registration } from '@prisma/client';
 import type { AppDeps } from '../app';
 import { sendEmailToRecipient } from '../messages/service';
+import type { CheckoutSession } from '../payments/provider';
 
-export async function sendCheckoutContinuation(
+export async function createRegistrationCheckout(
   deps: AppDeps,
   registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
-): Promise<boolean> {
+): Promise<CheckoutSession | null> {
   try {
     const checkout = await deps.payment.createCheckout({
       registrationId: registration.id,
@@ -17,7 +18,7 @@ export async function sendCheckoutContinuation(
       cancelUrl: `${deps.env.WEB_ORIGIN}/register/${registration.eventId}`,
       expiresAt: registration.expiresAt,
     }, registration.id);
-    if (!checkout.url || !checkout.sessionId) return false;
+    if (!checkout.url || !checkout.sessionId) return null;
 
     const saved = await deps.prisma.registration.updateMany({
       where: {
@@ -32,9 +33,23 @@ export async function sendCheckoutContinuation(
         where: { id: registration.id },
         select: { status: true, checkoutSessionId: true },
       });
-      if (current?.status !== 'PENDING' || current.checkoutSessionId !== checkout.sessionId) return false;
+      if (current?.status !== 'PENDING' || current.checkoutSessionId !== checkout.sessionId) return null;
     }
 
+    return checkout;
+  } catch {
+    return null;
+  }
+}
+
+export async function sendCheckoutContinuation(
+  deps: AppDeps,
+  registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
+): Promise<boolean> {
+  const checkout = await createRegistrationCheckout(deps, registration);
+  if (!checkout) return false;
+
+  try {
     const delivery = await sendEmailToRecipient(
       { prisma: deps.prisma, mailer: deps.mailer },
       {
@@ -52,7 +67,6 @@ export async function sendCheckoutContinuation(
     );
     return delivery.sent === 1;
   } catch {
-    // The request can be retried with the same registration/idempotency key.
     // Durable delivery diagnostics/retries are recorded by the email log.
     return false;
   }

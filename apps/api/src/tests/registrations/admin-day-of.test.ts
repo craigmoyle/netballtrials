@@ -16,6 +16,7 @@ const input = {
   memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, eligibilityConfirmed: true,
 };
 const received = { status: 'received' };
+const fakeSessionIdPattern = /^fake_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let app: ReturnType<typeof createApp>;
 let eventId: string;
@@ -51,11 +52,12 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual(received);
     const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
-    expect(registration).toMatchObject({ status: 'PENDING', parentEmail: 'anne@example.com', checkoutSessionId: 'fake_1' });
+    expect(registration).toMatchObject({ status: 'PENDING', parentEmail: 'anne@example.com' });
+    expect(registration.checkoutSessionId).toMatch(fakeSessionIdPattern);
     expect(payment.checkouts).toHaveLength(1);
     const checkoutEmail = mailer.sent.find((message) => message.subject === 'Continue your Netball Trials registration');
     expect(checkoutEmail?.to).toBe('anne@example.com');
-    expect(checkoutEmail?.text).toContain('https://checkout.test/fake_1');
+    expect(checkoutEmail?.text).toContain(`https://checkout.test/${registration.checkoutSessionId}`);
 
     const opened = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`,
@@ -152,10 +154,12 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(failed.json()).toEqual({ error: 'checkout_unavailable' });
     const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
     const retried = await submit();
-    expect(registration).toMatchObject({ status: 'PENDING', checkoutSessionId: 'fake_1' });
+    expect(registration).toMatchObject({ status: 'PENDING' });
+    expect(registration.checkoutSessionId).toMatch(fakeSessionIdPattern);
     expect(retried.statusCode).toBe(202);
     expect(await prisma.registration.count({ where: { eventId, status: 'PENDING' } })).toBe(1);
-    expect(mailer.sent.some((message) => message.subject === 'Continue your Netball Trials registration')).toBe(true);
+    const checkoutEmail = mailer.sent.find((message) => message.subject === 'Continue your Netball Trials registration');
+    expect(checkoutEmail?.text).toContain(`https://checkout.test/${registration.checkoutSessionId}`);
   });
 });
 

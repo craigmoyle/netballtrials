@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   CheckoutRequest,
   CheckoutSession,
@@ -17,7 +18,7 @@ export function createFakePaymentProvider(): PaymentProvider & {
       const existing = sessions.get(idempotencyKey);
       if (existing) return existing;
       checkouts.push(request);
-      const sessionId = `fake_${sessions.size + 1}`;
+      const sessionId = `fake_${randomUUID()}`;
       const session = { url: `https://checkout.test/${sessionId}`, sessionId };
       sessions.set(idempotencyKey, session);
       return session;
