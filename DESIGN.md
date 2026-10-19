@@ -10,6 +10,18 @@ colors:
   paper: "#ffffff"
   canvas: "#f0f5fc"
   line: "#78869a"
+  placeholder-ink: "#4f4b55"
+  focus-amber: "#a65c00"
+  invalid-border: "#9c1c26"
+  camera-background: "#161216"
+  success-ink: "#103f2b"
+  success-surface: "#dff2e8"
+  warning-ink: "#4d3500"
+  warning-surface: "#fff0bf"
+  error-ink: "#721a20"
+  error-surface: "#fde9e9"
+  warning-panel: "#fff3d0"
+  warning-border: "#a65c00"
 typography:
   display:
     fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
@@ -36,6 +48,36 @@ typography:
     fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     fontSize: "1rem"
     fontWeight: 650
+    lineHeight: 1.5
+  public-trial-title:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "clamp(1.25rem, 2vw, 1.5rem)"
+    fontWeight: 700
+    lineHeight: 1.2
+  scan-result:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "clamp(1.5rem, 5vw, 2.5rem)"
+    fontWeight: 800
+    lineHeight: 1.2
+  game-section:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "1.2rem"
+    fontWeight: 700
+    lineHeight: 1.2
+  game-table:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "0.92rem"
+    fontWeight: 400
+    lineHeight: 1.5
+  game-table-mobile:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "0.84rem"
+    fontWeight: 400
+    lineHeight: 1.5
+  consequence-note:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "0.9rem"
+    fontWeight: 400
     lineHeight: 1.5
 rounded:
   tight: "0.2rem"
@@ -121,7 +163,7 @@ The palette uses Chisholm Blue for the shell, Deep Plum for actions, and Light B
 - **Canvas** — the page background.
 - **Line** — dividers and control borders.
 
-**Focus and status:** Focus normally uses an amber outline (#a65c00); controls in the blue app bar use an ink outline for contrast. Success, warning and error messages use separate green, ochre and red text/surface pairs; they communicate state, not decoration. The browser theme-color metadata is a legacy exception; the CSS palette and Deep Plum token are the visual source of truth.
+**Focus and status:** Focus uses Focus Amber; invalid controls use Invalid Border. Placeholder Ink keeps hint text readable, and Camera Background sits behind the scanner feed. Success, warning and error messages use separate green, ochre and red text/surface pairs; they communicate state, not decoration. The browser theme-color metadata is a legacy exception; the CSS palette and Deep Plum token are the visual source of truth.
 
 ### Named Rules
 **The Written Color Rule.** A team-color swatch always appears with its written name. Grayscale printing must not remove the distinction between teams.
@@ -144,6 +186,11 @@ The palette uses Chisholm Blue for the shell, Deep Plum for actions, and Light B
 - **Title** — section headings and panels.
 - **Body** — event details, helper copy and dense player data.
 - **Label** — form labels, navigation and primary controls.
+- **Public trial title** — headings for individual trial listings.
+- **Scan result** — prominent scanner feedback.
+- **Game section** — event and court headings in the Full Game List.
+- **Game table** — compact game data, with a smaller mobile position-table scale.
+- **Consequence note** — compact explanatory copy beside consequential Admin actions.
 
 Use the display scale only on the public home page. Admin screens keep a tighter hierarchy. Prose is kept to a readable measure where practical; data tables may run wider and scroll within their own region.
 

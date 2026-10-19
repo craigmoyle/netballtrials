@@ -123,13 +123,31 @@
           "oklch(84% 0.035 257.3)",
           "oklch(95% 0.035 257.3)"
         ]
-      }
+      },
+      "placeholder-ink": { "role": "neutral", "displayName": "Placeholder Ink", "canonical": "#4f4b55" },
+      "focus-amber": { "role": "focus", "displayName": "Focus Amber", "canonical": "#a65c00" },
+      "invalid-border": { "role": "error", "displayName": "Invalid Border", "canonical": "#9c1c26" },
+      "camera-background": { "role": "surface", "displayName": "Camera Background", "canonical": "#161216" },
+      "success-ink": { "role": "success", "displayName": "Success Ink", "canonical": "#103f2b" },
+      "success-surface": { "role": "success", "displayName": "Success Surface", "canonical": "#dff2e8" },
+      "warning-ink": { "role": "warning", "displayName": "Warning Ink", "canonical": "#4d3500" },
+      "warning-surface": { "role": "warning", "displayName": "Warning Surface", "canonical": "#fff0bf" },
+      "error-ink": { "role": "error", "displayName": "Error Ink", "canonical": "#721a20" },
+      "error-surface": { "role": "error", "displayName": "Error Surface", "canonical": "#fde9e9" },
+      "warning-panel": { "role": "warning", "displayName": "Warning Panel", "canonical": "#fff3d0" },
+      "warning-border": { "role": "warning", "displayName": "Warning Border", "canonical": "#a65c00" }
     },
     "typographyMeta": {
       "display": { "displayName": "Display headline", "purpose": "The public-home headline only." },
       "headline": { "displayName": "Page headline", "purpose": "Page titles across public and Admin screens." },
       "body": { "displayName": "System body", "purpose": "Forms, guidance, event details and data." },
-      "label": { "displayName": "Control label", "purpose": "Form labels, navigation and buttons." }
+      "label": { "displayName": "Control label", "purpose": "Form labels, navigation and buttons." },
+      "public-trial-title": { "displayName": "Public trial title", "purpose": "The name of each upcoming public trial." },
+      "scan-result": { "displayName": "Scan result", "purpose": "Prominent feedback after scanning a ticket." },
+      "game-section": { "displayName": "Game section", "purpose": "Event and court headings in the Full Game List." },
+      "game-table": { "displayName": "Game table", "purpose": "Compact game and position table content on larger screens." },
+      "game-table-mobile": { "displayName": "Mobile game table", "purpose": "Compact position tables on narrow screens." },
+      "consequence-note": { "displayName": "Consequence note", "purpose": "Compact helper copy beside consequential Admin actions." }
     },
     "shadows": [],
     "motion": [],
