@@ -53,6 +53,11 @@ const EMPTY = {
   eligibilityConfirmed: false,
 };
 
+const REQUIRED_FIELDS: readonly (keyof typeof EMPTY)[] = [
+  'playerFirstName', 'playerLastName', 'dateOfBirth', 'parentName', 'parentEmail',
+  'parentMobile', 'memberAssociation', 'rank1Position', 'eligibilityConfirmed',
+];
+
 export function RegisterPage({ client, eventId, adminAssisted = false }: { client: Client; eventId: string; adminAssisted?: boolean }) {
   const [event, setEvent] = useState<PublicEventDTO | EventDTO | null>(null);
   const [associations, setAssociations] = useState<MemberAssociationDTO[] | null>(null);
@@ -170,8 +175,12 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     submitEvent.preventDefault();
     setSubmitError(null);
     setFieldErrors([]);
-    if (!form.rank1Position) {
-      setFieldErrors(['rank1Position']);
+    const missingFields = REQUIRED_FIELDS.filter((field) => {
+      const value = form[field];
+      return typeof value === 'string' ? value.trim().length === 0 : !value;
+    });
+    if (missingFields.length > 0) {
+      setFieldErrors(missingFields);
       return;
     }
     setBusy(true);
@@ -285,9 +294,9 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         The full eligibility criteria appear beside the confirmation at the end of this form.{' '}
         <a href="#eligibility-confirmation-summary">View eligibility criteria</a>.
       </p>
-      <p>
-        <a href={event.policyUrl ?? '#'} target="_blank" rel="noreferrer">Read the selection policy (opens in a new tab)</a>
-      </p>
+      {event.policyUrl ? (
+        <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Read the selection policy (opens in a new tab)</a></p>
+      ) : null}
       <div id="privacy-information" className="registration-privacy">
         <p>Privacy: these details are used for registration, payment, check-in and event messages.</p>
         <p>Parent contact details are not shown to volunteers.</p>
@@ -324,23 +333,23 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         <fieldset id="player-details" className="form-group">
           <legend>Player details</legend>
           <p>
-            <label htmlFor="playerFirstName">Player first name</label>
-            <input id="playerFirstName" autoComplete="given-name" value={form.playerFirstName} aria-invalid={invalid('playerFirstName') || undefined} aria-describedby={describedBy('playerFirstName')} onChange={(e) => set('playerFirstName', e.target.value)} />
+            <label htmlFor="playerFirstName">Player first name (required)</label>
+            <input id="playerFirstName" required autoComplete="given-name" value={form.playerFirstName} aria-invalid={invalid('playerFirstName') || undefined} aria-describedby={describedBy('playerFirstName')} onChange={(e) => set('playerFirstName', e.target.value)} />
             {invalid('playerFirstName') ? <span id="playerFirstName-error">Enter the player's first name.</span> : null}
           </p>
           <p>
-            <label htmlFor="playerLastName">Player last name</label>
-            <input id="playerLastName" autoComplete="family-name" value={form.playerLastName} aria-invalid={invalid('playerLastName') || undefined} aria-describedby={describedBy('playerLastName')} onChange={(e) => set('playerLastName', e.target.value)} />
+            <label htmlFor="playerLastName">Player last name (required)</label>
+            <input id="playerLastName" required autoComplete="family-name" value={form.playerLastName} aria-invalid={invalid('playerLastName') || undefined} aria-describedby={describedBy('playerLastName')} onChange={(e) => set('playerLastName', e.target.value)} />
             {invalid('playerLastName') ? <span id="playerLastName-error">Enter the player's last name.</span> : null}
           </p>
           <p>
-            <label htmlFor="dateOfBirth">Player date of birth</label>
-            <input id="dateOfBirth" type="date" max={melbourneDateKey(new Date())} value={form.dateOfBirth} aria-invalid={invalid('dateOfBirth') || undefined} aria-describedby={describedBy('dateOfBirth')} onChange={(e) => set('dateOfBirth', e.target.value)} />
+            <label htmlFor="dateOfBirth">Player date of birth (required)</label>
+            <input id="dateOfBirth" required type="date" max={melbourneDateKey(new Date())} value={form.dateOfBirth} aria-invalid={invalid('dateOfBirth') || undefined} aria-describedby={describedBy('dateOfBirth')} onChange={(e) => set('dateOfBirth', e.target.value)} />
             {invalid('dateOfBirth') ? <span id="dateOfBirth-error">Enter a valid date of birth.</span> : null}
           </p>
           <p>
-            <label htmlFor="memberAssociation">Member association</label>
-            <select id="memberAssociation" value={form.memberAssociation} disabled={!associations || associations.length === 0} aria-invalid={invalid('memberAssociation') || undefined} aria-describedby={describedBy('memberAssociation')} onChange={(e) => set('memberAssociation', e.target.value)}>
+            <label htmlFor="memberAssociation">Member association (required)</label>
+            <select id="memberAssociation" required value={form.memberAssociation} disabled={!associations || associations.length === 0} aria-invalid={invalid('memberAssociation') || undefined} aria-describedby={describedBy('memberAssociation')} onChange={(e) => set('memberAssociation', e.target.value)}>
               <option value="">{!associations ? 'Loading associations...' : associations.length ? 'Choose an association' : 'No active associations available'}</option>
               {associations?.map((association) => <option key={association.id} value={association.name}>{association.name}</option>)}
             </select>
@@ -352,18 +361,18 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         <fieldset id="parent-details" className="form-group">
           <legend>Parent or guardian details</legend>
           <p>
-            <label htmlFor="parentName">Parent or guardian name</label>
-            <input id="parentName" autoComplete="name" value={form.parentName} aria-invalid={invalid('parentName') || undefined} aria-describedby={describedBy('parentName')} onChange={(e) => set('parentName', e.target.value)} />
+            <label htmlFor="parentName">Parent or guardian name (required)</label>
+            <input id="parentName" required autoComplete="name" value={form.parentName} aria-invalid={invalid('parentName') || undefined} aria-describedby={describedBy('parentName')} onChange={(e) => set('parentName', e.target.value)} />
             {invalid('parentName') ? <span id="parentName-error">Enter a parent or guardian name.</span> : null}
           </p>
           <p>
-            <label htmlFor="parentEmail">Parent or guardian email</label>
-            <input id="parentEmail" type="email" autoComplete="email" value={form.parentEmail} aria-invalid={invalid('parentEmail') || undefined} aria-describedby={describedBy('parentEmail')} onChange={(e) => set('parentEmail', e.target.value)} />
+            <label htmlFor="parentEmail">Parent or guardian email (required)</label>
+            <input id="parentEmail" required type="email" autoComplete="email" value={form.parentEmail} aria-invalid={invalid('parentEmail') || undefined} aria-describedby={describedBy('parentEmail')} onChange={(e) => set('parentEmail', e.target.value)} />
             {invalid('parentEmail') ? <span id="parentEmail-error">Enter a valid email address.</span> : null}
           </p>
           <p>
-            <label htmlFor="parentMobile">Parent or guardian mobile</label>
-            <input id="parentMobile" type="tel" autoComplete="tel" value={form.parentMobile} aria-invalid={invalid('parentMobile') || undefined} aria-describedby={describedBy('parentMobile')} onChange={(e) => set('parentMobile', e.target.value)} />
+            <label htmlFor="parentMobile">Parent or guardian mobile (required)</label>
+            <input id="parentMobile" required type="tel" autoComplete="tel" value={form.parentMobile} aria-invalid={invalid('parentMobile') || undefined} aria-describedby={describedBy('parentMobile')} onChange={(e) => set('parentMobile', e.target.value)} />
             {invalid('parentMobile') ? <span id="parentMobile-error">Enter a parent or guardian mobile number.</span> : null}
           </p>
         </fieldset>
@@ -401,14 +410,16 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
 
         <fieldset id="eligibility-confirmation" className="form-group">
           <legend>Eligibility confirmation</legend>
-          <p id="eligibility-confirmation-summary">
-            The player must be {event.minAge}–{event.maxAge} years old as at 31 December {event.competitionYear}, be a permanent player in a domestic or representative competition at a Chisholm Region member association, and have played at least six association games between 1 January {event.competitionYear} and the day before the trial.
-          </p>
+          <ul id="eligibility-confirmation-summary" className="eligibility-criteria">
+            <li>The player must be {event.minAge}–{event.maxAge} years old as at 31 December {event.competitionYear}.</li>
+            <li>The player must be a permanent player in a domestic or representative competition at a Chisholm Region member association.</li>
+            <li>The player must have played at least six association games between 1 January {event.competitionYear} and the day before the trial.</li>
+          </ul>
           {invalid('eligibilityConfirmed') ? <p id="eligibilityConfirmed-error">Confirm the player meets the eligibility requirements.</p> : null}
           <p>
             <label htmlFor="eligibilityConfirmed">
-              <input id="eligibilityConfirmed" type="checkbox" checked={form.eligibilityConfirmed} aria-invalid={invalid('eligibilityConfirmed') || undefined} aria-describedby={['eligibility-confirmation-summary', describedBy('eligibilityConfirmed')].filter(Boolean).join(' ')} onChange={(e) => set('eligibilityConfirmed', e.target.checked)} />{' '}
-              I confirm the player meets these eligibility requirements.
+              <input id="eligibilityConfirmed" required type="checkbox" checked={form.eligibilityConfirmed} aria-invalid={invalid('eligibilityConfirmed') || undefined} aria-describedby={['eligibility-confirmation-summary', describedBy('eligibilityConfirmed')].filter(Boolean).join(' ')} onChange={(e) => set('eligibilityConfirmed', e.target.checked)} />{' '}
+              I confirm the player meets these eligibility requirements (required).
             </label>
           </p>
         </fieldset>

@@ -73,9 +73,7 @@ describe('RegisterPage', () => {
     const register = vi.fn().mockResolvedValue({ status: 'received' });
     const api = client(register);
     render(<RegisterPage client={api} eventId="e1" />);
-    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
-    fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GA' } });
-    await screen.findByRole('option', { name: 'MENA' });
+    await fillRegistrationForm();
     expect(screen.getByRole('button', { name: 'Submit registration' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     const receiptHeading = await screen.findByRole('heading', { name: /request received/i });
@@ -86,7 +84,87 @@ describe('RegisterPage', () => {
     expect(emailHandoffUnload.defaultPrevented).toBe(false);
     expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
     expect(api.getPublicEvent).toHaveBeenCalledWith('e1');
-    expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ eligibilityConfirmed: false }));
+    expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ eligibilityConfirmed: true }));
+  });
+
+  it('marks all server-required controls and leaves optional choices optional', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    await screen.findByRole('group', { name: 'Eligibility confirmation' });
+
+    const requiredFields = [
+      ['playerFirstName', 'Player first name'],
+      ['playerLastName', 'Player last name'],
+      ['dateOfBirth', 'Player date of birth'],
+      ['parentName', 'Parent or guardian name'],
+      ['parentEmail', 'Parent or guardian email'],
+      ['parentMobile', 'Parent or guardian mobile'],
+      ['memberAssociation', 'Member association'],
+      ['rank1Position', 'First position'],
+      ['eligibilityConfirmed', 'I confirm the player meets these eligibility requirements'],
+    ];
+    for (const [id, label] of requiredFields) {
+      const control = document.getElementById(id)!;
+      expect(control).toBeRequired();
+      expect(control.labels?.[0]?.textContent).toMatch(/\(required\)/i);
+      expect(screen.getByLabelText(new RegExp(label))).toBe(control);
+    }
+    expect(screen.getByLabelText(/second position/i)).not.toBeRequired();
+    expect(screen.getByLabelText(/third position/i)).not.toBeRequired();
+    expect(screen.getByLabelText(/open to extra games/i)).not.toBeRequired();
+  });
+
+  it('reports all missing public registration fields before requesting registration', async () => {
+    const register = vi.fn();
+    render(<RegisterPage client={client(register)} eventId="e1" />);
+    const submit = await screen.findByRole('button', { name: 'Submit registration' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    const summary = await screen.findByRole('alert');
+    for (const label of [
+      'Player first name', 'Player last name', 'Player date of birth', 'Parent or guardian name',
+      'Parent or guardian email', 'Parent or guardian mobile', 'Member association', 'First position', 'Eligibility confirmation',
+    ]) {
+      expect(within(summary).getByRole('link', { name: label })).toBeInTheDocument();
+    }
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it('reports all missing Admin-assisted fields before sending a payment link', async () => {
+    const dayOfRegistration = vi.fn();
+    const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()), dayOfRegistration });
+    render(<RegisterPage client={api} eventId="e1" adminAssisted />);
+    const sendPaymentLink = await screen.findByRole('button', { name: 'Send payment link' });
+    await waitFor(() => expect(sendPaymentLink).toBeEnabled());
+    fireEvent.click(sendPaymentLink);
+
+    const summary = await screen.findByRole('alert');
+    for (const label of [
+      'Player first name', 'Player last name', 'Player date of birth', 'Parent or guardian name',
+      'Parent or guardian email', 'Parent or guardian mobile', 'Member association', 'First position', 'Eligibility confirmation',
+    ]) {
+      expect(within(summary).getByRole('link', { name: label })).toBeInTheDocument();
+    }
+    expect(dayOfRegistration).not.toHaveBeenCalled();
+  });
+
+  it('presents eligibility criteria as three scannable items', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    const eligibility = await screen.findByRole('group', { name: 'Eligibility confirmation' });
+    const criteria = within(eligibility).getByRole('list');
+
+    expect(within(criteria).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(criteria).getByText(/12–15 years old as at 31 December 2027/i)).toBeInTheDocument();
+    expect(within(criteria).getByText(/permanent player in a domestic or representative competition/i)).toBeInTheDocument();
+    expect(within(criteria).getByText(/six association games between 1 January 2027/i)).toBeInTheDocument();
+  });
+
+  it('omits the selection-policy link when the event has no policy URL', async () => {
+    const api = client(vi.fn(), { getPublicEvent: vi.fn().mockResolvedValue({ ...publicEvent(), policyUrl: null }) });
+    render(<RegisterPage client={api} eventId="e1" />);
+
+    await screen.findByRole('heading', { name: '15/U Ladies' });
+    expect(screen.queryByRole('link', { name: /selection policy/i })).not.toBeInTheDocument();
   });
 
   it('requires an explicit first-position choice and explains the available positions', async () => {
@@ -232,11 +310,9 @@ describe('RegisterPage', () => {
   it('associates server field errors with controls and focuses the error summary', async () => {
     const register = vi.fn().mockRejectedValue({ status: 400, fields: ['dateOfBirth', 'rank2Position', 'memberAssociation'] });
     render(<RegisterPage client={client(register)} eventId="e1" />);
-    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+    await fillRegistrationForm();
     fireEvent.change(screen.getByLabelText(/player date of birth/i), { target: { value: '2011-04-02' } });
-    fireEvent.change(screen.getByLabelText(/first position/i), { target: { value: 'GS' } });
     fireEvent.change(screen.getByLabelText(/second position/i), { target: { value: 'WA' } });
-    fireEvent.change(screen.getByLabelText(/member association/i), { target: { value: 'MENA' } });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit registration' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
 
@@ -307,10 +383,7 @@ describe('RegisterPage', () => {
   it('preserves entered values after a transient provider failure and allows retry', async () => {
     const register = vi.fn().mockRejectedValueOnce(new Error('network error')).mockResolvedValueOnce({ status: 'received' });
     render(<RegisterPage client={client(register)} eventId="e1" />);
-    const firstName = await screen.findByLabelText(/player first name/i);
-    fireEvent.change(firstName, { target: { value: 'Ada' } });
-    fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GS' } });
-    fireEvent.change(screen.getByLabelText(/parent or guardian email/i), { target: { value: 'anne@example.com' } });
+    await fillRegistrationForm();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit registration' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not start registration/i);
