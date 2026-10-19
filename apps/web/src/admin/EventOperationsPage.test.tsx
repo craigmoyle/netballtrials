@@ -65,9 +65,11 @@ describe('EventOperationsPage', () => {
     fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '4821' } });
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
     await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
-    fireEvent.click(screen.getByRole('button', { name: /close check-in/i }));
+    const closeCheckIn = screen.getByRole('button', { name: /close check-in/i });
+    const checkInAction = closeCheckIn.parentElement!;
+    fireEvent.click(closeCheckIn);
     await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
-    expect(await screen.findByText('Volunteer check-in is closed.')).toBeInTheDocument();
+    expect(await within(checkInAction).findByRole('status')).toHaveTextContent('Volunteer check-in is closed.');
     fireEvent.click(screen.getByRole('button', { name: /close event/i }));
     await waitFor(() => expect(client.closeEvent).toHaveBeenCalledWith('e1'));
     expect(await screen.findByText('Registration is closed.')).toBeInTheDocument();
@@ -143,6 +145,32 @@ describe('EventOperationsPage', () => {
     const pinWarning = screen.getByText(/removing the pin revokes current volunteer sessions\. you can set a new pin later/i);
     expect(removePin).toHaveClass('button-secondary');
     expect(removePin.compareDocumentPosition(pinWarning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('keeps PIN removal success beside the Remove PIN action', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const client = operationsClient({ checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: true, checkInClosedAt: null }) });
+    renderOperations(client);
+    const removePin = await screen.findByRole('button', { name: 'Remove PIN' });
+    const pinRemovalAction = removePin.parentElement!;
+    fireEvent.click(removePin);
+
+    expect(await within(pinRemovalAction).findByRole('status')).toHaveTextContent(/PIN removed\. Existing volunteer sessions have been revoked\./i);
+    expect(client.clearCheckInPin).toHaveBeenCalledWith('e1');
+  });
+
+  it('keeps PIN removal errors beside the Remove PIN action', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const client = operationsClient({
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: true, checkInClosedAt: null }),
+      clearCheckInPin: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+    renderOperations(client);
+    const removePin = await screen.findByRole('button', { name: 'Remove PIN' });
+    const pinRemovalAction = removePin.parentElement!;
+    fireEvent.click(removePin);
+
+    expect(await within(pinRemovalAction).findByRole('alert')).toHaveTextContent(/could not remove the pin/i);
   });
 
   it('keeps day-of actions available when check-in is open', async () => {

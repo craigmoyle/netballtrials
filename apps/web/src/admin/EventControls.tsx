@@ -29,8 +29,11 @@ export function EventControls({
   const [eventMessage, setEventMessage] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinMessage, setPinMessage] = useState<string | null>(null);
-  const [checkInError, setCheckInError] = useState<string | null>(null);
-  const [checkInMessage, setCheckInMessage] = useState<string | null>(null);
+  const [checkInSettingsError, setCheckInSettingsError] = useState<string | null>(null);
+  const [pinRemovalError, setPinRemovalError] = useState<string | null>(null);
+  const [pinRemovalMessage, setPinRemovalMessage] = useState<string | null>(null);
+  const [checkInCloseError, setCheckInCloseError] = useState<string | null>(null);
+  const [checkInCloseMessage, setCheckInCloseMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -40,7 +43,7 @@ export function EventControls({
         setPinConfigured(settings.pinConfigured);
         setCheckInClosedAt(settings.checkInClosedAt);
       })
-      .catch(() => { if (active) setCheckInError('Could not load check-in settings.'); });
+      .catch(() => { if (active) setCheckInSettingsError('Could not load check-in settings.'); });
     return () => { active = false; };
   }, [client, eventId]);
 
@@ -72,6 +75,8 @@ export function EventControls({
     try {
       await client.setCheckInPin(eventId, pin);
       setPinConfigured(true);
+      setPinRemovalError(null);
+      setPinRemovalMessage(null);
       setPinMessage('Check-in PIN saved. Share the displayed PIN with approved volunteers; it is stored as a hash.');
     } catch {
       setPinError('Could not save the PIN. It has not been shown or changed; try again.');
@@ -83,17 +88,17 @@ export function EventControls({
   async function clearPin() {
     if (!window.confirm('Remove the check-in PIN and revoke current volunteer sessions?')) return;
     setBusy(true);
-    setCheckInError(null);
-    setCheckInMessage(null);
+    setPinRemovalError(null);
+    setPinRemovalMessage(null);
     try {
       await client.clearCheckInPin(eventId);
       setPinConfigured(false);
       setPin('');
       setPinError(null);
       setPinMessage(null);
-      setCheckInMessage('PIN removed. Existing volunteer sessions have been revoked.');
+      setPinRemovalMessage('PIN removed. Existing volunteer sessions have been revoked.');
     } catch {
-      setCheckInError('Could not remove the PIN. Refresh this page and try again.');
+      setPinRemovalError('Could not remove the PIN. Refresh this page and try again.');
     } finally {
       setBusy(false);
     }
@@ -102,14 +107,14 @@ export function EventControls({
   async function closeCheckIn() {
     if (!window.confirm('Close volunteer check-in and revoke current sessions?')) return;
     setBusy(true);
-    setCheckInError(null);
-    setCheckInMessage(null);
+    setCheckInCloseError(null);
+    setCheckInCloseMessage(null);
     try {
       await client.closeCheckIn(eventId);
       setCheckInClosedAt(new Date().toISOString());
-      setCheckInMessage('Volunteer check-in is closed.');
+      setCheckInCloseMessage('Volunteer check-in is closed.');
     } catch {
-      setCheckInError('Could not close check-in. Refresh this page and try again.');
+      setCheckInCloseError('Could not close check-in. Refresh this page and try again.');
     } finally {
       setBusy(false);
     }
@@ -142,6 +147,7 @@ export function EventControls({
       <h3>Volunteer check-in</h3>
       <p>PIN: {pinConfigured === null ? 'Loading status...' : pinConfigured ? 'Configured' : 'Not configured'}</p>
       <p>Status: {checkInClosedAt ? 'Closed' : 'Open'}</p>
+      {checkInSettingsError ? <p role="alert">{checkInSettingsError}</p> : null}
       <p>
         <label htmlFor="checkInPin">Set or rotate check-in PIN</label>
         <input
@@ -153,26 +159,34 @@ export function EventControls({
           value={pin}
           aria-invalid={pinError ? true : undefined}
           aria-describedby={pinError ? 'checkInPin-error' : undefined}
-          onChange={(event) => { setPin(event.target.value); setPinError(null); setPinMessage(null); }}
+          onChange={(event) => {
+            setPin(event.target.value);
+            setPinError(null);
+            setPinMessage(null);
+            setPinRemovalError(null);
+            setPinRemovalMessage(null);
+          }}
         />
         {pinError ? <span id="checkInPin-error" role="alert">{pinError}</span> : null}
         {pinMessage ? <span role="status">{pinMessage}</span> : null}
         <button type="button" disabled={busy || pin.length === 0} onClick={savePin}>Set or rotate PIN</button>
       </p>
-      {pinConfigured ? (
+      {pinConfigured || pinRemovalError || pinRemovalMessage ? (
         <div className="event-action-group">
-          <button type="button" className="button-secondary" disabled={busy} onClick={clearPin}>Remove PIN</button>
-          <p className="event-consequence-note">Removing the PIN revokes current volunteer sessions. You can set a new PIN later.</p>
+          {pinConfigured ? <button type="button" className="button-secondary" disabled={busy} onClick={clearPin}>Remove PIN</button> : null}
+          {pinConfigured ? <p className="event-consequence-note">Removing the PIN revokes current volunteer sessions. You can set a new PIN later.</p> : null}
+          {pinRemovalError ? <p role="alert">{pinRemovalError}</p> : null}
+          {pinRemovalMessage ? <p role="status">{pinRemovalMessage}</p> : null}
         </div>
       ) : null}
-      {!checkInClosedAt ? (
+      {!checkInClosedAt || checkInCloseError || checkInCloseMessage ? (
         <div className="event-action-group">
-          <button type="button" className="button-secondary" disabled={busy} onClick={closeCheckIn}>Close check-in</button>
-          <p className="event-consequence-note">Closing check-in revokes active volunteer sessions. This event’s check-in cannot be reopened.</p>
+          {!checkInClosedAt ? <button type="button" className="button-secondary" disabled={busy} onClick={closeCheckIn}>Close check-in</button> : null}
+          {!checkInClosedAt ? <p className="event-consequence-note">Closing check-in revokes active volunteer sessions. This event’s check-in cannot be reopened.</p> : null}
+          {checkInCloseError ? <p role="alert">{checkInCloseError}</p> : null}
+          {checkInCloseMessage ? <p role="status">{checkInCloseMessage}</p> : null}
         </div>
       ) : null}
-      {checkInError ? <p role="alert">{checkInError}</p> : null}
-      {checkInMessage ? <p role="status">{checkInMessage}</p> : null}
       <EventCourtColors client={client} eventId={eventId} courts={courts} />
     </section>
   );
