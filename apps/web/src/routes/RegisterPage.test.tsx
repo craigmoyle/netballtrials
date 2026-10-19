@@ -203,6 +203,21 @@ describe('RegisterPage', () => {
     expect(screen.getByText(/clear a lower-ranked choice before moving it higher/i)).toBeInTheDocument();
   });
 
+  it('shows eligibility at a glance before data entry and links to the full criteria', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    const summary = await screen.findByRole('region', { name: 'Eligibility at a glance' });
+    expect(within(summary).getByText(/Age: 12–15 on 31 December 2027/i)).toBeInTheDocument();
+    expect(within(summary).getByText(/Permanent player in a domestic or representative competition at a Chisholm Region member association/i)).toBeInTheDocument();
+    expect(within(summary).getByText(/at least six association games from 1 January 2027 to the day before the trial/i)).toBeInTheDocument();
+    expect(within(summary).getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
+
+    const firstField = await screen.findByLabelText(/player first name/i);
+    expect(summary.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
+    expect(within(eligibility).getAllByRole('listitem')).toHaveLength(3);
+  });
+
   it('groups registration details and keeps eligibility criteria beside confirmation', async () => {
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
 
@@ -210,7 +225,7 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('group', { name: 'Parent or guardian details' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Position preferences' })).toBeInTheDocument();
     const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
-    expect(screen.getByText('Age range: 12–15 years old as at 31 December 2027.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Eligibility at a glance' })).toBeInTheDocument();
     expect(within(eligibility).getByText(/12–15 years old as at 31 December 2027/i)).toBeInTheDocument();
     expect(within(eligibility).getByText(/six association games between 1 January 2027 and the day before the trial/i)).toBeInTheDocument();
     expect(within(eligibility).getByLabelText(/I confirm the player meets these eligibility requirements/i)).toBeInTheDocument();
@@ -220,15 +235,16 @@ describe('RegisterPage', () => {
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
 
     const sectionsNav = await screen.findByRole('navigation', { name: 'Registration sections' });
+    expect(within(sectionsNav).getByText('Parent / guardian')).toBeInTheDocument();
     const sections = [
-      ['Player details', '#player-details'],
-      ['Parent or guardian details', '#parent-details'],
-      ['Position preferences', '#position-preferences'],
-      ['Eligibility confirmation', '#eligibility-confirmation'],
+      ['Player', 'Player details', '#player-details'],
+      ['Parent / guardian', 'Parent or guardian details', '#parent-details'],
+      ['Positions', 'Position preferences', '#position-preferences'],
+      ['Eligibility', 'Eligibility confirmation', '#eligibility-confirmation'],
     ];
-    for (const [label, href] of sections) {
-      expect(within(sectionsNav).getByRole('link', { name: label })).toHaveAttribute('href', href);
-      expect(screen.getByRole('group', { name: label })).toHaveAttribute('id', href.slice(1));
+    for (const [linkLabel, sectionLabel, href] of sections) {
+      expect(within(sectionsNav).getByRole('link', { name: linkLabel })).toHaveAttribute('href', href);
+      expect(screen.getByRole('group', { name: sectionLabel })).toHaveAttribute('id', href.slice(1));
     }
   });
 
@@ -297,13 +313,17 @@ describe('RegisterPage', () => {
     expect(association.tagName).toBe('SELECT');
     expect(screen.getByRole('option', { name: 'MENA' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Old Club' })).not.toBeInTheDocument();
-    expect(screen.getByText(/the full eligibility criteria appear beside the confirmation at the end of this form/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View eligibility criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
-    expect(screen.getAllByText(/permanent player in a domestic or representative competition/i)).toHaveLength(1);
-    const policyLink = screen.getByRole('link', { name: 'Read the selection policy (opens in a new tab)' });
+    expect(screen.getByRole('region', { name: 'Eligibility at a glance' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
+    expect(screen.getAllByText(/permanent player in a domestic or representative competition/i)).toHaveLength(2);
+    const policyLink = screen.getByRole('link', { name: 'Selection policy (new tab)' });
     expect(policyLink).toHaveAttribute('href', publicEvent().policyUrl);
     expect(policyLink).toHaveAttribute('target', '_blank');
     expect(policyLink).toHaveAttribute('rel', 'noreferrer');
+    expect(screen.getByText(/volunteers do not see parent contact details/i)).toBeInTheDocument();
+    const privacyDetails = screen.getByText('Privacy details');
+    expect(privacyDetails.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(privacyDetails);
     expect(screen.getByText(/12 calendar months after the event date/i)).toBeInTheDocument();
   });
 
@@ -354,7 +374,7 @@ describe('RegisterPage', () => {
       target: position, isIntersecting: true, intersectionRatio: 1,
       boundingClientRect: bounds, intersectionRect: bounds, rootBounds: null, time: 1,
     }], {} as IntersectionObserver));
-    expect(screen.getByRole('link', { name: 'Position preferences' })).toHaveAttribute('aria-current', 'location');
+    expect(screen.getByRole('link', { name: 'Positions' })).toHaveAttribute('aria-current', 'location');
   });
 
   it('warns before internal navigation and unload only when in-memory details are incomplete', async () => {

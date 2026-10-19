@@ -44,6 +44,7 @@ export function ScanPage({ client }: { client: Client }) {
   const [undoableId, setUndoableId] = useState<string | null>(null);
   const [canRescanLastToken, setCanRescanLastToken] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const lastToken = useRef('');
   const busyRef = useRef(false);
   const sessionIsActive = useRef<(() => boolean) | null>(null);
@@ -98,6 +99,7 @@ export function ScanPage({ client }: { client: Client }) {
           return;
         }
         controls = started;
+        setCameraReady(true);
       } catch {
         if (!stopped) setError('Camera unavailable. Check browser permission or use manual lookup.');
       }
@@ -119,6 +121,7 @@ export function ScanPage({ client }: { client: Client }) {
     if (!lastToken.current || busyRef.current) return;
     lastToken.current = '';
     setCanRescanLastToken(false);
+    setMessage(null);
   }
 
   async function retryScan() {
@@ -152,6 +155,13 @@ export function ScanPage({ client }: { client: Client }) {
       <h1>Scan</h1>
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
+      {!result && !message && !error && !busy ? (
+        <p role="status" className="scan-instruction">
+          {cameraReady
+            ? "Camera ready. Hold the player's QR code steady in the frame."
+            : 'Starting camera. Allow access if prompted.'}
+        </p>
+      ) : null}
       <video id="scan-video" muted playsInline aria-label="Camera view for scanning player QR codes" />
       {label ? <p role="status" className="scan-result" data-tone={label.tone}>{label.text}</p> : null}
       {error && lastToken.current ? <button type="button" disabled={busy} onClick={retryScan}>{busy ? 'Retrying...' : 'Retry scan'}</button> : null}

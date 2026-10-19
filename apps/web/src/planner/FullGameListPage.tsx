@@ -685,31 +685,35 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                 </section>
               ) : null}
               {viewMode === 'team' && !editing && !suffixEditing ? (
-                <label htmlFor="team-view-round">Team view round
-                  <select
-                    id="team-view-round"
-                    aria-label="Team view round"
-                    value={teamViewRound}
-                    onChange={(changeEvent) => {
-                      const value = changeEvent.target.value;
-                      if (value === 'all') setTeamViewRound('all');
-                      else {
-                        const round = Number(value);
-                        setTeamViewRound(round);
-                        setSelectedRound(round);
-                      }
-                    }}
-                  >
-                    <option value="all">All rounds</option>
-                    {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
-                  </select>
-                </label>
+                <div className="full-game-round-filter">
+                  <label htmlFor="team-view-round">Team view round
+                    <select
+                      id="team-view-round"
+                      aria-label="Team view round"
+                      value={teamViewRound}
+                      onChange={(changeEvent) => {
+                        const value = changeEvent.target.value;
+                        if (value === 'all') setTeamViewRound('all');
+                        else {
+                          const round = Number(value);
+                          setTeamViewRound(round);
+                          setSelectedRound(round);
+                        }
+                      }}
+                    >
+                      <option value="all">All rounds</option>
+                      {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
+                    </select>
+                  </label>
+                </div>
               ) : viewMode === 'position' ? (
-                <label htmlFor="position-round">Round for position view
-                  <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
-                    {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
-                  </select>
-                </label>
+                <div className="full-game-round-filter">
+                  <label htmlFor="position-round">Round for position view
+                    <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
+                      {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
+                    </select>
+                  </label>
+                </div>
               ) : null}
 
               {viewMode !== 'statistics' && viewMode !== 'reference' && plan && !historyPlan && plan.frozenThroughRound < plan.rounds ? (

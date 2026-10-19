@@ -144,12 +144,21 @@ button:disabled { opacity: 0.62; cursor: not-allowed; }
 }
 
 .public-page > p { max-width: 70ch; }
-.registration-privacy { max-width: 65ch; margin-block: 1rem; }
+.registration-eligibility-summary { max-width: 65ch; margin-block: 0.5rem; }
+.registration-eligibility-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; margin-bottom: 0.35rem; }
+.registration-eligibility-summary h2 { margin: 0; font-size: 1.15rem; }
+.registration-eligibility-summary ul { margin: 0; padding-inline-start: 1.25rem; }
+.registration-eligibility-summary li + li { margin-top: 0.15rem; }
+.registration-privacy-note { max-width: 65ch; margin-block: 0.35rem; }
+.registration-privacy { max-width: 65ch; margin-block: 0.35rem; }
+.registration-privacy summary { min-height: 2.75rem; padding-block: 0.5rem; color: var(--burgundy); cursor: pointer; text-decoration: underline; text-underline-offset: 0.18em; }
 .registration-privacy p { margin-block: 0.35rem; }
 .registration-form .form-group > p { margin-block: 0.65rem; }
+.registration-form > .form-group:first-child { margin-top: 0.5rem; }
 .eligibility-criteria { max-width: 70ch; margin-block: 0.5rem 1rem; padding-inline-start: 1.25rem; }
 .eligibility-criteria li + li { margin-top: 0.35rem; }
-.registration-sections { margin-block: 1rem 1.5rem; padding-block: 0.75rem; border-block: 1px solid var(--line); }
+.registration-page > p { margin-block: 0.5rem; }
+.registration-sections { margin-block: 0.5rem; padding-block: 0.4rem; border-block: 1px solid var(--line); }
 .registration-sections ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.25rem 0.75rem; margin: 0; padding-inline-start: 1.25rem; }
 .registration-sections li { min-width: 0; }
 .registration-sections a { display: flex; align-items: center; min-height: 2.75rem; overflow-wrap: anywhere; }
@@ -212,8 +221,9 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--in
 .event-workflow-toggle { display: none; }
 .event-workflow-links { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; margin: 0; }
 .event-workflow-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; }
-.event-workflow-group-label { font-weight: 700; }
-.event-workflow-links [aria-current="page"] { font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.event-workflow-group-label { color: var(--placeholder-ink); font-size: 0.9rem; font-weight: 650; }
+.event-workflow-links a:not([aria-current="page"]) { color: var(--ink); font-weight: 400; }
+.event-workflow-links [aria-current="page"] { color: var(--burgundy-dark); font-weight: 700; text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 0.18em; }
 .event-controls > h3, .event-court-colors > h3 { margin-block: 1.5rem 0.5rem; }
 .event-workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; }
 .event-workflow-grid .event-workflow-group { min-width: 0; }
@@ -250,6 +260,7 @@ th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--line); vertica
 thead { background: var(--blue-pale); }
 
 .scan-panel { max-width: 48rem; margin-inline: auto; padding: 1rem; }
+.scan-instruction { max-width: 40rem; margin-block: 0.5rem; }
 .scan-panel video { display: block; width: 100%; max-width: 40rem; aspect-ratio: 4 / 3; background: var(--camera-background); object-fit: cover; }
 .scan-result { margin-block: 1rem; padding: 1rem; font-size: var(--type-scan-result); font-weight: 800; line-height: 1.2; }
 .scan-result[data-tone="ok"] { color: var(--success-ink); background: var(--success-surface); }
@@ -257,6 +268,10 @@ thead { background: var(--blue-pale); }
 .scan-result[data-tone="error"] { color: var(--error-ink); background: var(--error-surface); }
 
 @media (max-width: 38rem) {
+  .public-site-header { gap: 0.35rem 1rem; padding-block: 0.5rem; }
+  .public-site-header .public-access-nav { column-gap: 0.5rem; row-gap: 0.25rem; }
+  .public-site-header .public-access-label, .public-site-header .public-access-nav a { font-size: 0.875rem; white-space: nowrap; }
+  .registration-page { margin-top: 0; }
   .event-workflow-toggle { display: block; width: 100%; text-align: left; }
   .event-workflow-links { display: none; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
   .event-workflow-links.is-open { display: flex; }
@@ -306,6 +321,7 @@ thead { background: var(--blue-pale); }
 .full-game-loading-skeleton span:nth-child(3) { width: 64%; }
 .full-game-header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 2px solid var(--blue-pale); }
 .full-game-header h1 { margin: 0; }
+.full-game-round-filter { position: sticky; top: 0; z-index: 2; margin-block: 0.5rem; padding-block: 0.5rem; background: var(--canvas); border-bottom: 1px solid var(--line); }
 .full-game-header p { margin: 0.3rem 0 0; }
 .full-game-header label { min-width: 10rem; }
 .full-game-header select { display: block; margin-top: 0.25rem; }

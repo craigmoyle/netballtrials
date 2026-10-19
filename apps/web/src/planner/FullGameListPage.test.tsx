@@ -279,6 +279,7 @@ describe('FullGameListPage', () => {
 
     const teamRound = screen.getByLabelText('Team view round');
     expect(teamRound).toHaveValue('all');
+    expect(teamRound.closest('.full-game-round-filter')).not.toBeNull();
     expect(screen.getAllByRole('table')).toHaveLength(8);
     fireEvent.change(teamRound, { target: { value: '2' } });
     expect(screen.getAllByRole('table')).toHaveLength(4);
@@ -604,5 +605,6 @@ describe('FullGameListPage', () => {
     expect(screen.getByRole('button', { name: 'Edit round 1' })).toBeVisible();
     fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
     expect(screen.getByLabelText('Round for position view')).toBeVisible();
+    expect(screen.getByLabelText('Round for position view').closest('.full-game-round-filter')).not.toBeNull();
   });
 });

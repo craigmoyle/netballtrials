@@ -31,10 +31,10 @@ const POSITION_LABELS: Record<string, string> = {
 };
 
 const REGISTRATION_SECTIONS = [
-  ['player-details', 'Player details'],
-  ['parent-details', 'Parent or guardian details'],
-  ['position-preferences', 'Position preferences'],
-  ['eligibility-confirmation', 'Eligibility confirmation'],
+  ['player-details', 'Player'],
+  ['parent-details', 'Parent / guardian'],
+  ['position-preferences', 'Positions'],
+  ['eligibility-confirmation', 'Eligibility'],
 ] as const;
 type RegistrationSectionId = (typeof REGISTRATION_SECTIONS)[number][0];
 
@@ -285,24 +285,31 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   }
 
   return (
-    <section className="public-page">
+    <section className="public-page registration-page">
       <h1>{event.name}</h1>
       <p>{formatTrialDate(event.eventDate)} at {event.venue} · arrival {event.startTime} · first whistle {event.firstWhistle}</p>
       <p>Registration fee: {fee}</p>
-      <p>Age range: {event.minAge}–{event.maxAge} years old as at 31 December {event.competitionYear}.</p>
-      <p id="eligibility-introduction">
-        The full eligibility criteria appear beside the confirmation at the end of this form.{' '}
-        <a href="#eligibility-confirmation-summary">View eligibility criteria</a>.
-      </p>
-      {event.policyUrl ? (
-        <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Read the selection policy (opens in a new tab)</a></p>
-      ) : null}
-      <div id="privacy-information" className="registration-privacy">
-        <p>Privacy: these details are used for registration, payment, check-in and event messages.</p>
-        <p>Parent contact details are not shown to volunteers.</p>
+      <section className="registration-eligibility-summary" aria-labelledby="registration-eligibility-heading">
+        <div className="registration-eligibility-heading">
+          <h2 id="registration-eligibility-heading">Eligibility at a glance</h2>
+          <a href="#eligibility-confirmation-summary">View full criteria</a>
+        </div>
+        <ul>
+          <li>Age: {event.minAge}–{event.maxAge} on 31 December {event.competitionYear}.</li>
+          <li>Permanent player in a domestic or representative competition at a Chisholm Region member association.</li>
+          <li>At least six association games from 1 January {event.competitionYear} to the day before the trial.</li>
+        </ul>
+      </section>
+      <p className="registration-privacy-note">Volunteers do not see parent contact details.</p>
+      <details id="privacy-information" className="registration-privacy">
+        <summary>Privacy details</summary>
+        <p>These details are used for registration, payment, check-in and event messages.</p>
         <p>The app removes or anonymises personal details 12 calendar months after the event date.</p>
         <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
-      </div>
+      </details>
+      {event.policyUrl ? (
+        <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p>
+      ) : null}
       <nav className="registration-sections" aria-label="Registration sections">
         <ol>
           {REGISTRATION_SECTIONS.map(([id, label]) => (

@@ -36,6 +36,14 @@ async function waitForDecoder() {
 }
 
 describe('ScanPage', () => {
+  it('explains what to do while the camera starts and when it is ready', async () => {
+    render(<MemoryRouter><ScanPage client={{ scan: vi.fn() } as any} /></MemoryRouter>);
+
+    expect(screen.getByRole('status')).toHaveTextContent(/starting camera.*allow access if prompted/i);
+    await waitForDecoder();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/camera ready.*hold the player's qr code steady in the frame/i));
+  });
+
   it('retries a failed token and explicitly re-arms the same QR after undo', async () => {
     const client = {
       scan: vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue(result()),
@@ -55,6 +63,7 @@ describe('ScanPage', () => {
     await act(async () => { decoded!({ getText: () => 'same-qr-token' }); });
     expect(client.scan).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: 'Scan same code again' }));
+    expect(screen.getByRole('status')).toHaveTextContent(/camera ready.*hold the player's qr code steady in the frame/i);
     await act(async () => { decoded!({ getText: () => 'same-qr-token' }); });
     expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 7 — Refer to committee');
     await act(async () => { decoded!({ getText: () => 'different-qr-token' }); });
