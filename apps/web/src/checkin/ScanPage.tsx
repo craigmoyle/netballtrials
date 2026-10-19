@@ -42,6 +42,7 @@ export function ScanPage({ client }: { client: Client }) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [undoableId, setUndoableId] = useState<string | null>(null);
+  const [canRescanLastToken, setCanRescanLastToken] = useState(false);
   const [busy, setBusy] = useState(false);
   const lastToken = useRef('');
   const busyRef = useRef(false);
@@ -89,6 +90,7 @@ export function ScanPage({ client }: { client: Client }) {
           const token = decoded?.getText() ?? '';
           if (!token || stopped || busyRef.current || token === lastToken.current) return;
           lastToken.current = token;
+          setCanRescanLastToken(false);
           void processToken(token, isActive);
         });
         if (stopped) {
@@ -113,6 +115,12 @@ export function ScanPage({ client }: { client: Client }) {
     };
   }, [processToken]);
 
+  function rearmLastToken() {
+    if (!lastToken.current || busyRef.current) return;
+    lastToken.current = '';
+    setCanRescanLastToken(false);
+  }
+
   async function retryScan() {
     if (!lastToken.current || !sessionIsActive.current) return;
     await processToken(lastToken.current, sessionIsActive.current);
@@ -127,6 +135,7 @@ export function ScanPage({ client }: { client: Client }) {
       await client.undoCheckIn(undoableId);
       setUndoableId(null);
       setResult(null);
+      setCanRescanLastToken(true);
       setMessage('Check-in undone. The player may now be checked in again.');
       notifyCheckInUpdated();
     } catch {
@@ -146,6 +155,7 @@ export function ScanPage({ client }: { client: Client }) {
       <video id="scan-video" muted playsInline aria-label="Camera view for scanning player QR codes" />
       {label ? <p role="status" className="scan-result" data-tone={label.tone}>{label.text}</p> : null}
       {error && lastToken.current ? <button type="button" disabled={busy} onClick={retryScan}>{busy ? 'Retrying...' : 'Retry scan'}</button> : null}
+      {canRescanLastToken ? <button type="button" disabled={busy} onClick={rearmLastToken}>Scan same code again</button> : null}
       {undoableId ? <button type="button" disabled={busy} onClick={undo}>Undo last check-in</button> : null}
       <p><Link to="/check-in/lookup">Look up by name instead</Link></p>
     </section>

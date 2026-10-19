@@ -36,9 +36,9 @@ async function waitForDecoder() {
 }
 
 describe('ScanPage', () => {
-  it('retries the same failed token and shows Number/name with committee referral and undo', async () => {
+  it('retries a failed token and explicitly re-arms the same QR after undo', async () => {
     const client = {
-      scan: vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(result()),
+      scan: vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue(result()),
       undoCheckIn: vi.fn().mockResolvedValue(undefined),
     };
     render(<MemoryRouter><ScanPage client={client as any} /></MemoryRouter>);
@@ -51,6 +51,16 @@ describe('ScanPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /undo last check-in/i }));
     await waitFor(() => expect(client.undoCheckIn).toHaveBeenCalledWith('registration-1'));
     expect(await screen.findByRole('status')).toHaveTextContent(/check-in undone/i);
+
+    await act(async () => { decoded!({ getText: () => 'same-qr-token' }); });
+    expect(client.scan).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Scan same code again' }));
+    await act(async () => { decoded!({ getText: () => 'same-qr-token' }); });
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 7 — Refer to committee');
+    await act(async () => { decoded!({ getText: () => 'different-qr-token' }); });
+    expect(client.scan.mock.calls.map(([token]) => token)).toEqual([
+      'same-qr-token', 'same-qr-token', 'same-qr-token', 'different-qr-token',
+    ]);
   });
 
   it('refreshes the live arrival count after a QR check-in', async () => {
