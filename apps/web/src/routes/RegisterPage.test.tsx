@@ -52,7 +52,8 @@ describe('RegisterPage', () => {
     fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
     fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GA' } });
     await screen.findByRole('option', { name: 'MENA' });
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    expect(screen.getByRole('button', { name: 'Submit registration' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
     expect(screen.getByText(/check the parent or guardian email/i)).toBeInTheDocument();
     expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
@@ -70,7 +71,7 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('option', { name: 'Choose a first position' })).toHaveValue('');
     expect(within(firstPosition).getByRole('option', { name: 'Goal shooter (GS)' })).toHaveValue('GS');
     await screen.findByRole('option', { name: 'MENA' });
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
 
     const summary = await screen.findByRole('alert');
     expect(summary).toHaveTextContent('First position');
@@ -85,6 +86,8 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('group', { name: 'Parent or guardian details' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Position preferences' })).toBeInTheDocument();
     const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
+    expect(screen.getByText('Age range: 12–15 years old as at 31 December 2027.')).toBeInTheDocument();
+    expect(within(eligibility).getByText(/12–15 years old as at 31 December 2027/i)).toBeInTheDocument();
     expect(within(eligibility).getByText(/six association games between 1 January 2027 and the day before the trial/i)).toBeInTheDocument();
     expect(within(eligibility).getByLabelText(/I confirm the player meets these eligibility requirements/i)).toBeInTheDocument();
   });
@@ -122,7 +125,8 @@ describe('RegisterPage', () => {
 
     expect(await screen.findByRole('heading', { name: '15/U Ladies' })).toBeInTheDocument();
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    expect(screen.getByRole('button', { name: 'Send payment link' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
 
     expect(await screen.findByRole('heading', { name: 'Checkout link sent' })).toBeInTheDocument();
     expect(screen.getByText(/not eligible for check-in or game planning until payment is confirmed/i)).toBeInTheDocument();
@@ -140,12 +144,12 @@ describe('RegisterPage', () => {
     const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()), dayOfRegistration });
     render(<RegisterPage client={api} eventId="e1" adminAssisted />);
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not prepare or send the secure checkout link/i);
     expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
     expect(screen.getByLabelText(/parent or guardian email/i)).toHaveValue('anne@example.com');
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
     expect(await screen.findByRole('heading', { name: 'Checkout link sent' })).toBeInTheDocument();
     expect(dayOfRegistration).toHaveBeenCalledTimes(2);
   });
@@ -155,7 +159,7 @@ describe('RegisterPage', () => {
     const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()), dayOfRegistration });
     render(<RegisterPage client={api} eventId="e1" adminAssisted />);
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/this player is already registered/i);
@@ -183,8 +187,8 @@ describe('RegisterPage', () => {
     fireEvent.change(screen.getByLabelText(/first position/i), { target: { value: 'GS' } });
     fireEvent.change(screen.getByLabelText(/second position/i), { target: { value: 'WA' } });
     fireEvent.change(screen.getByLabelText(/member association/i), { target: { value: 'MENA' } });
-    await waitFor(() => expect(screen.getByRole('button', { name: /continue to payment/i })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Submit registration' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
 
     const summary = await screen.findByRole('alert');
     expect(summary).toHaveAttribute('tabindex', '-1');
@@ -205,12 +209,12 @@ describe('RegisterPage', () => {
     fireEvent.change(firstName, { target: { value: 'Ada' } });
     fireEvent.change(await screen.findByLabelText(/first position/i), { target: { value: 'GS' } });
     fireEvent.change(screen.getByLabelText(/parent or guardian email/i), { target: { value: 'anne@example.com' } });
-    await waitFor(() => expect(screen.getByRole('button', { name: /continue to payment/i })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Submit registration' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not start registration/i);
     expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
     expect(screen.getByLabelText(/parent or guardian email/i)).toHaveValue('anne@example.com');
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
     expect(register).toHaveBeenCalledTimes(2);
   });
@@ -221,7 +225,7 @@ describe('RegisterPage', () => {
     const completeFakePayment = vi.fn().mockResolvedValue({ status: 'paid' });
     render(<RegisterPage client={client(register, { completeFakePayment })} eventId="e1" />);
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
 
     expect(await screen.findByRole('heading', { name: 'Test payment simulation' })).toBeInTheDocument();
     expect(screen.getByText(/no real payment/i)).toBeInTheDocument();
@@ -240,7 +244,7 @@ describe('RegisterPage', () => {
     const completeFakePayment = vi.fn().mockResolvedValue({ status: 'not_completed' });
     render(<RegisterPage client={client(register, { completeFakePayment })} eventId="e1" />);
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: /continue to payment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Simulate successful payment' }));
 
     const alert = await screen.findByRole('alert');

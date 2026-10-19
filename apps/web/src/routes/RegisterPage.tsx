@@ -211,6 +211,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       <h1>{event.name}</h1>
       <p>{formatTrialDate(event.eventDate)} at {event.venue} · arrival {event.startTime} · first whistle {event.firstWhistle}</p>
       <p>Registration fee: {fee}</p>
+      <p>Age range: {event.minAge}–{event.maxAge} years old as at 31 December {event.competitionYear}.</p>
       <p id="eligibility-introduction">
         The full eligibility criteria appear beside the confirmation at the end of this form.{' '}
         <a href="#eligibility-confirmation-summary">View eligibility criteria</a>.
@@ -325,7 +326,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         <fieldset id="eligibility-confirmation" className="form-group">
           <legend>Eligibility confirmation</legend>
           <p id="eligibility-confirmation-summary">
-            The player must be a permanent player in a domestic or representative competition at a Chisholm Region member association and have played at least six association games between 1 January {event.competitionYear} and the day before the trial.
+            The player must be {event.minAge}–{event.maxAge} years old as at 31 December {event.competitionYear}, be a permanent player in a domestic or representative competition at a Chisholm Region member association, and have played at least six association games between 1 January {event.competitionYear} and the day before the trial.
           </p>
           {invalid('eligibilityConfirmed') ? <p id="eligibilityConfirmed-error">Confirm the player meets the eligibility requirements.</p> : null}
           <p>
@@ -337,7 +338,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         </fieldset>
 
         <button type="submit" disabled={busy || !associations || associations.length === 0}>
-          {busy ? 'Submitting...' : 'Continue to payment'}
+          {busy ? (adminAssisted ? 'Sending payment link...' : 'Submitting...') : adminAssisted ? 'Send payment link' : 'Submit registration'}
         </button>
       </form>
     </section>
