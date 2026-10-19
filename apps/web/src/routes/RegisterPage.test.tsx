@@ -103,7 +103,7 @@ describe('RegisterPage', () => {
       ['eligibilityConfirmed', 'I confirm the player meets these eligibility requirements'],
     ];
     for (const [id, label] of requiredFields) {
-      const control = document.getElementById(id)!;
+      const control = document.getElementById(id)! as HTMLInputElement | HTMLSelectElement;
       expect(control).toBeRequired();
       expect(control.labels?.[0]?.textContent).toMatch(/\(required\)/i);
       expect(screen.getByLabelText(new RegExp(label))).toBe(control);
