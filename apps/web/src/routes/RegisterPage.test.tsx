@@ -79,6 +79,24 @@ describe('RegisterPage', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
+  it('prevents the same position from being selected in multiple ranks', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    const first = await screen.findByLabelText(/first position/i);
+    const second = screen.getByLabelText(/second position/i);
+    const third = screen.getByLabelText(/third position/i);
+    fireEvent.change(second, { target: { value: 'GA' } });
+    fireEvent.change(third, { target: { value: 'WA' } });
+
+    expect(within(first).getByRole('option', { name: 'Goal attack (GA)' })).toBeDisabled();
+    expect(within(first).getByRole('option', { name: 'Wing attack (WA)' })).toBeDisabled();
+    expect(within(second).getByRole('option', { name: 'Wing attack (WA)' })).toBeDisabled();
+    expect(within(second).getByRole('option', { name: 'Goal attack (GA)' })).not.toBeDisabled();
+    expect(first).toHaveValue('');
+    expect(second).toHaveValue('GA');
+    expect(third).toHaveValue('WA');
+    expect(screen.getByText(/clear a lower-ranked choice before moving it higher/i)).toBeInTheDocument();
+  });
+
   it('groups registration details and keeps eligibility criteria beside confirmation', async () => {
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
 

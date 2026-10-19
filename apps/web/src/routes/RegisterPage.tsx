@@ -301,13 +301,19 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         <fieldset id="position-preferences" className="form-group">
           <legend>Position preferences</legend>
           <p>Choose up to three ranked positions. The first choice is required; the other two are optional.</p>
+          <p>Each position can be chosen once. Clear a lower-ranked choice before moving it higher.</p>
           {(['rank1Position', 'rank2Position', 'rank3Position'] as const).map((field, index) => (
             <p key={field}>
               <label htmlFor={field}>{['First', 'Second', 'Third'][index]} position{index === 0 ? ' (required)' : ' (optional)'}</label>
               <select id={field} required={index === 0} value={form[field]} aria-invalid={invalid(field) || undefined} aria-describedby={describedBy(field)} onChange={(e) => set(field, e.target.value)}>
                 <option value="">{index === 0 ? 'Choose a first position' : 'No preference'}</option>
                 {POSITIONS.map((position) => (
-                  <option key={position} value={position} disabled={index > 0 && [form.rank1Position, form.rank2Position].slice(0, index).includes(position)}>
+                  <option
+                    key={position}
+                    value={position}
+                    disabled={(['rank1Position', 'rank2Position', 'rank3Position'] as const)
+                      .some((rank) => rank !== field && form[rank] === position)}
+                  >
                     {POSITION_LABELS[position]}
                   </option>
                 ))}
