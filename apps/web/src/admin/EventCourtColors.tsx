@@ -90,33 +90,35 @@ export function EventCourtColors({ client, eventId, courts }: { client: Client; 
         : null}
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
-      {Array.from({ length: courts }, (_, index) => {
-        const court = index + 1;
-        const pair = drafts[court] ?? pairFrom(assignments.find((row) => row.court === court));
-        const selection = (team: 'teamAColorId' | 'teamBColorId', label: string) => {
-          const currentId = pair[team];
-          const choices = colors.filter((color) => !color.archivedAt || color.id === currentId);
-          const selected = colors.find((color) => color.id === currentId);
+      <div className="court-color-grid">
+        {Array.from({ length: courts }, (_, index) => {
+          const court = index + 1;
+          const pair = drafts[court] ?? pairFrom(assignments.find((row) => row.court === court));
+          const selection = (team: 'teamAColorId' | 'teamBColorId', label: string) => {
+            const currentId = pair[team];
+            const choices = colors.filter((color) => !color.archivedAt || color.id === currentId);
+            const selected = colors.find((color) => color.id === currentId);
+            return (
+              <p key={team}>
+                <label htmlFor={`court-${court}-${team}`}>Court {court} {label} color</label>
+                <select id={`court-${court}-${team}`} value={currentId} onChange={(event) => updateDraft(court, team, event.target.value)}>
+                  <option value="">Choose a color</option>
+                  {choices.map((color) => <option key={color.id} value={color.id}>{color.name}{color.archivedAt ? ' (archived)' : ''}</option>)}
+                </select>
+                {selected ? <span className="bib-color-choice"><span className="bib-color-swatch" role="img" aria-label={`${selected.name} color swatch`} style={{ backgroundColor: selected.hex }} /> {selected.name}{selected.archivedAt ? ' (archived)' : ''}</span> : null}
+              </p>
+            );
+          };
           return (
-            <p key={team}>
-              <label htmlFor={`court-${court}-${team}`}>Court {court} {label} color</label>
-              <select id={`court-${court}-${team}`} value={currentId} onChange={(event) => updateDraft(court, team, event.target.value)}>
-                <option value="">Choose a color</option>
-                {choices.map((color) => <option key={color.id} value={color.id}>{color.name}{color.archivedAt ? ' (archived)' : ''}</option>)}
-              </select>
-              {selected ? <span className="bib-color-choice"><span className="bib-color-swatch" role="img" aria-label={`${selected.name} color swatch`} style={{ backgroundColor: selected.hex }} /> {selected.name}{selected.archivedAt ? ' (archived)' : ''}</span> : null}
-            </p>
+            <fieldset key={court} className="court-color-pair">
+              <legend>Court {court}</legend>
+              {selection('teamAColorId', 'Team A')}
+              {selection('teamBColorId', 'Team B')}
+              <button type="button" disabled={busyCourt !== null} onClick={() => save(court)}>Save court {court} colors</button>
+            </fieldset>
           );
-        };
-        return (
-          <fieldset key={court} className="court-color-pair">
-            <legend>Court {court}</legend>
-            {selection('teamAColorId', 'Team A')}
-            {selection('teamBColorId', 'Team B')}
-            <button type="button" disabled={busyCourt !== null} onClick={() => save(court)}>Save court {court} colors</button>
-          </fieldset>
-        );
-      })}
+        })}
+      </div>
     </section>
   );
 }

@@ -60,7 +60,7 @@ export function EventWorkflowNav({ eventId }: Props) {
       >
         Event tools{currentLabel ? `: ${currentLabel}` : ''}
       </button>
-      <div id="event-workflow-links" className={`workflow-links event-workflow-links${open ? ' is-open' : ''}`}>
+      <div id="event-workflow-links" className={`workflow-links event-workflow-links event-workflow-grid${open ? ' is-open' : ''}`}>
         {workflowGroups.map((group) => (
           <div key={group.label} className="event-workflow-group" role="group" aria-label={group.label}>
             <span className="event-workflow-group-label">{group.label}</span>

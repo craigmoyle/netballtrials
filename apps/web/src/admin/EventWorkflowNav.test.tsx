@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { EventWorkflowNav } from './EventWorkflowNav';
 
@@ -36,6 +36,16 @@ describe('EventWorkflowNav', () => {
     expect(within(planningGroup).getByRole('link', { name: 'Print selector sheets' })).toBeInTheDocument();
     expect(within(trialDayGroup).getByRole('link', { name: 'Messages' })).toBeInTheDocument();
     expect(within(trialDayGroup).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in?eventId=e1');
-    expect(screen.getByRole('button', { name: 'Event tools: Event operations' })).toHaveAttribute('aria-expanded', 'false');
+    const toggle = screen.getByRole('button', { name: 'Event tools: Event operations' });
+    const links = nav.querySelector('#event-workflow-links')!;
+    expect(links).toHaveClass('event-workflow-grid');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(links).toHaveClass('is-open');
+    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Messages', 'Volunteer check-in']) {
+      expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
+    }
   });
 });

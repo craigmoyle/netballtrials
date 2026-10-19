@@ -192,6 +192,17 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: #9c1c26;
 .event-workflow-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; }
 .event-workflow-group-label { font-weight: 700; }
 .event-workflow-links [aria-current="page"] { font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.event-workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; }
+.event-workflow-grid .event-workflow-group { min-width: 0; }
+.event-workflow-grid a { min-width: 0; overflow-wrap: anywhere; }
+.event-action-group { margin-block: 0.65rem 1rem; }
+.event-consequence-note { max-width: 56ch; margin-block: 0.35rem 0; font-size: 0.9rem; }
+
+@media (min-width: 56rem) {
+  .event-workflow-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .event-workflow-grid .event-workflow-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 0.25rem 0.75rem; }
+  .event-workflow-grid .event-workflow-group-label { grid-column: 1 / -1; }
+}
 
 .position-counts {
   display: grid;
@@ -200,9 +211,10 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: #9c1c26;
   align-items: start;
 }
 
-.bib-color-swatch { display: inline-block; width: 1.25rem; height: 1.25rem; border: 1px solid var(--line); border-radius: 0.2rem; vertical-align: middle; }
+.bib-color-swatch { display: inline-block; width: 1.25rem; height: 1.25rem; border: 2px solid var(--line); border-radius: 0.2rem; vertical-align: middle; }
 .bib-color-choice { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; }
-.court-color-pair { max-width: 44rem; margin-block: 1rem; padding: 1rem; border: 1px solid var(--line); }
+.court-color-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; }
+.court-color-pair { width: 100%; min-width: 0; max-width: none; margin: 0; padding: 1rem; border: 1px solid var(--line); }
 .court-color-pair legend { padding-inline: 0.25rem; font-weight: 650; }
 
 .position-counts ul { padding-left: 1.2rem; margin-block: 0.5rem 1rem; }
@@ -229,6 +241,7 @@ thead { background: var(--blue-pale); }
   .event-workflow-group-label { margin-top: 0.25rem; }
   .event-workflow-links a { display: flex; align-items: center; min-height: 2.75rem; }
   .registration-sections ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .court-color-grid { grid-template-columns: minmax(0, 1fr); }
 
   .position-counts { grid-template-columns: repeat(2, minmax(7rem, 1fr)); }
   th, td { padding: 0.55rem; }

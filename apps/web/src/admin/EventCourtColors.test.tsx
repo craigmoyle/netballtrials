@@ -41,6 +41,30 @@ describe('EventCourtColors', () => {
     expect(screen.getByLabelText('Court 2 Team B color')).toHaveValue('orange');
   });
 
+  it('keeps one to six court pairs in the grid with names and saved assignments', async () => {
+    const assignments = Array.from({ length: 6 }, (_, index) => ({
+      court: index + 1, teamAColor: colors[0], teamBColor: colors[1],
+    }));
+    render(<EventCourtColors
+      client={{ listBibColors: vi.fn().mockResolvedValue(colors), getCourtColors: vi.fn().mockResolvedValue(assignments) } as any}
+      eventId="event-1"
+      courts={6}
+    />);
+
+    const fieldsets = await screen.findAllByRole('group');
+    expect(fieldsets).toHaveLength(6);
+    const grid = fieldsets[0].closest('.court-color-grid');
+    expect(grid).not.toBeNull();
+    expect(fieldsets.every((fieldset) => fieldset.closest('.court-color-grid') === grid)).toBe(true);
+    expect(fieldsets.map((fieldset) => fieldset.querySelector('legend')?.textContent)).toEqual(
+      Array.from({ length: 6 }, (_, index) => `Court ${index + 1}`),
+    );
+    expect(screen.getByLabelText('Court 1 Team A color')).toHaveValue('white');
+    expect(screen.getByLabelText('Court 1 Team B color')).toHaveValue('black');
+    expect(screen.getAllByRole('img', { name: 'White color swatch' })).toHaveLength(6);
+    expect(screen.getAllByRole('img', { name: 'Black color swatch' })).toHaveLength(6);
+  });
+
   it('rejects duplicate team colors and keeps an archived assigned color visible', async () => {
     const archived = { id: 'teal', name: 'Test Teal', hex: '#12AB34', archivedAt: '2026-10-01T00:00:00.000Z' };
     const setCourtColors = vi.fn();
