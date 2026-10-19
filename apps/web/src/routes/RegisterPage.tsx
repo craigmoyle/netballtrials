@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useBlocker } from 'react-router-dom';
 import { melbourneDateKey, POSITIONS, type EventDTO, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
@@ -28,6 +29,14 @@ const POSITION_LABELS: Record<string, string> = {
   GD: 'Goal defence (GD)',
   GK: 'Goal keeper (GK)',
 };
+
+const REGISTRATION_SECTIONS = [
+  ['player-details', 'Player details'],
+  ['parent-details', 'Parent or guardian details'],
+  ['position-preferences', 'Position preferences'],
+  ['eligibility-confirmation', 'Eligibility confirmation'],
+] as const;
+type RegistrationSectionId = (typeof REGISTRATION_SECTIONS)[number][0];
 
 const EMPTY = {
   playerFirstName: '',
@@ -60,7 +69,14 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [eventRetry, setEventRetry] = useState(0);
   const [associationRetry, setAssociationRetry] = useState(0);
   const [form, setForm] = useState(EMPTY);
+  const [activeSection, setActiveSection] = useState<RegistrationSectionId>('player-details');
   const errorSummary = useRef<HTMLDivElement>(null);
+  const simulationHeading = useRef<HTMLHeadingElement>(null);
+  const promptedLocation = useRef<string | null>(null);
+  const hasUnsavedDetails = (Object.keys(EMPTY) as (keyof typeof EMPTY)[])
+    .some((key) => form[key] !== EMPTY[key]);
+  const shouldWarnBeforeLeaving = hasUnsavedDetails && !submitted && !simulationCompleted;
+  const blocker = useBlocker(shouldWarnBeforeLeaving);
 
   useEffect(() => {
     let active = true;
@@ -84,6 +100,54 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   useEffect(() => {
     if (fieldErrors.length > 0) errorSummary.current?.focus();
   }, [fieldErrors]);
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') {
+      promptedLocation.current = null;
+      return;
+    }
+    const destination = `${blocker.location.pathname}${blocker.location.search}${blocker.location.hash}`;
+    if (promptedLocation.current === destination) return;
+    promptedLocation.current = destination;
+    const message = simulationToken && !simulationCompleted
+      ? 'The test payment simulation is not complete. Leave this page?'
+      : 'Your registration details are not saved on this device. Leave and lose them?';
+    if (window.confirm(message)) blocker.proceed();
+    else blocker.reset();
+  }, [blocker, simulationToken, simulationCompleted]);
+
+  useEffect(() => {
+    if (!shouldWarnBeforeLeaving) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [shouldWarnBeforeLeaving]);
+
+  useEffect(() => {
+    if (!event || eventError || submitted || simulationToken || typeof IntersectionObserver === 'undefined') return;
+    const sections = REGISTRATION_SECTIONS
+      .map(([id]) => document.getElementById(id))
+      .filter((section): section is HTMLElement => section !== null);
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (visible && REGISTRATION_SECTIONS.some(([id]) => id === visible.target.id)) {
+        setActiveSection(visible.target.id as RegistrationSectionId);
+      }
+    }, { rootMargin: '-10% 0px -70% 0px' });
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [event, eventError, submitted, simulationToken]);
+
+  useEffect(() => {
+    if (simulationToken) simulationHeading.current?.focus();
+  }, [simulationToken]);
 
   function set<K extends keyof typeof EMPTY>(key: K, value: (typeof EMPTY)[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -175,7 +239,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   if (simulationToken) {
     return (
       <section className="public-page">
-        <h1>Test payment simulation</h1>
+        <h1 ref={simulationHeading} tabIndex={-1}>Test payment simulation</h1>
         <p>Registration fee: {fee}</p>
         <p>No real payment will be taken. Do not enter card details.</p>
         {simulationCompleted ? (
@@ -219,16 +283,17 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       <p>
         <a href={event.policyUrl ?? '#'} target="_blank" rel="noreferrer">Read the selection policy</a>
       </p>
-      <p id="privacy-information">
-        Privacy: these details are used for registration, payment, check-in and event messages. Parent contact details are not shown to volunteers. The app removes or anonymises personal details 12 calendar months after the event date.{' '}
-        <a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.
-      </p>
+      <div id="privacy-information" className="registration-privacy">
+        <p>Privacy: these details are used for registration, payment, check-in and event messages.</p>
+        <p>Parent contact details are not shown to volunteers.</p>
+        <p>The app removes or anonymises personal details 12 calendar months after the event date.</p>
+        <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
+      </div>
       <nav className="registration-sections" aria-label="Registration sections">
         <ol>
-          <li><a href="#player-details">Player details</a></li>
-          <li><a href="#parent-details">Parent or guardian details</a></li>
-          <li><a href="#position-preferences">Position preferences</a></li>
-          <li><a href="#eligibility-confirmation">Eligibility confirmation</a></li>
+          {REGISTRATION_SECTIONS.map(([id, label]) => (
+            <li key={id}><a href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined}>{label}</a></li>
+          ))}
         </ol>
       </nav>
 
@@ -250,7 +315,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         </p>
       ) : null}
 
-      <form onSubmit={onSubmit} noValidate>
+      <form className="registration-form" onSubmit={onSubmit} noValidate>
         <fieldset id="player-details" className="form-group">
           <legend>Player details</legend>
           <p>

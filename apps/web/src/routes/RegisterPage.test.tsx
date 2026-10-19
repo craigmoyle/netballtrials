@@ -1,8 +1,32 @@
+import { isValidElement, type ComponentProps, type ReactElement } from 'react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderWithTestingLibrary, screen, waitFor, within } from '@testing-library/react';
+import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom';
 import { RegisterPage } from './RegisterPage';
 
-afterEach(cleanup);
+const testRouters: ReturnType<typeof createMemoryRouter>[] = [];
+
+afterEach(() => {
+  cleanup();
+  for (const router of testRouters) router.dispose();
+  testRouters.length = 0;
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function render(element: ReactElement) {
+  if (!isValidElement(element) || element.type !== RegisterPage) return renderWithTestingLibrary(element);
+  const props = element.props as ComponentProps<typeof RegisterPage>;
+  const router = createMemoryRouter([
+    {
+      path: '/register/:eventId',
+      element: <><Link to="/leave-registration">Leave registration</Link><RegisterPage {...props} /></>,
+    },
+    { path: '/leave-registration', element: <h1>Left registration</h1> },
+  ], { initialEntries: [`/register/${props.eventId}`] });
+  testRouters.push(router);
+  return renderWithTestingLibrary(<RouterProvider router={router} />);
+}
 
 function publicEvent() {
   return {
@@ -56,6 +80,9 @@ describe('RegisterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
     expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
     expect(screen.getByText(/check the parent or guardian email/i)).toBeInTheDocument();
+    const emailHandoffUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(emailHandoffUnload);
+    expect(emailHandoffUnload.defaultPrevented).toBe(false);
     expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
     expect(api.getPublicEvent).toHaveBeenCalledWith('e1');
     expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ eligibilityConfirmed: false }));
@@ -220,6 +247,58 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText(/member association/i)).toHaveValue('MENA');
   });
 
+  it('marks the section currently intersecting the viewport in the anchor navigation', async () => {
+    let observerCallback: IntersectionObserverCallback | undefined;
+    const observed: Element[] = [];
+    class TestIntersectionObserver {
+      root = null;
+      rootMargin = '0px';
+      thresholds = [0];
+      constructor(callback: IntersectionObserverCallback) { observerCallback = callback; }
+      observe(target: Element) { observed.push(target); }
+      unobserve() {}
+      disconnect() {}
+      takeRecords() { return []; }
+    }
+    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver);
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    await screen.findByRole('group', { name: 'Eligibility confirmation' });
+    expect(observed.map((element) => element.id)).toEqual([
+      'player-details', 'parent-details', 'position-preferences', 'eligibility-confirmation',
+    ]);
+    const position = document.getElementById('position-preferences')!;
+    const bounds = position.getBoundingClientRect();
+    act(() => observerCallback?.([{
+      target: position, isIntersecting: true, intersectionRatio: 1,
+      boundingClientRect: bounds, intersectionRect: bounds, rootBounds: null, time: 1,
+    }], {} as IntersectionObserver));
+    expect(screen.getByRole('link', { name: 'Position preferences' })).toHaveAttribute('aria-current', 'location');
+  });
+
+  it('warns before internal navigation and unload only when in-memory details are incomplete', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    const emptyUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(emptyUnload);
+    expect(emptyUnload.defaultPrevented).toBe(false);
+    const firstName = await screen.findByLabelText(/player first name/i);
+    fireEvent.change(firstName, { target: { value: 'Ada' } });
+    const dirtyUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(dirtyUnload);
+    expect(dirtyUnload.defaultPrevented).toBe(true);
+    expect(setItem).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Leave registration' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
+    fireEvent.click(screen.getByRole('link', { name: 'Leave registration' }));
+    expect(await screen.findByRole('heading', { name: 'Left registration' })).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves entered values after a transient provider failure and allows retry', async () => {
     const register = vi.fn().mockRejectedValueOnce(new Error('network error')).mockResolvedValueOnce({ status: 'received' });
     render(<RegisterPage client={client(register)} eventId="e1" />);
@@ -245,7 +324,12 @@ describe('RegisterPage', () => {
     await fillRegistrationForm();
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
 
+    const simulationHeading = await screen.findByRole('heading', { name: 'Test payment simulation' });
     expect(await screen.findByRole('heading', { name: 'Test payment simulation' })).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(simulationHeading));
+    const pendingUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(pendingUnload);
+    expect(pendingUnload.defaultPrevented).toBe(true);
     expect(screen.getByText(/no real payment/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/card number|card expiry|security code|cvc/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Simulate successful payment' }));
@@ -255,6 +339,9 @@ describe('RegisterPage', () => {
       `/register/e1/pending?session=${encodeURIComponent(simulationToken)}`,
     );
     expect(completeFakePayment).toHaveBeenCalledWith(simulationToken);
+    const completedUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(completedUnload);
+    expect(completedUnload.defaultPrevented).toBe(false);
   });
 
   it('shows generic recovery copy when fake payment cannot be completed', async () => {
