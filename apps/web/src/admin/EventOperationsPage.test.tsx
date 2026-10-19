@@ -70,6 +70,7 @@ describe('EventOperationsPage', () => {
     fireEvent.click(closeCheckIn);
     await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
     expect(await within(checkInAction).findByRole('status')).toHaveTextContent('Volunteer check-in is closed.');
+    expect(within(checkInAction).queryByRole('button', { name: 'Close check-in' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /close event/i }));
     await waitFor(() => expect(client.closeEvent).toHaveBeenCalledWith('e1'));
     expect(await screen.findByText('Registration is closed.')).toBeInTheDocument();
@@ -156,6 +157,7 @@ describe('EventOperationsPage', () => {
     fireEvent.click(removePin);
 
     expect(await within(pinRemovalAction).findByRole('status')).toHaveTextContent(/PIN removed\. Existing volunteer sessions have been revoked\./i);
+    expect(within(pinRemovalAction).queryByRole('button', { name: 'Remove PIN' })).not.toBeInTheDocument();
     expect(client.clearCheckInPin).toHaveBeenCalledWith('e1');
   });
 
@@ -171,6 +173,21 @@ describe('EventOperationsPage', () => {
     fireEvent.click(removePin);
 
     expect(await within(pinRemovalAction).findByRole('alert')).toHaveTextContent(/could not remove the pin/i);
+  });
+
+  it('keeps check-in closure errors beside Close check-in and leaves retry available', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const client = operationsClient({
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: false, checkInClosedAt: null }),
+      closeCheckIn: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+    renderOperations(client);
+    const closeCheckIn = await screen.findByRole('button', { name: 'Close check-in' });
+    const checkInAction = closeCheckIn.parentElement!;
+    fireEvent.click(closeCheckIn);
+
+    expect(await within(checkInAction).findByRole('alert')).toHaveTextContent(/could not close check-in/i);
+    expect(within(checkInAction).getByRole('button', { name: 'Close check-in' })).toBeInTheDocument();
   });
 
   it('keeps day-of actions available when check-in is open', async () => {
