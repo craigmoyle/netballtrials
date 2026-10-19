@@ -71,6 +71,46 @@ describe('EventOperationsPage', () => {
     expect(confirm).toHaveBeenCalledTimes(2);
   });
 
+  it('shows invalid PIN feedback beside the field and clears it on edit', async () => {
+    const client = operationsClient();
+    renderOperations(client);
+    const pin = await screen.findByLabelText(/set or rotate check-in pin/i);
+    const pinField = pin.closest('p')!;
+
+    fireEvent.change(pin, { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
+    const alert = await within(pinField).findByRole('alert');
+    expect(alert).toHaveTextContent('PIN must contain 4 to 8 digits.');
+    expect(pin).toHaveAttribute('aria-invalid', 'true');
+    expect(pin).toHaveAttribute('aria-describedby', 'checkInPin-error');
+    expect(client.setCheckInPin).not.toHaveBeenCalled();
+
+    fireEvent.change(pin, { target: { value: '4821' } });
+    expect(within(pinField).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps PIN save errors beside the PIN field', async () => {
+    const client = operationsClient({ setCheckInPin: vi.fn().mockRejectedValue(new Error('offline')) });
+    renderOperations(client);
+    const pin = await screen.findByLabelText(/set or rotate check-in pin/i);
+    const pinField = pin.closest('p')!;
+    fireEvent.change(pin, { target: { value: '4821' } });
+    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
+
+    expect(await within(pinField).findByRole('alert')).toHaveTextContent(/could not save the pin/i);
+  });
+
+  it('shows PIN save confirmation beside the PIN controls', async () => {
+    const client = operationsClient();
+    renderOperations(client);
+    const pin = await screen.findByLabelText(/set or rotate check-in pin/i);
+    const pinField = pin.closest('p')!;
+    fireEvent.change(pin, { target: { value: '4821' } });
+    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
+
+    expect(await within(pinField).findByRole('status')).toHaveTextContent(/check-in pin saved/i);
+  });
+
   it('keeps day-of actions available when check-in is open', async () => {
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
     const today = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`).toISOString();
