@@ -89,6 +89,8 @@ export function EventControls({
       await client.clearCheckInPin(eventId);
       setPinConfigured(false);
       setPin('');
+      setPinError(null);
+      setPinMessage(null);
       setCheckInMessage('PIN removed. Existing volunteer sessions have been revoked.');
     } catch {
       setCheckInError('Could not remove the PIN. Refresh this page and try again.');
@@ -125,11 +127,15 @@ export function EventControls({
           {canRegisterDayOf ? <Link to={`/admin/events/${eventId}/day-of-registration`}>Add day-of player</Link> : null}
         </nav>
       ) : null}
+      <h3>Registration</h3>
       <p>Status: {status.toLowerCase()}</p>
-      {status !== 'CLOSED' ? (
-        <button type="button" disabled={busy} onClick={changeLifecycle}>
-          {status === 'DRAFT' ? 'Open registration' : 'Close event'}
-        </button>
+      {status === 'DRAFT' ? (
+        <button type="button" disabled={busy} onClick={changeLifecycle}>Open registration</button>
+      ) : status === 'OPEN' ? (
+        <div className="event-action-group">
+          <button type="button" className="button-secondary" disabled={busy} onClick={changeLifecycle}>Close event</button>
+          <p className="event-consequence-note">Closing registration prevents new families from registering. This event cannot be reopened from Event operations.</p>
+        </div>
       ) : null}
       {eventError ? <p role="alert">{eventError}</p> : null}
       {eventMessage ? <p role="status">{eventMessage}</p> : null}
@@ -153,8 +159,18 @@ export function EventControls({
         {pinMessage ? <span role="status">{pinMessage}</span> : null}
         <button type="button" disabled={busy || pin.length === 0} onClick={savePin}>Set or rotate PIN</button>
       </p>
-      {pinConfigured ? <button type="button" disabled={busy} onClick={clearPin}>Remove PIN</button> : null}{' '}
-      {!checkInClosedAt ? <button type="button" disabled={busy} onClick={closeCheckIn}>Close check-in</button> : null}
+      {pinConfigured ? (
+        <div className="event-action-group">
+          <button type="button" className="button-secondary" disabled={busy} onClick={clearPin}>Remove PIN</button>
+          <p className="event-consequence-note">Removing the PIN revokes current volunteer sessions. You can set a new PIN later.</p>
+        </div>
+      ) : null}
+      {!checkInClosedAt ? (
+        <div className="event-action-group">
+          <button type="button" className="button-secondary" disabled={busy} onClick={closeCheckIn}>Close check-in</button>
+          <p className="event-consequence-note">Closing check-in revokes active volunteer sessions. This event’s check-in cannot be reopened.</p>
+        </div>
+      ) : null}
       {checkInError ? <p role="alert">{checkInError}</p> : null}
       {checkInMessage ? <p role="status">{checkInMessage}</p> : null}
       <EventCourtColors client={client} eventId={eventId} courts={courts} />

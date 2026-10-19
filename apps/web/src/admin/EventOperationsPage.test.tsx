@@ -61,13 +61,16 @@ describe('EventOperationsPage', () => {
     expect(await screen.findByRole('link', { name: 'Admin check-in' })).toHaveAttribute('href', '/admin/events/e1/check-in');
     fireEvent.click(screen.getByRole('button', { name: /open registration/i }));
     await waitFor(() => expect(client.openEvent).toHaveBeenCalledWith('e1'));
+    expect(await screen.findByText('Registration is open.')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '4821' } });
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
     await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
     fireEvent.click(screen.getByRole('button', { name: /close check-in/i }));
     await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
+    expect(await screen.findByText('Volunteer check-in is closed.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /close event/i }));
     await waitFor(() => expect(client.closeEvent).toHaveBeenCalledWith('e1'));
+    expect(await screen.findByText('Registration is closed.')).toBeInTheDocument();
     expect(confirm).toHaveBeenCalledTimes(2);
   });
 
@@ -109,6 +112,37 @@ describe('EventOperationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
 
     expect(await within(pinField).findByRole('status')).toHaveTextContent(/check-in pin saved/i);
+  });
+
+  it('explains event and check-in closure consequences beside secondary actions', async () => {
+    const today = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`).toISOString();
+    const client = operationsClient({
+      getEvent: vi.fn().mockResolvedValue({ ...savedEvent, status: 'OPEN', eventDate: today }),
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: true, checkInClosedAt: null }),
+    });
+    renderOperations(client);
+
+    const closeEvent = await screen.findByRole('button', { name: 'Close event' });
+    const closeCheckIn = screen.getByRole('button', { name: 'Close check-in' });
+    expect(screen.getByRole('heading', { level: 3, name: 'Registration' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Volunteer check-in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 3, name: 'Team colors' })).toBeInTheDocument();
+    const registrationWarning = screen.getByText(/closing registration prevents new families from registering\. this event cannot be reopened from event operations/i);
+    const checkInWarning = screen.getByText(/closing check-in revokes active volunteer sessions\. this event.s check-in cannot be reopened/i);
+    expect(closeEvent).toHaveClass('button-secondary');
+    expect(closeCheckIn).toHaveClass('button-secondary');
+    expect(closeEvent.compareDocumentPosition(registrationWarning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(closeCheckIn.compareDocumentPosition(checkInWarning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('explains PIN removal revocation and reconfiguration beside the action', async () => {
+    const client = operationsClient({ checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: true, checkInClosedAt: null }) });
+    renderOperations(client);
+
+    const removePin = await screen.findByRole('button', { name: 'Remove PIN' });
+    const pinWarning = screen.getByText(/removing the pin revokes current volunteer sessions\. you can set a new pin later/i);
+    expect(removePin).toHaveClass('button-secondary');
+    expect(removePin.compareDocumentPosition(pinWarning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('keeps day-of actions available when check-in is open', async () => {
