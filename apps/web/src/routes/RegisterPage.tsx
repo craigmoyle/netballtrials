@@ -72,6 +72,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [activeSection, setActiveSection] = useState<RegistrationSectionId>('player-details');
   const errorSummary = useRef<HTMLDivElement>(null);
   const simulationHeading = useRef<HTMLHeadingElement>(null);
+  const completionHeading = useRef<HTMLHeadingElement>(null);
   const promptedLocation = useRef<string | null>(null);
   const hasUnsavedDetails = (Object.keys(EMPTY) as (keyof typeof EMPTY)[])
     .some((key) => form[key] !== EMPTY[key]);
@@ -148,6 +149,10 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   useEffect(() => {
     if (simulationToken) simulationHeading.current?.focus();
   }, [simulationToken]);
+
+  useEffect(() => {
+    if (submitted) completionHeading.current?.focus();
+  }, [submitted]);
 
   function set<K extends keyof typeof EMPTY>(key: K, value: (typeof EMPTY)[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -262,10 +267,10 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   if (submitted) {
     return (
       <section className="public-page">
-        <h1>{adminAssisted ? 'Checkout link sent' : 'Request received'}</h1>
+        <h1 ref={completionHeading} tabIndex={-1}>{adminAssisted ? 'Checkout link sent' : 'Request received'}</h1>
         {adminAssisted
           ? <p>A secure Checkout link was sent to the parent or guardian. The registration remains pending; the player is not eligible for check-in or game planning until payment is confirmed.</p>
-          : <p>Check the parent or guardian email for secure next steps. If no message arrives, check junk mail or contact the club.</p>}
+          : <p>Check the parent or guardian email for the secure Checkout link. If no message arrives, check junk mail or contact the club.</p>}
       </section>
     );
   }

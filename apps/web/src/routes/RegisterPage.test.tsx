@@ -78,8 +78,9 @@ describe('RegisterPage', () => {
     await screen.findByRole('option', { name: 'MENA' });
     expect(screen.getByRole('button', { name: 'Submit registration' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
-    expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
-    expect(screen.getByText(/check the parent or guardian email/i)).toBeInTheDocument();
+    const receiptHeading = await screen.findByRole('heading', { name: /request received/i });
+    expect(screen.getByText(/check the parent or guardian email for the secure checkout link/i)).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(receiptHeading));
     const emailHandoffUnload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(emailHandoffUnload);
     expect(emailHandoffUnload.defaultPrevented).toBe(false);
@@ -173,8 +174,9 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('button', { name: 'Send payment link' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
 
-    expect(await screen.findByRole('heading', { name: 'Checkout link sent' })).toBeInTheDocument();
+    const checkoutHeading = await screen.findByRole('heading', { name: 'Checkout link sent' });
     expect(screen.getByText(/not eligible for check-in or game planning until payment is confirmed/i)).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(checkoutHeading));
     expect(getEvent).toHaveBeenCalledWith('e1');
     expect(getPublicEvent).not.toHaveBeenCalled();
     expect(dayOfRegistration).toHaveBeenCalledWith('e1', expect.objectContaining({
