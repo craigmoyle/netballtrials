@@ -146,7 +146,7 @@ button:disabled { opacity: 0.62; cursor: not-allowed; }
 .public-page > p { max-width: 70ch; }
 .registration-eligibility-summary { max-width: 65ch; margin-block: 0.5rem; }
 .registration-eligibility-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; margin-bottom: 0.35rem; }
-.registration-eligibility-summary h2 { margin: 0; font-size: 1.15rem; }
+.registration-eligibility-summary h2 { margin: 0; font-size: 1.2rem; }
 .registration-eligibility-summary ul { margin: 0; padding-inline-start: 1.25rem; }
 .registration-eligibility-summary li + li { margin-top: 0.15rem; }
 .registration-privacy-note { max-width: 65ch; margin-block: 0.35rem; }
@@ -154,11 +154,11 @@ button:disabled { opacity: 0.62; cursor: not-allowed; }
 .registration-privacy summary { min-height: 2.75rem; padding-block: 0.5rem; color: var(--burgundy); cursor: pointer; text-decoration: underline; text-underline-offset: 0.18em; }
 .registration-privacy p { margin-block: 0.35rem; }
 .registration-form .form-group > p { margin-block: 0.65rem; }
-.registration-form > .form-group:first-child { margin-top: 0.5rem; }
+.registration-form > .form-group:first-child { margin-top: 0; }
 .eligibility-criteria { max-width: 70ch; margin-block: 0.5rem 1rem; padding-inline-start: 1.25rem; }
 .eligibility-criteria li + li { margin-top: 0.35rem; }
 .registration-page > p { margin-block: 0.5rem; }
-.registration-sections { margin-block: 0.5rem; padding-block: 0.4rem; border-block: 1px solid var(--line); }
+.registration-sections { margin-block: 0.2rem; padding-block: 0.15rem; border-block: 1px solid var(--line); }
 .registration-sections ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.25rem 0.75rem; margin: 0; padding-inline-start: 1.25rem; }
 .registration-sections li { min-width: 0; }
 .registration-sections a { display: flex; align-items: center; min-height: 2.75rem; overflow-wrap: anywhere; }
@@ -266,6 +266,12 @@ thead { background: var(--blue-pale); }
 .scan-result[data-tone="ok"] { color: var(--success-ink); background: var(--success-surface); }
 .scan-result[data-tone="warn"] { color: var(--warning-ink); background: var(--warning-surface); }
 .scan-result[data-tone="error"] { color: var(--error-ink); background: var(--error-surface); }
+.lookup-results { margin: 0.75rem 0 0; padding: 0; list-style: none; }
+.lookup-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-top: 1px solid var(--line); }
+.lookup-result-details { display: grid; gap: 0.15rem; min-width: 0; overflow-wrap: anywhere; }
+.lookup-result-name { font-weight: 650; }
+.lookup-result-number { color: var(--placeholder-ink); font-size: 0.9rem; }
+.lookup-result-status { color: var(--success-ink); font-size: 0.9rem; font-weight: 650; }
 
 @media (max-width: 38rem) {
   .public-site-header { gap: 0.35rem 1rem; padding-block: 0.5rem; }
@@ -322,6 +328,8 @@ thead { background: var(--blue-pale); }
 .full-game-header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 2px solid var(--blue-pale); }
 .full-game-header h1 { margin: 0; }
 .full-game-round-filter { position: sticky; top: 0; z-index: 2; margin-block: 0.5rem; padding-block: 0.5rem; background: var(--canvas); border-bottom: 1px solid var(--line); }
+.full-game-round-filter label { display: grid; gap: 0.25rem; width: min(100%, 36rem); }
+.full-game-round-filter select { width: 100%; }
 .full-game-header p { margin: 0.3rem 0 0; }
 .full-game-header label { min-width: 10rem; }
 .full-game-header select { display: block; margin-top: 0.25rem; }
@@ -361,7 +369,9 @@ thead { background: var(--blue-pale); }
 .game-action-error { margin-block: 1rem; padding: 1rem; color: var(--error-ink); background: var(--error-surface); border: 1px solid var(--invalid-border); }
 .game-action-error p { margin-top: 0; }
 .game-roster-changes { margin-block: 1.25rem; padding-block: 0.75rem; border-block: 1px solid var(--line); }
-.game-roster-changes > h2 { margin-block: 0 0.5rem; font-size: 1.25rem; }
+.game-roster-changes > summary { min-height: 2.75rem; padding-block: 0.5rem; font-size: 1.25rem; font-weight: 700; cursor: pointer; }
+.game-roster-changes:not([open]) { margin-block: 0.25rem; padding-block: 0; border: 0; }
+.game-roster-changes:not([open]) > summary { padding-block: 0; }
 .game-roster-changes > p { margin-block: 0.5rem; }
 .early-leaver-selection { display: grid; gap: 0.75rem; margin-top: 1rem; }
 .early-leaver-selection fieldset { max-height: 18rem; overflow: auto; padding: 0.75rem; border: 1px solid var(--line); }

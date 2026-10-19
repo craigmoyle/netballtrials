@@ -686,7 +686,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
               ) : null}
               {viewMode === 'team' && !editing && !suffixEditing ? (
                 <div className="full-game-round-filter">
-                  <label htmlFor="team-view-round">Team view round
+                  <label className="full-game-round-filter-label" htmlFor="team-view-round">Team view round
                     <select
                       id="team-view-round"
                       aria-label="Team view round"
@@ -708,7 +708,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                 </div>
               ) : viewMode === 'position' ? (
                 <div className="full-game-round-filter">
-                  <label htmlFor="position-round">Round for position view
+                  <label className="full-game-round-filter-label" htmlFor="position-round">Round for position view
                     <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
                       {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
                     </select>
@@ -717,8 +717,8 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
               ) : null}
 
               {viewMode !== 'statistics' && viewMode !== 'reference' && plan && !historyPlan && plan.frozenThroughRound < plan.rounds ? (
-                <section className="game-roster-changes" aria-labelledby="roster-changes-heading">
-                  <h2 id="roster-changes-heading">Roster changes</h2>
+                <details className="game-roster-changes">
+                  <summary>Roster changes</summary>
                   {lateArrivalPlayers.length > 0 ? <p>{lateArrivalPlayers.length} newly eligible player(s) are available in Resting players.</p> : null}
                   {!earlyLeaverPanelOpen && !suffixEditing ? (
                     <button type="button" className="button-secondary" disabled={busy || stalePlan || editing} onClick={() => setEarlyLeaverPanelOpen(true)}>Remove early leaver</button>
@@ -786,7 +786,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                       ) : null}
                     </section>
                   ) : null}
-                </section>
+                </details>
               ) : null}
               {draftMessage ? <div className="message-confirmation" role="status"><p>{draftMessage}</p><Link to={`/admin/events/${eventId}/plan`}>Review draft in Plan Rounds</Link></div> : null}
 

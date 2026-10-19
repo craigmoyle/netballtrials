@@ -95,12 +95,16 @@ export function LookupPanel({ client }: { client: Client }) {
       {!searching && !error && query.trim().length >= 2 && results.length === 0 ? <p role="status">No players found matching that name.</p> : null}
       {label ? <p role="status" className="scan-result" data-tone={label.tone}>{label.text}</p> : null}
       {undoableId ? <button type="button" disabled={busy} onClick={undo}>Undo last check-in</button> : null}
-      <ul>
+      <ul className="lookup-results" aria-label="Lookup results" aria-live="polite">
         {results.map((row) => (
-          <li key={row.id}>
-            {row.playerName}{row.bibNumber ? ` (Number ${row.bibNumber})` : ''}{' '}
+          <li className="lookup-result" key={row.id}>
+            <div className="lookup-result-details">
+              <span className="lookup-result-name">{row.playerName}</span>
+              {row.bibNumber !== null ? <span className="lookup-result-number">Number {row.bibNumber}</span> : null}
+              {row.checkedIn ? <span className="lookup-result-status">Already checked in</span> : null}
+            </div>
             <button type="button" disabled={busy} onClick={() => checkIn(row.id)}>
-              {busy ? 'Working...' : row.checkedIn ? 'Already in, check again' : 'Check in'}
+              {busy ? 'Working...' : row.checkedIn ? 'Check in again' : 'Check in'}
             </button>
           </li>
         ))}

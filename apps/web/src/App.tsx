@@ -82,7 +82,7 @@ function ProtectedAdmin({ client }: { client: Client }) {
 function RegisterRoute({ client }: { client: Client }) {
   const { eventId } = useParams();
   if (!eventId) return <Navigate to="/" replace />;
-  return <RegisterPage client={client} eventId={eventId} />;
+  return <RegisterPage key={eventId} client={client} eventId={eventId} />;
 }
 
 function PendingRoute({ client }: { client: Client }) {
@@ -170,7 +170,7 @@ function AdminCheckInRoute({ client }: { client: Client }) {
 function DayOfRegistrationRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
-  return <RegisterPage client={client} eventId={id} adminAssisted />;
+  return <RegisterPage key={id} client={client} eventId={id} adminAssisted />;
 }
 
 export function App() {

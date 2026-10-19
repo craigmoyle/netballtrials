@@ -10,6 +10,8 @@ afterEach(() => {
   cleanup();
   for (const router of testRouters) router.dispose();
   testRouters.length = 0;
+  window.sessionStorage.clear();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -36,6 +38,8 @@ function publicEvent() {
     division: '15/U', section: 'Ladies', courts: 5, status: 'OPEN',
   };
 }
+
+const publicDraftKey = 'chisholm-registration-draft:public:v1:e1';
 
 const associations = [
   { id: 'mena', name: 'MENA', active: true },
@@ -85,6 +89,7 @@ describe('RegisterPage', () => {
     expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
     expect(api.getPublicEvent).toHaveBeenCalledWith('e1');
     expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ eligibilityConfirmed: true }));
+    expect(window.sessionStorage.getItem(publicDraftKey)).toBeNull();
   });
 
   it('marks all server-required controls and leaves optional choices optional', async () => {
@@ -113,6 +118,86 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText(/open to extra games/i)).not.toBeRequired();
   });
 
+  it('saves a public draft in this tab and restores it after reload', async () => {
+    const api = client(vi.fn());
+    const currentPage = render(<RegisterPage client={api} eventId="e1" />);
+    expect(await screen.findByText(/reload this tab within 1 hour to restore your draft/i)).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+
+    await waitFor(() => expect(JSON.parse(window.sessionStorage.getItem(publicDraftKey) ?? 'null')).toMatchObject({
+      version: 1,
+      form: { playerFirstName: 'Ada' },
+    }));
+    expect(window.localStorage.length).toBe(0);
+    currentPage.unmount();
+
+    render(<RegisterPage client={api} eventId="e1" />);
+    expect(await screen.findByLabelText(/player first name/i)).toHaveValue('Ada');
+    expect(await screen.findByRole('status')).toHaveTextContent(/draft restored from this tab/i);
+  });
+
+  it('clears a saved draft and its fields when the parent requests it', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+    await waitFor(() => expect(window.sessionStorage.getItem(publicDraftKey)).not.toBeNull());
+    fireEvent.click(screen.getByText('Privacy details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear saved draft and form' }));
+
+    expect(confirm).toHaveBeenCalledWith('Clear the saved draft and all entered details from this tab?');
+    expect(screen.getByLabelText(/player first name/i)).toHaveValue('');
+    expect(window.sessionStorage.getItem(publicDraftKey)).toBeNull();
+  });
+
+  it('warns when this tab cannot clear its draft after registration', async () => {
+    const register = vi.fn().mockResolvedValue({ status: 'received' });
+    render(<RegisterPage client={client(register)} eventId="e1" />);
+    await fillRegistrationForm();
+    await waitFor(() => expect(window.sessionStorage.getItem(publicDraftKey)).not.toBeNull());
+    const storedSession = window.sessionStorage;
+    vi.stubGlobal('sessionStorage', {
+      getItem: storedSession.getItem.bind(storedSession),
+      setItem: storedSession.setItem.bind(storedSession),
+      removeItem: () => { throw new DOMException('blocked', 'SecurityError'); },
+      clear: storedSession.clear.bind(storedSession),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
+
+    expect(await screen.findByRole('heading', { name: 'Request received' })).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not confirm the draft was cleared/i);
+  });
+
+  it('keeps the form usable when this browser blocks session storage', async () => {
+    vi.stubGlobal('sessionStorage', {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(() => { throw new DOMException('blocked', 'SecurityError'); }),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    });
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    const firstName = await screen.findByLabelText(/player first name/i);
+    fireEvent.change(firstName, { target: { value: 'Ada' } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not save or clear a draft/i);
+    expect(firstName).toHaveValue('Ada');
+  });
+
+  it('discards an expired public draft instead of restoring it', async () => {
+    window.sessionStorage.setItem(publicDraftKey, JSON.stringify({
+      version: 1,
+      savedAt: Date.now() - 60 * 60 * 1000 - 1,
+      form: {
+        playerFirstName: 'Ada', playerLastName: '', dateOfBirth: '', parentName: '', parentEmail: '',
+        parentMobile: '', memberAssociation: '', rank1Position: '', rank2Position: '', rank3Position: '',
+        optInExtraPositions: false, eligibilityConfirmed: false,
+      },
+    }));
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+
+    expect(await screen.findByLabelText(/player first name/i)).toHaveValue('');
+    expect(window.sessionStorage.getItem(publicDraftKey)).toBeNull();
+  });
+
   it('reports all missing public registration fields before requesting registration', async () => {
     const register = vi.fn();
     render(<RegisterPage client={client(register)} eventId="e1" />);
@@ -128,6 +213,14 @@ describe('RegisterPage', () => {
       expect(within(summary).getByRole('link', { name: label })).toBeInTheDocument();
     }
     expect(register).not.toHaveBeenCalled();
+  });
+
+  it('does not cache Admin-assisted registration details in the browser', async () => {
+    const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()) });
+    render(<RegisterPage client={api} eventId="e1" adminAssisted />);
+    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+
+    expect(window.sessionStorage.length).toBe(0);
   });
 
   it('reports all missing Admin-assisted fields before sending a payment link', async () => {
@@ -320,10 +413,10 @@ describe('RegisterPage', () => {
     expect(policyLink).toHaveAttribute('href', publicEvent().policyUrl);
     expect(policyLink).toHaveAttribute('target', '_blank');
     expect(policyLink).toHaveAttribute('rel', 'noreferrer');
-    expect(screen.getByText(/volunteers do not see parent contact details/i)).toBeInTheDocument();
     const privacyDetails = screen.getByText('Privacy details');
     expect(privacyDetails.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(privacyDetails);
+    expect(screen.getByText(/parent contact details are not shown to volunteers/i)).toBeInTheDocument();
     expect(screen.getByText(/12 calendar months after the event date/i)).toBeInTheDocument();
   });
 
@@ -377,9 +470,9 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('link', { name: 'Positions' })).toHaveAttribute('aria-current', 'location');
   });
 
-  it('warns before internal navigation and unload only when in-memory details are incomplete', async () => {
+  it('stores public drafts only in this tab and warns that closing it clears the draft', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const localSetItem = vi.spyOn(window.localStorage, 'setItem');
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
 
     const emptyUnload = new Event('beforeunload', { cancelable: true });
@@ -390,10 +483,11 @@ describe('RegisterPage', () => {
     const dirtyUnload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(dirtyUnload);
     expect(dirtyUnload.defaultPrevented).toBe(true);
-    expect(setItem).not.toHaveBeenCalled();
+    await waitFor(() => expect(window.sessionStorage.getItem(publicDraftKey)).not.toBeNull());
+    expect(localSetItem).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('link', { name: 'Leave registration' }));
-    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/draft is saved in this tab/i)));
     expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
     fireEvent.click(screen.getByRole('link', { name: 'Leave registration' }));
     expect(await screen.findByRole('heading', { name: 'Left registration' })).toBeInTheDocument();

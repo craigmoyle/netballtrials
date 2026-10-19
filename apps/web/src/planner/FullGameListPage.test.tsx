@@ -160,6 +160,11 @@ function makeMove(playerId = 'player-0', target = '1:1:GA:0') {
   fireEvent.click(screen.getByRole('button', { name: 'Move or substitute' }));
 }
 
+function openRosterChanges() {
+  const summary = screen.getByText('Roster changes');
+  if (!summary.closest('details')?.open) fireEvent.click(summary);
+}
+
 describe('FullGameListPage', () => {
   it('keeps the page heading stable while the published schedule loads', async () => {
     let resolveEvent!: (loadedEvent: EventDTO) => void;
@@ -280,6 +285,7 @@ describe('FullGameListPage', () => {
     const teamRound = screen.getByLabelText('Team view round');
     expect(teamRound).toHaveValue('all');
     expect(teamRound.closest('.full-game-round-filter')).not.toBeNull();
+    expect(teamRound.closest('label')).toHaveClass('full-game-round-filter-label');
     expect(screen.getAllByRole('table')).toHaveLength(8);
     fireEvent.change(teamRound, { target: { value: '2' } });
     expect(screen.getAllByRole('table')).toHaveLength(4);
@@ -297,6 +303,18 @@ describe('FullGameListPage', () => {
     expect(within(table).getByText('Player 15')).toBeInTheDocument();
     expect(within(table).getByText('Number 15')).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: /Round 1 by position/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps roster controls collapsed until needed so assignments lead the mobile view', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+
+    const rosterChanges = screen.getByText('Roster changes');
+    expect(rosterChanges.closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: 'Remove early leaver' })).not.toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Round 1' })).toBeInTheDocument();
+    fireEvent.click(rosterChanges);
+    expect(screen.getByRole('button', { name: 'Remove early leaver' })).toBeInTheDocument();
   });
 
   it('does not discard a local edit when revision history is unavailable', async () => {
@@ -331,6 +349,7 @@ describe('FullGameListPage', () => {
     const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
     const client = renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(currentPlan) }));
     await screen.findByText('Active revision 2');
+    openRosterChanges();
     fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
     expect(screen.getByLabelText('Remove future assignments from round')).toHaveValue('2');
     fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
@@ -356,6 +375,7 @@ describe('FullGameListPage', () => {
         .mockResolvedValueOnce({ ok: true, plan }),
     }));
     await screen.findByText('Active revision 2');
+    openRosterChanges();
     fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
     fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
     fireEvent.click(screen.getByRole('button', { name: 'Manual replacements' }));
@@ -504,8 +524,8 @@ describe('FullGameListPage', () => {
     const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
     const client = renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(currentPlan) }));
     await screen.findByText('Active revision 2');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
-    expect(screen.getByLabelText('Remove future assignments from round')).toHaveValue('2');
+    openRosterChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));    expect(screen.getByLabelText('Remove future assignments from round')).toHaveValue('2');
     fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
     fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
 
@@ -519,8 +539,8 @@ describe('FullGameListPage', () => {
     const currentPlan = makePlan({ frozenThroughRound: 1, revision: 2, sourcePlanId: 'plan-0' });
     renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(currentPlan) }));
     await screen.findByText('Active revision 2');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
-    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    openRosterChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
     fireEvent.click(screen.getByRole('button', { name: 'Manual replacements' }));
 
     expect(screen.getByText('No paid and checked-in player is available for round 2.')).toBeInTheDocument();
@@ -541,8 +561,8 @@ describe('FullGameListPage', () => {
         .mockResolvedValueOnce({ ok: true, plan }),
     }));
     await screen.findByText('Active revision 2');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
-    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
+    openRosterChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
     fireEvent.click(screen.getByRole('button', { name: 'Manual replacements' }));
     fireEvent.change(screen.getByLabelText('Replacement for round 2, court 2, Team A, GS'), { target: { value: 'late-player' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save manual suffix' }));

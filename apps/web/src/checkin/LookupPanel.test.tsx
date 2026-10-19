@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { CheckInLayout } from './CheckInLayout';
 import { LookupPanel } from './LookupPanel';
@@ -55,6 +55,19 @@ describe('LookupPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry lookup' }));
     expect(await screen.findByText(/Ada Lovelace/)).toBeInTheDocument();
     expect(lookup.mock.calls.map(([query]) => query)).toEqual(['Ada', 'Ada']);
+  });
+
+  it('groups lookup results into stable player, number, status and action rows', async () => {
+    const lookup = vi.fn().mockResolvedValue([{ id: 'r1', playerName: 'Grace Hopper', bibNumber: 7, checkedIn: true }]);
+    render(<MemoryRouter><LookupPanel client={{ lookup } as any} /></MemoryRouter>);
+    fireEvent.change(screen.getByLabelText(/player name/i), { target: { value: 'Grace' } });
+
+    const row = await screen.findByRole('listitem');
+    expect(row).toHaveClass('lookup-result');
+    expect(within(row).getByText('Grace Hopper')).toBeInTheDocument();
+    expect(within(row).getByText('Number 7')).toBeInTheDocument();
+    expect(within(row).getByText('Already checked in')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Check in again' })).toBeInTheDocument();
   });
 
   it('refreshes the volunteer count after manual check-in and authorized undo', async () => {

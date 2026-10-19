@@ -44,10 +44,17 @@ function renderApp(path: string) {
   const router = createMemoryRouter([
     { path: '*', element: <><App /><CurrentPath /></> },
   ], { initialEntries: [path] });
-  return render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />);
+  return router;
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  cleanup();
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -157,6 +164,26 @@ describe('App route boundaries', () => {
     expect(apiMocks.getPublicEvent).toHaveBeenCalledWith('event-1');
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Register for trials | Chisholm Netball Trials'));
+  });
+
+  it('keeps public registration drafts scoped to the current event', async () => {
+    apiMocks.getPublicEvent.mockImplementation(async (id: string) => ({
+      id, name: `Trial ${id}`, division: '15/U', section: 'Ladies', eventDate: '2026-09-12T00:00:00.000Z',
+      venue: 'Chisholm', startTime: '08:30', firstWhistle: '09:00', competitionYear: 2027,
+      registrationFeeCents: 0, currency: 'aud', policyUrl: null, minAge: 12, maxAge: 15, courts: 1, status: 'OPEN',
+    }));
+    const router = renderApp('/register/event-1');
+    const firstName = await screen.findByLabelText(/player first name/i);
+    fireEvent.change(firstName, { target: { value: 'Ada' } });
+    await waitFor(() => expect(window.sessionStorage.getItem('chisholm-registration-draft:public:v1:event-1')).not.toBeNull());
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    await router.navigate('/register/event-2');
+
+    expect(await screen.findByRole('heading', { name: 'Trial event-2' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/player first name/i)).toHaveValue('');
+    expect(window.sessionStorage.getItem('chisholm-registration-draft:public:v1:event-1')).not.toBeNull();
+    expect(window.sessionStorage.getItem('chisholm-registration-draft:public:v1:event-2')).toBeNull();
   });
 
   it('loads a public ticket without checking admin authentication', async () => {

@@ -57,6 +57,56 @@ const REQUIRED_FIELDS: readonly (keyof typeof EMPTY)[] = [
   'playerFirstName', 'playerLastName', 'dateOfBirth', 'parentName', 'parentEmail',
   'parentMobile', 'memberAssociation', 'rank1Position', 'eligibilityConfirmed',
 ];
+const REGISTRATION_DRAFT_TTL_MS = 60 * 60 * 1000;
+
+type RegistrationDraft = { form: typeof EMPTY; restored: boolean; storageError: boolean };
+
+function registrationDraftKey(eventId: string): string {
+  return `chisholm-registration-draft:public:v1:${encodeURIComponent(eventId)}`;
+}
+
+function isRegistrationDraftForm(value: unknown): value is typeof EMPTY {
+  if (!value || typeof value !== 'object') return false;
+  const form = value as Record<string, unknown>;
+  const textFields = ['playerFirstName', 'playerLastName', 'dateOfBirth', 'parentName', 'parentEmail', 'parentMobile', 'memberAssociation'];
+  const positionFields = ['rank1Position', 'rank2Position', 'rank3Position'];
+  return textFields.every((field) => typeof form[field] === 'string') &&
+    positionFields.every((field) => typeof form[field] === 'string' &&
+      (form[field] === '' || POSITIONS.includes(form[field] as (typeof POSITIONS)[number]))) &&
+    typeof form.optInExtraPositions === 'boolean' && typeof form.eligibilityConfirmed === 'boolean';
+}
+
+function removeRegistrationDraft(eventId: string): boolean {
+  try {
+    window.sessionStorage.removeItem(registrationDraftKey(eventId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function loadRegistrationDraft(eventId: string): RegistrationDraft {
+  const key = registrationDraftKey(eventId);
+  let raw: string | null;
+  try {
+    raw = window.sessionStorage.getItem(key);
+  } catch {
+    return { form: EMPTY, restored: false, storageError: true };
+  }
+  if (!raw) return { form: EMPTY, restored: false, storageError: false };
+
+  try {
+    const draft = JSON.parse(raw) as { version?: unknown; savedAt?: unknown; form?: unknown };
+    const now = Date.now();
+    if (draft.version !== 1 || typeof draft.savedAt !== 'number' || !Number.isFinite(draft.savedAt) ||
+      draft.savedAt > now || now - draft.savedAt >= REGISTRATION_DRAFT_TTL_MS || !isRegistrationDraftForm(draft.form)) {
+      return { form: EMPTY, restored: false, storageError: !removeRegistrationDraft(eventId) };
+    }
+    return { form: draft.form, restored: true, storageError: false };
+  } catch {
+    return { form: EMPTY, restored: false, storageError: !removeRegistrationDraft(eventId) };
+  }
+}
 
 export function RegisterPage({ client, eventId, adminAssisted = false }: { client: Client; eventId: string; adminAssisted?: boolean }) {
   const [event, setEvent] = useState<PublicEventDTO | EventDTO | null>(null);
@@ -73,7 +123,12 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [busy, setBusy] = useState(false);
   const [eventRetry, setEventRetry] = useState(0);
   const [associationRetry, setAssociationRetry] = useState(0);
-  const [form, setForm] = useState(EMPTY);
+  const [initialDraft] = useState(() => adminAssisted
+    ? { form: EMPTY, restored: false, storageError: false }
+    : loadRegistrationDraft(eventId));
+  const [form, setForm] = useState(initialDraft.form);
+  const [draftRestored, setDraftRestored] = useState(initialDraft.restored);
+  const [draftStorageError, setDraftStorageError] = useState(initialDraft.storageError);
   const [activeSection, setActiveSection] = useState<RegistrationSectionId>('player-details');
   const errorSummary = useRef<HTMLDivElement>(null);
   const simulationHeading = useRef<HTMLHeadingElement>(null);
@@ -117,10 +172,14 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     promptedLocation.current = destination;
     const message = simulationToken && !simulationCompleted
       ? 'The test payment simulation is not complete. Leave this page?'
-      : 'Your registration details are not saved on this device. Leave and lose them?';
+      : adminAssisted
+        ? 'Day-of registration details are only held while this page is open. Leave and lose them?'
+        : draftStorageError
+          ? 'Your browser could not save the draft. Leave and lose the details?'
+          : 'A draft is saved in this tab for up to 1 hour after your last change. Closing this tab clears it. Leave this page?';
     if (window.confirm(message)) blocker.proceed();
     else blocker.reset();
-  }, [blocker, simulationToken, simulationCompleted]);
+  }, [adminAssisted, blocker, draftStorageError, simulationToken, simulationCompleted]);
 
   useEffect(() => {
     if (!shouldWarnBeforeLeaving) return;
@@ -131,6 +190,25 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     window.addEventListener('beforeunload', warnBeforeUnload);
     return () => window.removeEventListener('beforeunload', warnBeforeUnload);
   }, [shouldWarnBeforeLeaving]);
+
+  useEffect(() => {
+    if (adminAssisted) return;
+    if (!hasUnsavedDetails || submitted || simulationToken) {
+      setDraftStorageError(!removeRegistrationDraft(eventId));
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(registrationDraftKey(eventId), JSON.stringify({
+        version: 1,
+        savedAt: Date.now(),
+        form,
+      }));
+      setDraftStorageError(false);
+    } catch {
+      removeRegistrationDraft(eventId);
+      setDraftStorageError(true);
+    }
+  }, [adminAssisted, eventId, form, hasUnsavedDetails, submitted, simulationToken]);
 
   useEffect(() => {
     if (!event || eventError || submitted || simulationToken || typeof IntersectionObserver === 'undefined') return;
@@ -160,7 +238,17 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   }, [submitted]);
 
   function set<K extends keyof typeof EMPTY>(key: K, value: (typeof EMPTY)[K]) {
+    setDraftRestored(false);
     setForm((previous) => ({ ...previous, [key]: value }));
+  }
+
+  function clearSavedDraft() {
+    if (!window.confirm('Clear the saved draft and all entered details from this tab?')) return;
+    setForm(EMPTY);
+    setDraftRestored(false);
+    setFieldErrors([]);
+    setSubmitError(null);
+    setDraftStorageError(!removeRegistrationDraft(eventId));
   }
 
   function invalid(field: string): boolean {
@@ -254,6 +342,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     return (
       <section className="public-page">
         <h1 ref={simulationHeading} tabIndex={-1}>Test payment simulation</h1>
+        {draftStorageError ? <p role="alert">This browser could not save or clear a draft. Keep this tab open; closing or refreshing may lose your details.</p> : null}
         <p>Registration fee: {fee}</p>
         <p>No real payment will be taken. Do not enter card details.</p>
         {simulationCompleted ? (
@@ -277,6 +366,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     return (
       <section className="public-page">
         <h1 ref={completionHeading} tabIndex={-1}>{adminAssisted ? 'Checkout link sent' : 'Request received'}</h1>
+        {!adminAssisted && draftStorageError ? <p role="alert">This browser could not confirm the draft was cleared. Close this tab to clear any saved details.</p> : null}
         {adminAssisted
           ? <p>A secure Checkout link was sent to the parent or guardian. The registration remains pending; the player is not eligible for check-in or game planning until payment is confirmed.</p>
           : <p>Check the parent or guardian email for the secure Checkout link. If no message arrives, check junk mail or contact the club.</p>}
@@ -300,12 +390,22 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           <li>At least six association games from 1 January {event.competitionYear} to the day before the trial.</li>
         </ul>
       </section>
-      <p className="registration-privacy-note">Volunteers do not see parent contact details.</p>
+      <p className="registration-privacy-note">
+        {adminAssisted
+          ? 'Volunteers do not see parent contact details.'
+          : 'Reload this tab within 1 hour to restore your draft. Closing the tab clears it.'}
+      </p>
+      {draftRestored ? <p role="status">Draft restored from this tab.</p> : null}
+      {draftStorageError ? <p role="alert">This browser could not save or clear a draft. Keep this tab open; closing or refreshing may lose your details.</p> : null}
       <details id="privacy-information" className="registration-privacy">
         <summary>Privacy details</summary>
         <p>These details are used for registration, payment, check-in and event messages.</p>
+        <p>Parent contact details are not shown to volunteers. Anyone using this browser tab can see a saved draft.</p>
         <p>The app removes or anonymises personal details 12 calendar months after the event date.</p>
         <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
+        {!adminAssisted && hasUnsavedDetails ? (
+          <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p>
+        ) : null}
       </details>
       {event.policyUrl ? (
         <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p>
