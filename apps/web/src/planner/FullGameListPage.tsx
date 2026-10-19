@@ -37,6 +37,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   const [historyPlan, setHistoryPlan] = useState<RoundPlanDTO | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedRound, setSelectedRound] = useState(1);
+  const [teamViewRound, setTeamViewRound] = useState<number | 'all'>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('team');
   const [editing, setEditing] = useState(false);
   const [editedSlots, setEditedSlots] = useState<PlanSlotInputDTO[]>([]);
@@ -69,6 +70,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     setHistoryPlan(null);
     setHistoryOpen(false);
     setSelectedRound(1);
+    setTeamViewRound('all');
     setViewMode('team');
     setEditing(false);
     setEditedSlots([]);
@@ -585,7 +587,10 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     );
   }
 
-  const roundsToRender = !availablePlan || viewMode === 'statistics' || viewMode === 'reference' ? [] : viewMode === 'position' || editing ? [selectedRound] : Array.from({ length: availablePlan.rounds }, (_, index) => index + 1);
+  const roundsToRender = !availablePlan || viewMode === 'statistics' || viewMode === 'reference' ? []
+    : viewMode === 'position' || editing ? [selectedRound]
+      : suffixEditing || teamViewRound === 'all' ? Array.from({ length: availablePlan.rounds }, (_, index) => index + 1)
+        : [teamViewRound];
 
   return (
     <section className="full-game-page">
@@ -655,7 +660,27 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                   <ul>{availablePlan.validationWarnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}</li>)}</ul>
                 </section>
               ) : null}
-              {viewMode === 'team' || viewMode === 'position' ? (
+              {viewMode === 'team' && !editing && !suffixEditing ? (
+                <label htmlFor="team-view-round">Team view round
+                  <select
+                    id="team-view-round"
+                    aria-label="Team view round"
+                    value={teamViewRound}
+                    onChange={(changeEvent) => {
+                      const value = changeEvent.target.value;
+                      if (value === 'all') setTeamViewRound('all');
+                      else {
+                        const round = Number(value);
+                        setTeamViewRound(round);
+                        setSelectedRound(round);
+                      }
+                    }}
+                  >
+                    <option value="all">All rounds</option>
+                    {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}
+                  </select>
+                </label>
+              ) : viewMode === 'position' ? (
                 <label htmlFor="position-round">Round for position view
                   <select id="position-round" aria-label="Round for position view" value={selectedRound} disabled={editing || suffixEditing} onChange={(changeEvent) => setSelectedRound(Number(changeEvent.target.value))}>
                     {Array.from({ length: availablePlan.rounds }, (_, index) => <option key={index + 1} value={index + 1}>Round {index + 1}</option>)}

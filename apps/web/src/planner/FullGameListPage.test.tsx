@@ -209,13 +209,23 @@ describe('FullGameListPage', () => {
     expect(screen.getAllByLabelText('White bib color swatch')[0]).toHaveStyle({ backgroundColor: '#FFFFFF' });
   });
 
-  it('shows the selected round in Position View without losing court, team, color, player or Number', async () => {
+  it('filters team view by round, preserves All rounds, and carries the selected round to Position View', async () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
-    fireEvent.change(screen.getByLabelText('Round for position view'), { target: { value: '2' } });
-    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
 
+    const teamRound = screen.getByLabelText('Team view round');
+    expect(teamRound).toHaveValue('all');
+    expect(screen.getAllByRole('table')).toHaveLength(8);
+    fireEvent.change(teamRound, { target: { value: '2' } });
+    expect(screen.getAllByRole('table')).toHaveLength(4);
+    expect(screen.getAllByRole('table').every((table) => within(table).getByRole('caption').textContent?.startsWith('Round 2'))).toBe(true);
+
+    fireEvent.change(teamRound, { target: { value: 'all' } });
+    expect(screen.getAllByRole('table')).toHaveLength(8);
+    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
+    expect(screen.getByLabelText('Round for position view')).toHaveValue('2');
     const tables = await screen.findAllByRole('table', { name: /Round 2 by position/ });
+    expect(tables).toHaveLength(2);
     const table = tables[0];
     expect(within(table).getByRole('columnheader', { name: /Team A.*White/ })).toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: /Team B.*Black/ })).toBeInTheDocument();
@@ -521,12 +531,14 @@ describe('FullGameListPage', () => {
     expect(screen.queryByText(/anne@example.com|payment|\$35\.00/i)).not.toBeInTheDocument();
   });
 
-  it('keeps editing and position controls available at a 390px viewport', async () => {
+  it('keeps team and position round controls available at a 390px viewport', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
     expect(screen.getByLabelText('Game view')).toBeVisible();
-    expect(screen.getByLabelText('Round for position view')).toBeVisible();
+    expect(screen.getByLabelText('Team view round')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Edit round 1' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
+    expect(screen.getByLabelText('Round for position view')).toBeVisible();
   });
 });
