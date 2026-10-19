@@ -33,7 +33,7 @@ export function PublicHomePage({ client }: { client: Client }) {
     <main className="public-home-main" aria-labelledby="upcoming-trials-heading">
       <div className="public-home-banner">
         <div className="public-home-banner-inner">
-          <p className="public-home-club"><a href={CHISHOLM_HOME}>Chisholm Netball home</a></p>
+          <p className="public-home-club"><a href={CHISHOLM_HOME}>Chisholm Netball website</a></p>
           <h1 id="upcoming-trials-heading">Upcoming trials</h1>
         </div>
       </div>

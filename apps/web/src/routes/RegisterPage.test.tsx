@@ -220,7 +220,10 @@ describe('RegisterPage', () => {
     expect(screen.getByText(/the full eligibility criteria appear beside the confirmation at the end of this form/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View eligibility criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
     expect(screen.getAllByText(/permanent player in a domestic or representative competition/i)).toHaveLength(1);
-    expect(screen.getByRole('link', { name: /selection policy/i })).toHaveAttribute('href', publicEvent().policyUrl);
+    const policyLink = screen.getByRole('link', { name: 'Read the selection policy (opens in a new tab)' });
+    expect(policyLink).toHaveAttribute('href', publicEvent().policyUrl);
+    expect(policyLink).toHaveAttribute('target', '_blank');
+    expect(policyLink).toHaveAttribute('rel', 'noreferrer');
     expect(screen.getByText(/12 calendar months after the event date/i)).toBeInTheDocument();
   });
 

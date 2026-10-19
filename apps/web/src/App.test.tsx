@@ -98,7 +98,7 @@ describe('Public home page', () => {
     expect(screen.getByRole('link', { name: 'Register for 15/U State Titles Trial' })).toHaveAttribute('href', '/register/open-trial');
     expect(screen.getByText('Registration closed')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Chisholm Netball home' })).toHaveAttribute('href', 'https://chisholmnetball.com/');
+    expect(screen.getByRole('link', { name: 'Chisholm Netball website' })).toHaveAttribute('href', 'https://chisholmnetball.com/');
     expect(apiMocks.me).not.toHaveBeenCalled();
   });
 
@@ -106,7 +106,7 @@ describe('Public home page', () => {
     renderApp('/');
 
     expect(await screen.findByText('No trials currently scheduled.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Chisholm Netball home' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Chisholm Netball website' })).toBeInTheDocument();
   });
 
   it('offers retry when the trial list fails to load', async () => {

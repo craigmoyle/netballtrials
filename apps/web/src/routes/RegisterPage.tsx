@@ -281,7 +281,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         <a href="#eligibility-confirmation-summary">View eligibility criteria</a>.
       </p>
       <p>
-        <a href={event.policyUrl ?? '#'} target="_blank" rel="noreferrer">Read the selection policy</a>
+        <a href={event.policyUrl ?? '#'} target="_blank" rel="noreferrer">Read the selection policy (opens in a new tab)</a>
       </p>
       <div id="privacy-information" className="registration-privacy">
         <p>Privacy: these details are used for registration, payment, check-in and event messages.</p>
