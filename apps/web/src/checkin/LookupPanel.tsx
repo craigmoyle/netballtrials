@@ -9,6 +9,7 @@ type Client = ReturnType<typeof apiClient>;
 export function LookupPanel({ client }: { client: Client }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LookupResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [undoableId, setUndoableId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,14 +20,25 @@ export function LookupPanel({ client }: { client: Client }) {
     if (query.trim().length < 2) {
       setResults([]);
       setError(null);
+      setSearching(false);
       return;
     }
     let active = true;
+    setResults([]);
+    setError(null);
+    setSearching(true);
     const timer = setTimeout(() => {
-      setError(null);
       client.lookup(query)
-        .then((rows) => { if (active) setResults(rows); })
-        .catch(() => { if (active) setError('Could not search registrations. Retry the lookup.'); });
+        .then((rows) => {
+          if (!active) return;
+          setResults(rows);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (!active) return;
+          setError('Could not search registrations. Retry the lookup.');
+          setSearching(false);
+        });
     }, 250);
     return () => {
       active = false;
@@ -76,9 +88,11 @@ export function LookupPanel({ client }: { client: Client }) {
   return (
     <section>
       <h1>Manual lookup</h1>
-      <p><label htmlFor="lookup">Player name</label><input id="lookup" value={query} onChange={(event) => setQuery(event.target.value)} /></p>
+      <p><label htmlFor="lookup">Player name</label><input id="lookup" value={query} onChange={(event) => { setQuery(event.target.value); setResults([]); setError(null); }} /></p>
       {error ? <p role="alert">{error}</p> : null}
       {error && query.trim().length >= 2 ? <button type="button" onClick={() => setRetry((count) => count + 1)}>Retry lookup</button> : null}
+      {searching ? <p role="status">Searching registrations...</p> : null}
+      {!searching && !error && query.trim().length >= 2 && results.length === 0 ? <p role="status">No players found matching that name.</p> : null}
       {label ? <p role="status" className="scan-result" data-tone={label.tone}>{label.text}</p> : null}
       {undoableId ? <button type="button" disabled={busy} onClick={undo}>Undo last check-in</button> : null}
       <ul>
