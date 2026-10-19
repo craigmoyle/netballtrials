@@ -11,11 +11,12 @@ describe('site navigation', () => {
     expect(screen.getByRole('img', { name: 'Chisholm Netball logo' })).toBeInTheDocument();
   });
 
-  it('offers one Admin entry and one volunteer check-in entry', () => {
+  it('groups lower-emphasis staff access links under a visible label', () => {
     render(<MemoryRouter><PublicAccessNav /></MemoryRouter>);
-    const nav = screen.getByRole('navigation', { name: 'Access options' });
+    const nav = screen.getByRole('navigation', { name: 'Staff and volunteer access' });
 
-    expect(within(nav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin');
+    expect(within(nav).getByText('Staff & volunteers')).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(nav).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in');
     expect(within(nav).getAllByRole('link')).toHaveLength(2);
   });

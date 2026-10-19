@@ -73,7 +73,7 @@ export function EventCourtColors({ client, eventId, courts }: { client: Client; 
 
   if (loadError) {
     return (
-      <section aria-labelledby="event-court-colors-heading">
+      <section className="event-court-colors" aria-labelledby="event-court-colors-heading">
         <h3 id="event-court-colors-heading">Team colors</h3>
         <p role="alert">Could not load the color catalog or court assignments. Refresh this page and try again.</p>
       </section>
@@ -82,7 +82,7 @@ export function EventCourtColors({ client, eventId, courts }: { client: Client; 
   if (!colors) return <p role="status">Loading event court colors...</p>;
 
   return (
-    <section aria-labelledby="event-court-colors-heading">
+    <section className="event-court-colors" aria-labelledby="event-court-colors-heading">
       <h3 id="event-court-colors-heading">Team colors</h3>
       <p>Choose distinct bib colors for Team A and Team B on each court. Written names remain visible in grayscale.</p>
       {colors.filter((color) => !color.archivedAt).length === 0

@@ -75,6 +75,8 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .app-brand img { display: block; width: 100%; height: auto; }
 .public-access-nav { margin-right: 0; margin-left: auto; }
+.public-access-label { font-weight: 650; }
+.app-nav.public-access-nav a { display: flex; align-items: center; min-height: 2.75rem; font-weight: 400; }
 
 .app-nav {
   display: flex;
@@ -212,6 +214,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--in
 .event-workflow-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; }
 .event-workflow-group-label { font-weight: 700; }
 .event-workflow-links [aria-current="page"] { font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.event-controls > h3, .event-court-colors > h3 { margin-block: 1.5rem 0.5rem; }
 .event-workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; }
 .event-workflow-grid .event-workflow-group { min-width: 0; }
 .event-workflow-grid a { min-width: 0; overflow-wrap: anywhere; }

@@ -88,8 +88,9 @@ describe('Public home page', () => {
     const homeHeading = await screen.findByRole('heading', { name: 'Upcoming trials' });
     expect(homeHeading).toBeInTheDocument();
     expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
-    const accessNav = screen.getByRole('navigation', { name: 'Access options' });
-    expect(within(accessNav).getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin');
+    const accessNav = screen.getByRole('navigation', { name: 'Staff and volunteer access' });
+    expect(within(accessNav).getByText('Staff & volunteers')).toBeInTheDocument();
+    expect(within(accessNav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(accessNav).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in');
     expect(within(accessNav).getAllByRole('link')).toHaveLength(2);
     expect(await screen.findByRole('heading', { name: '15/U State Titles Trial' })).toBeInTheDocument();
@@ -126,7 +127,7 @@ describe('App route boundaries', () => {
     apiMocks.listEvents.mockResolvedValue([]);
     renderApp('/');
 
-    fireEvent.click(screen.getByRole('link', { name: 'Chisholm Admin' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Staff sign-in' }));
 
     expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
@@ -137,7 +138,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/');
 
-    fireEvent.click(screen.getByRole('link', { name: 'Chisholm Admin' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Staff sign-in' }));
 
     expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
@@ -152,7 +153,7 @@ describe('App route boundaries', () => {
     });
     renderApp('/register/event-1');
     expect(await screen.findByRole('heading', { name: 'Trials' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Access options' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
     expect(apiMocks.getPublicEvent).toHaveBeenCalledWith('event-1');
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Register for trials | Chisholm Netball Trials'));
@@ -171,7 +172,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/admin/events');
     expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Access options' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
   });
@@ -184,7 +185,7 @@ describe('App route boundaries', () => {
     expect(screen.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('navigation', { name: 'Administration' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    expect(screen.queryByRole('navigation', { name: 'Access options' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Staff and volunteer access' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Events | Chisholm Netball Trials'));
     fireEvent.click(newEvent);
     expect(await screen.findByRole('heading', { name: 'New event' })).toBeInTheDocument();
@@ -340,7 +341,7 @@ describe('App route boundaries', () => {
     const checkInNav = screen.getByRole('navigation', { name: 'Check-in' });
     expect(within(checkInNav).getByRole('link', { name: 'Scan' })).toHaveAttribute('href', '/check-in/scan');
     expect(within(checkInNav).getByRole('link', { name: 'Lookup' })).toHaveAttribute('href', '/check-in/lookup');
-    expect(screen.queryByRole('navigation', { name: 'Access options' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Staff and volunteer access' })).not.toBeInTheDocument();
     expect(apiMocks.me).not.toHaveBeenCalled();
   });
 
@@ -401,7 +402,7 @@ describe('App route boundaries', () => {
   it('loads the volunteer PIN screen without calling the admin session endpoint', async () => {
     renderApp('/check-in');
     expect(await screen.findByRole('heading', { name: 'Check-in' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Access options' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
     expect(screen.getByLabelText('Event PIN')).toHaveAttribute('type', 'password');
     expect(screen.getByText(/enter the event id and pin for your trial/i)).toBeInTheDocument();
     expect(screen.getByText(/ask your event coordinator/i)).toBeInTheDocument();

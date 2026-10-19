@@ -124,7 +124,7 @@ export function EventControls({
     pinConfigured !== null && !checkInClosedAt;
 
   return (
-    <section aria-labelledby="event-controls-heading">
+    <section className="event-controls" aria-labelledby="event-controls-heading">
       <h2 id="event-controls-heading">Event controls</h2>
       {(pinConfigured !== null && !checkInClosedAt) || canRegisterDayOf ? (
         <nav aria-label="Event actions" className="workflow-links">
