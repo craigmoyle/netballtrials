@@ -1,11 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, Link, RouterProvider, useParams } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type PlanRevisionSummaryDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO } from '@netball-trials/types';
 import { ApiError } from '../api/client';
 import { FullGameListPage } from './FullGameListPage';
 
-afterEach(cleanup);
+const testRouters: ReturnType<typeof createMemoryRouter>[] = [];
+
+afterEach(() => {
+  cleanup();
+  for (const router of testRouters) router.dispose();
+  testRouters.length = 0;
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const event: EventDTO = {
   id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
@@ -121,8 +129,23 @@ function makeClient(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function RoutedGameList({ client }: { client: Record<string, unknown> }) {
+  const { eventId } = useParams();
+  return <><Link to="/leave-schedule">Leave Full Game List</Link><FullGameListPage client={client as any} eventId={eventId ?? 'event-1'} /></>;
+}
+
+function renderPageWithRouter(client = makeClient(), eventId = 'event-1') {
+  const router = createMemoryRouter([
+    { path: '/admin/events/:eventId/games', element: <RoutedGameList client={client} /> },
+    { path: '/leave-schedule', element: <h1>Left schedule</h1> },
+  ], { initialEntries: [`/admin/events/${eventId}/games`] });
+  testRouters.push(router);
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
 function renderPage(client = makeClient()) {
-  render(<MemoryRouter><FullGameListPage client={client as any} eventId="event-1" /></MemoryRouter>);
+  renderPageWithRouter(client);
   return client;
 }
 
@@ -151,22 +174,63 @@ describe('FullGameListPage', () => {
     expect(screen.getByRole('heading', { name: 'Full Game List' })).toBe(heading);
   });
 
+  it('warns before leaving dirty schedule edits and preserves them if navigation is canceled', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const router = renderPageWithRouter();
+    await screen.findByText('Active revision 2');
+
+    const cleanUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(cleanUnload);
+    expect(cleanUnload.defaultPrevented).toBe(false);
+    makeMove();
+    expect(screen.getByRole('button', { name: 'Save round 1' })).toBeEnabled();
+    const dirtyUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(dirtyUnload);
+    expect(dirtyUnload.defaultPrevented).toBe(true);
+    expect(setItem).not.toHaveBeenCalled();
+
+    const leave = screen.getByRole('link', { name: 'Leave Full Game List' });
+    fireEvent.click(leave);
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(router.state.location.pathname).toBe('/admin/events/event-1/games');
+    expect(screen.getByRole('button', { name: 'Save round 1' })).toBeEnabled();
+
+    fireEvent.click(leave);
+    expect(await screen.findByRole('heading', { name: 'Left schedule' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/leave-schedule');
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows clean Full Game List navigation without a confirmation', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
+    const router = renderPageWithRouter();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+
+    fireEvent.click(screen.getByRole('link', { name: 'Leave Full Game List' }));
+
+    expect(await screen.findByRole('heading', { name: 'Left schedule' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/leave-schedule');
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
   it('clears the previous event context while a different event loads', async () => {
     let holdSecondEvent!: Promise<EventDTO>;
     const client = makeClient();
-    const view = render(<MemoryRouter><FullGameListPage client={client as any} eventId="event-1" /></MemoryRouter>);
+    const router = renderPageWithRouter(client);
     await screen.findByText('Active revision 2');
     holdSecondEvent = new Promise<EventDTO>(() => undefined);
     client.getEvent.mockReturnValueOnce(holdSecondEvent);
 
-    view.rerender(<MemoryRouter><FullGameListPage client={client as any} eventId="event-2" /></MemoryRouter>);
+    await router.navigate('/admin/events/event-2/games');
 
-    expect(screen.getByRole('status')).toHaveTextContent('Loading game list...');
+    expect(await screen.findByRole('status')).toHaveTextContent('Loading game list...');
     expect(screen.queryByText('15/U Ladies')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View revision 1' })).not.toBeInTheDocument();
   });
 
   it('does not apply a save response to a different event after navigation', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
     let resolveSave!: (result: { ok: true; plan: RoundPlanDTO }) => void;
     const delayedSave = new Promise<{ ok: true; plan: RoundPlanDTO }>((resolve) => { resolveSave = resolve; });
     const nextEvent = { ...event, id: 'event-2', name: 'New Event', division: '17/U' };
@@ -176,13 +240,13 @@ describe('FullGameListPage', () => {
       getPublishedPlan: vi.fn().mockResolvedValueOnce(plan).mockResolvedValueOnce(nextPlan),
       saveManualRound: vi.fn(() => delayedSave),
     });
-    const view = render(<MemoryRouter><FullGameListPage client={client as any} eventId="event-1" /></MemoryRouter>);
+    const router = renderPageWithRouter(client);
     await screen.findByText('Active revision 2');
     makeMove();
     fireEvent.click(screen.getByRole('button', { name: 'Save round 1' }));
     await waitFor(() => expect(client.saveManualRound).toHaveBeenCalledTimes(1));
 
-    view.rerender(<MemoryRouter><FullGameListPage client={client as any} eventId="event-2" /></MemoryRouter>);
+    await router.navigate('/admin/events/event-2/games');
     await screen.findByText('Active revision 3');
     resolveSave({ ok: true, plan });
     await new Promise((resolve) => setTimeout(resolve, 0));

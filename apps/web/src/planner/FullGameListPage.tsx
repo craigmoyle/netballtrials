@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useBlocker } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type apiClient } from '../api/client';
 
@@ -28,6 +28,7 @@ function sortedSlots(slots: PlanSlotInputDTO[]): PlanSlotInputDTO[] {
 
 export function FullGameListPage({ client, eventId }: { client: Client; eventId: string }) {
   const eventIdRef = useRef(eventId);
+  const promptedLocation = useRef<string | null>(null);
   eventIdRef.current = eventId;
   const [event, setEvent] = useState<EventDTO | null>(null);
   const [plan, setPlan] = useState<RoundPlanDTO | null>(null);
@@ -149,7 +150,30 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   const dirty = editing && editedSlots.some((slot) => originalRoundSlots.find((original) => slotKey(original) === slotKey(slot))?.registrationId !== slot.registrationId);
   const suffixDirty = suffixEditing && editedSuffixSlots.some((slot) => plan?.slots.find((original) => slotKey(planSlot(original)) === slotKey(slot))?.registrationId !== slot.registrationId);
   const dirtyAny = dirty || suffixDirty;
+  const blocker = useBlocker(dirtyAny);
   const earlyLeaverSet = new Set(earlyLeaverIds);
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') {
+      promptedLocation.current = null;
+      return;
+    }
+    const destination = `${blocker.location.pathname}${blocker.location.search}${blocker.location.hash}`;
+    if (promptedLocation.current === destination) return;
+    promptedLocation.current = destination;
+    if (window.confirm('You have unsaved game schedule changes. Leave and discard them?')) blocker.proceed();
+    else blocker.reset();
+  }, [blocker]);
+
+  useEffect(() => {
+    if (!dirtyAny) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [dirtyAny]);
   const earlyLeaverCandidates = plan?.players.filter((player) => player.active && rosterById.has(player.registrationId) &&
     plan.slots.some((slot) => slot.round >= suffixFromRound && slot.registrationId === player.registrationId)) ?? [];
   const lateArrivalPlayers = plan ? roster.filter((player) => !snapshotById.has(player.registrationId)) : [];
