@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { Link, useBlocker, useLocation } from 'react-router-dom';
 import { melbourneDateKey, POSITIONS, type EventDTO, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
@@ -114,6 +114,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [eventError, setEventError] = useState(false);
   const [associationError, setAssociationError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { hash } = useLocation();
   const [submitted, setSubmitted] = useState(false);
   const [simulationToken, setSimulationToken] = useState<string | null>(null);
   const [simulationError, setSimulationError] = useState<string | null>(null);
@@ -137,7 +138,8 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const hasUnsavedDetails = (Object.keys(EMPTY) as (keyof typeof EMPTY)[])
     .some((key) => form[key] !== EMPTY[key]);
   const shouldWarnBeforeLeaving = hasUnsavedDetails && !submitted && !simulationCompleted;
-  const blocker = useBlocker(shouldWarnBeforeLeaving);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => shouldWarnBeforeLeaving &&
+    (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
 
   useEffect(() => {
     let active = true;
@@ -218,6 +220,20 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     if (sections.length === 0) return;
 
     const observer = new IntersectionObserver((entries) => {
+      if (document.documentElement.scrollHeight > window.innerHeight &&
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1) {
+        setActiveSection('eligibility-confirmation');
+        return;
+      }
+      const hashId = hash.slice(1);
+      const hashSectionId = REGISTRATION_SECTIONS.find(([id]) => id === hashId)?.[0] ??
+        (hashId === 'eligibility-confirmation-summary' ? 'eligibility-confirmation' : null);
+      const hashSection = hashSectionId ? document.getElementById(hashSectionId) : null;
+      const hashBounds = hashSection?.getBoundingClientRect();
+      if (hashSectionId && hashBounds && hashBounds.top < window.innerHeight && hashBounds.bottom > 0) {
+        setActiveSection(hashSectionId);
+        return;
+      }
       const visible = entries
         .filter((entry) => entry.isIntersecting)
         .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -227,7 +243,17 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     }, { rootMargin: '-10% 0px -70% 0px' });
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
-  }, [event, eventError, submitted, simulationToken]);
+  }, [event, eventError, submitted, simulationToken, hash]);
+
+  useEffect(() => {
+    if (!event || !hash || eventError || submitted || simulationToken) return;
+    const targetId = hash.slice(1);
+    const sectionId = REGISTRATION_SECTIONS.find(([id]) => id === targetId)?.[0] ??
+      (targetId === 'eligibility-confirmation-summary' ? 'eligibility-confirmation' : null);
+    if (!sectionId) return;
+    setActiveSection(sectionId);
+    document.getElementById(targetId)?.scrollIntoView?.({ block: 'start' });
+  }, [event, eventError, hash, submitted, simulationToken]);
 
   useEffect(() => {
     if (simulationToken) simulationHeading.current?.focus();
@@ -382,7 +408,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       <section className="registration-eligibility-summary" aria-labelledby="registration-eligibility-heading">
         <div className="registration-eligibility-heading">
           <h2 id="registration-eligibility-heading">Eligibility at a glance</h2>
-          <a href="#eligibility-confirmation-summary">View full criteria</a>
+          <Link to="#eligibility-confirmation-summary">View full criteria</Link>
         </div>
         <ul>
           <li>Age: {event.minAge}–{event.maxAge} on 31 December {event.competitionYear}.</li>
@@ -413,7 +439,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       <nav className="registration-sections" aria-label="Registration sections">
         <ol>
           {REGISTRATION_SECTIONS.map(([id, label]) => (
-            <li key={id}><a href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined}>{label}</a></li>
+            <li key={id}><Link to={`#${id}`} aria-current={activeSection === id ? 'location' : undefined}>{label}</Link></li>
           ))}
         </ol>
       </nav>

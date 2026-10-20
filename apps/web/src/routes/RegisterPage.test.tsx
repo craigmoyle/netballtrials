@@ -303,7 +303,7 @@ describe('RegisterPage', () => {
     expect(within(summary).getByText(/Age: 12–15 on 31 December 2027/i)).toBeInTheDocument();
     expect(within(summary).getByText(/Permanent player in a domestic or representative competition at a Chisholm Region member association/i)).toBeInTheDocument();
     expect(within(summary).getByText(/at least six association games from 1 January 2027 to the day before the trial/i)).toBeInTheDocument();
-    expect(within(summary).getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
+    expect(within(summary).getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '/register/e1#eligibility-confirmation-summary');
 
     const firstField = await screen.findByLabelText(/player first name/i);
     expect(summary.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -336,7 +336,7 @@ describe('RegisterPage', () => {
       ['Eligibility', 'Eligibility confirmation', '#eligibility-confirmation'],
     ];
     for (const [linkLabel, sectionLabel, href] of sections) {
-      expect(within(sectionsNav).getByRole('link', { name: linkLabel })).toHaveAttribute('href', href);
+      expect(within(sectionsNav).getByRole('link', { name: linkLabel })).toHaveAttribute('href', `/register/e1${href}`);
       expect(screen.getByRole('group', { name: sectionLabel })).toHaveAttribute('id', href.slice(1));
     }
   });
@@ -407,7 +407,7 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('option', { name: 'MENA' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Old Club' })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Eligibility at a glance' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '#eligibility-confirmation-summary');
+    expect(screen.getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '/register/e1#eligibility-confirmation-summary');
     expect(screen.getAllByText(/permanent player in a domestic or representative competition/i)).toHaveLength(2);
     const policyLink = screen.getByRole('link', { name: 'Selection policy (new tab)' });
     expect(policyLink).toHaveAttribute('href', publicEvent().policyUrl);
@@ -439,6 +439,23 @@ describe('RegisterPage', () => {
     }
     expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
     expect(screen.getByLabelText(/member association/i)).toHaveValue('MENA');
+  });
+
+  it('keeps section hash navigation inside the page and does not trigger the leave blocker', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+    const router = testRouters.at(-1)!;
+
+    fireEvent.click(screen.getByRole('link', { name: 'Eligibility' }));
+
+    await waitFor(() => expect(router.state.location.hash).toBe('#eligibility-confirmation'));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Eligibility' })).toHaveAttribute('aria-current', 'location');
+    fireEvent.click(screen.getByRole('link', { name: 'View full criteria' }));
+    await waitFor(() => expect(router.state.location.hash).toBe('#eligibility-confirmation-summary'));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Eligibility' })).toHaveAttribute('aria-current', 'location');
   });
 
   it('marks the section currently intersecting the viewport in the anchor navigation', async () => {

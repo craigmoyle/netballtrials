@@ -191,8 +191,8 @@ button:disabled { opacity: 0.62; cursor: not-allowed; }
 .public-trial-details dt { font-weight: 700; }
 .public-trial-details dd { overflow-wrap: anywhere; }
 .public-trial-action { display: grid; justify-items: start; gap: 0.5rem; }
-.public-register-link { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.55rem 1rem; color: var(--paper); font-weight: 650; background: var(--burgundy); border: 1px solid var(--burgundy); border-radius: 0.3rem; text-decoration: none; }
-.public-register-link:hover { color: var(--paper); background: var(--burgundy-dark); }
+.public-register-link, .events-new-action { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.55rem 1rem; color: var(--paper); font-weight: 650; background: var(--burgundy); border: 1px solid var(--burgundy); border-radius: 0.3rem; text-decoration: none; }
+.public-register-link:hover, .events-new-action:hover { color: var(--paper); background: var(--burgundy-dark); }
 
 .error-summary {
   max-width: 44rem;

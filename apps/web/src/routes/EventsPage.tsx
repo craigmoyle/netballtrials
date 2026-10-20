@@ -36,7 +36,7 @@ export function EventsPage({ client }: { client: Client }) {
     <section>
       <h1>Events</h1>
       <p>
-        <Link to="/admin/events/new">New event</Link>
+        <Link className="events-new-action" to="/admin/events/new">New event</Link>
       </p>
       {events.length === 0 ? (
         <p>No events yet.</p>

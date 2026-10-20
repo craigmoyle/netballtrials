@@ -9,5 +9,6 @@ describe('EventsPage', () => {
     render(<MemoryRouter><EventsPage client={{ listEvents: async () => events } as any} /></MemoryRouter>);
     expect(await screen.findByText('15/U Ladies')).toBeTruthy();
     expect(screen.getByText(/5 courts/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'New event' })).toHaveClass('events-new-action');
   });
 });
