@@ -1,18 +1,19 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import type { apiClient } from './api/client';
 import { ClubLogoLink } from './SiteNavigation';
 
 type Client = ReturnType<typeof apiClient>;
 
 export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: () => void }) {
+  const { pathname } = useLocation();
   return (
     <div className="app-shell">
       <header className="app-header">
         <ClubLogoLink />
         <nav className="app-nav" aria-label="Administration">
-          <Link to="/admin/events">Events</Link>
-          <Link to="/admin/associations">Member associations</Link>
-          <Link to="/admin/bib-colors">Bib colors</Link>
+          <Link to="/admin/events" aria-current={pathname.startsWith('/admin/events') ? 'page' : undefined}>Events</Link>
+          <Link to="/admin/associations" aria-current={pathname.startsWith('/admin/associations') ? 'page' : undefined}>Member associations</Link>
+          <Link to="/admin/bib-colors" aria-current={pathname.startsWith('/admin/bib-colors') ? 'page' : undefined}>Bib colors</Link>
         </nav>
         <button
           type="button"

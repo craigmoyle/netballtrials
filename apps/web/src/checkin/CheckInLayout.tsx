@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { CheckInSummary } from '@netball-trials/types';
 import type { apiClient } from '../api/client';
 import { CHECK_IN_UPDATED_EVENT } from './refresh';
@@ -9,6 +9,7 @@ type Client = ReturnType<typeof apiClient>;
 
 export function CheckInLayout({ client }: { client: Client }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [summary, setSummary] = useState<CheckInSummary | null>(null);
 
   useEffect(() => {
@@ -37,7 +38,8 @@ export function CheckInLayout({ client }: { client: Client }) {
         </p>
       ) : null}
       <nav className="app-nav" aria-label="Check-in">
-        <Link to="/check-in/scan">Scan</Link> <Link to="/check-in/lookup">Lookup</Link>
+        <Link to="/check-in/scan" aria-current={pathname === '/check-in/scan' ? 'page' : undefined}>Scan</Link>
+        <Link to="/check-in/lookup" aria-current={pathname === '/check-in/lookup' ? 'page' : undefined}>Lookup</Link>
       </nav>
     </header>
   );

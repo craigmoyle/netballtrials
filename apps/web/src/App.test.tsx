@@ -246,6 +246,8 @@ describe('App route boundaries', () => {
 
     expect(await screen.findByText('No published game plan yet.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Full Game List' })).toBeInTheDocument();
+    const adminNav = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(adminNav).getByRole('link', { name: 'Events' })).toHaveAttribute('aria-current', 'page');
     const eventNav = screen.getByRole('navigation', { name: 'Event workflows' });
     const eventToolsToggle = within(eventNav).getByRole('button', { name: 'Event tools: Full Game List' });
     expect(eventToolsToggle).toHaveAttribute('aria-expanded', 'false');
@@ -368,6 +370,7 @@ describe('App route boundaries', () => {
     const checkInNav = screen.getByRole('navigation', { name: 'Check-in' });
     expect(within(checkInNav).getByRole('link', { name: 'Scan' })).toHaveAttribute('href', '/check-in/scan');
     expect(within(checkInNav).getByRole('link', { name: 'Lookup' })).toHaveAttribute('href', '/check-in/lookup');
+    expect(within(checkInNav).getByRole('link', { name: 'Lookup' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('navigation', { name: 'Staff and volunteer access' })).not.toBeInTheDocument();
     expect(apiMocks.me).not.toHaveBeenCalled();
   });
