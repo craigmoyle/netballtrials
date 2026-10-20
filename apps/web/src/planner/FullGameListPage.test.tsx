@@ -284,15 +284,24 @@ describe('FullGameListPage', () => {
 
     const teamRound = screen.getByLabelText('Team view round');
     expect(teamRound).toHaveValue('all');
+    const roundNavigation = screen.getByRole('group', { name: 'Jump to a round' });
+    expect(within(roundNavigation).getAllByRole('button')).toHaveLength(plan.rounds);
+    const roundTwoHeading = document.getElementById('game-round-2')!;
+    roundTwoHeading.scrollIntoView = vi.fn();
+    fireEvent.click(within(roundNavigation).getByRole('button', { name: 'Round 2' }));
+    expect(roundTwoHeading.scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+    expect(teamRound).toHaveValue('all');
     expect(teamRound.closest('.full-game-round-filter')).not.toBeNull();
     expect(teamRound.closest('label')).toHaveClass('full-game-round-filter-label');
     expect(screen.getAllByRole('table')).toHaveLength(8);
     fireEvent.change(teamRound, { target: { value: '2' } });
+    expect(screen.queryByRole('group', { name: 'Jump to a round' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('table')).toHaveLength(4);
     expect(screen.getAllByRole('table').every((table) => within(table).getByRole('caption').textContent?.startsWith('Round 2'))).toBe(true);
 
     fireEvent.change(teamRound, { target: { value: 'all' } });
     expect(screen.getAllByRole('table')).toHaveLength(8);
+    expect(screen.getByRole('group', { name: 'Jump to a round' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
     expect(screen.getByLabelText('Round for position view')).toHaveValue('2');
     const tables = await screen.findAllByRole('table', { name: /Round 2 by position/ });

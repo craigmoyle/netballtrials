@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { CheckInPage } from './CheckInPage';
 
@@ -15,12 +15,71 @@ function renderCheckIn(client: Record<string, unknown>, path = '/check-in') {
 }
 
 describe('CheckInPage', () => {
-  it('shows the PIN form without looking up an event when no ID is prefilled', () => {
-    const listPublicEvents = vi.fn();
+  it('lets volunteers choose an upcoming trial before entering the PIN', async () => {
+    const events = [
+      {
+        id: 'event-42', name: '17/U State Titles Trial', eventDate: '2026-09-12T00:00:00.000Z',
+        venue: 'Chisholm Netball Centre', status: 'CLOSED',
+      },
+      {
+        id: 'event-43', name: '15/U Ladies Trial', eventDate: '2026-09-19T00:00:00.000Z',
+        venue: 'Riverside Courts', status: 'OPEN',
+      },
+    ];
+    const listPublicEvents = vi.fn().mockResolvedValue(events);
     renderCheckIn({ listPublicEvents });
+
+    const trialSelect = await screen.findByLabelText('Trial');
+    expect(screen.getByRole('option', {
+      name: '17/U State Titles Trial · 12 September 2026 · Chisholm Netball Centre',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('option', {
+      name: '15/U Ladies Trial · 19 September 2026 · Riverside Courts',
+    })).toBeInTheDocument();
+    expect(trialSelect).toHaveValue('');
+    expect(trialSelect).not.toHaveTextContent(/OPEN|CLOSED/);
     expect(screen.getByLabelText(/event pin/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /start check-in/i })).toBeTruthy();
-    expect(listPublicEvents).not.toHaveBeenCalled();
+    expect(listPublicEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens check-in for the selected trial and PIN', async () => {
+    const event = {
+      id: 'event-42', name: '17/U State Titles Trial', eventDate: '2026-09-12T00:00:00.000Z',
+      venue: 'Chisholm Netball Centre', status: 'OPEN',
+    };
+    const openCheckIn = vi.fn().mockResolvedValue({ eventName: event.name });
+    renderCheckIn({ listPublicEvents: vi.fn().mockResolvedValue([event]), openCheckIn });
+
+    fireEvent.change(await screen.findByLabelText('Trial'), { target: { value: event.id } });
+    fireEvent.change(screen.getByLabelText('Event PIN'), { target: { value: '1234' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
+
+    await waitFor(() => expect(openCheckIn).toHaveBeenCalledWith(event.id, '1234'));
+    expect(await screen.findByLabelText('Current URL')).toHaveTextContent('/check-in/scan');
+  });
+
+  it('explains when there are no upcoming trials to choose', async () => {
+    renderCheckIn({ listPublicEvents: vi.fn().mockResolvedValue([]) });
+
+    expect(await screen.findByText(/no upcoming trials are available/i)).toHaveAttribute('role', 'status');
+    expect(screen.getByRole('button', { name: /start check-in/i })).toBeDisabled();
+  });
+
+  it('offers a retry when upcoming trials cannot be loaded', async () => {
+    const event = {
+      id: 'event-42', name: '17/U State Titles Trial', eventDate: '2026-09-12T00:00:00.000Z',
+      venue: 'Chisholm Netball Centre', status: 'CLOSED',
+    };
+    const listPublicEvents = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([event]);
+    renderCheckIn({ listPublicEvents });
+
+    expect(await screen.findByText(/could not load upcoming trials/i)).toHaveAttribute('role', 'alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('option', { name: /17\/u state titles trial/i })).toBeInTheDocument();
+    expect(listPublicEvents).toHaveBeenCalledTimes(2);
   });
 
   it('shows the name and localized date for the event-specific volunteer link', async () => {

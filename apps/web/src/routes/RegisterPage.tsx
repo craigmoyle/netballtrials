@@ -419,23 +419,10 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       <p className="registration-privacy-note">
         {adminAssisted
           ? 'Volunteers do not see parent contact details.'
-          : 'Reload this tab within 1 hour to restore your draft. Closing the tab clears it.'}
+          : 'Your draft is saved in this tab for up to 1 hour after your last change and restored if you reload. Anyone with access to this tab can see it; closing the tab clears it.'}
       </p>
       {draftRestored ? <p role="status">Draft restored from this tab.</p> : null}
       {draftStorageError ? <p role="alert">This browser could not save or clear a draft. Keep this tab open; closing or refreshing may lose your details.</p> : null}
-      <details id="privacy-information" className="registration-privacy">
-        <summary>Privacy details</summary>
-        <p>These details are used for registration, payment, check-in and event messages.</p>
-        <p>Parent contact details are not shown to volunteers. Anyone using this browser tab can see a saved draft.</p>
-        <p>The app removes or anonymises personal details 12 calendar months after the event date.</p>
-        <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
-        {!adminAssisted && hasUnsavedDetails ? (
-          <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p>
-        ) : null}
-      </details>
-      {event.policyUrl ? (
-        <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p>
-      ) : null}
       <nav className="registration-sections" aria-label="Registration sections">
         <ol>
           {REGISTRATION_SECTIONS.map(([id, label]) => (
@@ -557,6 +544,19 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           </p>
         </fieldset>
 
+        {event.policyUrl ? (
+          <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p>
+        ) : null}
+        <details id="privacy-information" className="registration-privacy">
+          <summary>Privacy details</summary>
+          <p>These details are used for registration, payment, check-in and event messages.</p>
+          <p>Parent contact details are not shown to volunteers.</p>
+          <p>The app removes or anonymises personal details 12 calendar months after the event date.</p>
+          <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
+          {!adminAssisted && hasUnsavedDetails ? (
+            <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p>
+          ) : null}
+        </details>
         <button type="submit" disabled={busy || !associations || associations.length === 0}>
           {busy ? (adminAssisted ? 'Sending payment link...' : 'Submitting...') : adminAssisted ? 'Send payment link' : 'Submit registration'}
         </button>

@@ -106,6 +106,9 @@ describe('Public home page', () => {
     expect(screen.getByRole('link', { name: 'Register for 15/U State Titles Trial' })).toHaveAttribute('href', '/register/open-trial');
     expect(screen.getByText('Registration closed')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'After you register' })).toBeInTheDocument();
+    expect(screen.getByText(/check the parent or guardian email for a secure checkout link/i)).toBeInTheDocument();
+    expect(screen.getByText(/keep the player’s ticket qr code ready for check-in on trial day/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Chisholm Netball website' })).toHaveAttribute('href', 'https://chisholmnetball.com/');
     expect(apiMocks.me).not.toHaveBeenCalled();
   });
@@ -429,13 +432,19 @@ describe('App route boundaries', () => {
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  it('loads the volunteer PIN screen without calling the admin session endpoint', async () => {
+  it('loads the volunteer trial selector without calling the admin session endpoint', async () => {
+    apiMocks.listPublicEvents.mockResolvedValue([{
+      id: 'event-42', name: '17/U State Titles Trial', division: '17/U', section: 'State Titles',
+      eventDate: '2099-09-12T00:00:00.000Z', venue: 'Chisholm Netball Centre', startTime: '08:30', firstWhistle: '09:00',
+      registrationFeeCents: 3500, currency: 'aud', status: 'CLOSED',
+    }]);
     renderApp('/check-in');
     expect(await screen.findByRole('heading', { name: 'Check-in' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /17\/u state titles trial.*chisholm netball centre/i })).toBeInTheDocument();
     expect(screen.getByLabelText('Event PIN')).toHaveAttribute('type', 'password');
-    expect(screen.getByText(/enter the event id and pin for your trial/i)).toBeInTheDocument();
-    expect(screen.getByText(/ask your event coordinator/i)).toBeInTheDocument();
+    expect(screen.getByText(/choose your trial, then enter the event pin/i)).toBeInTheDocument();
+    expect(apiMocks.listPublicEvents).toHaveBeenCalledTimes(1);
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Volunteer check-in | Chisholm Netball Trials'));
   });
@@ -448,12 +457,17 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Event PIN')).toHaveAttribute('type', 'password');
   });
 
-  it('requires the Event ID before starting volunteer check-in', async () => {
+  it('requires a trial selection before starting volunteer check-in', async () => {
+    apiMocks.listPublicEvents.mockResolvedValue([{
+      id: 'event-42', name: '17/U State Titles Trial', division: '17/U', section: 'State Titles',
+      eventDate: '2099-09-12T00:00:00.000Z', venue: 'Chisholm Netball Centre', startTime: '08:30', firstWhistle: '09:00',
+      registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
+    }]);
     renderApp('/check-in');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Start check-in' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Enter the Event ID.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Choose a trial.');
     expect(apiMocks.openCheckIn).not.toHaveBeenCalled();
   });
 

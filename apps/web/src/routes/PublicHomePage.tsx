@@ -76,6 +76,10 @@ export function PublicHomePage({ client }: { client: Client }) {
               ))}
             </ul>
           )}
+          <section aria-labelledby="registration-next-steps-heading">
+            <h2 id="registration-next-steps-heading">After you register</h2>
+            <p>After you submit, check the parent or guardian email for a secure Checkout link. Once payment is confirmed, keep the player’s ticket QR code ready for check-in on trial day.</p>
+          </section>
         </div>
       </div>
     </main>

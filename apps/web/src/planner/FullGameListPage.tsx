@@ -716,6 +716,16 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                 </div>
               ) : null}
 
+              {viewMode === 'team' && teamViewRound === 'all' && !editing && !suffixEditing ? (
+                <div className="game-round-jumps" role="group" aria-label="Jump to a round">
+                  {Array.from({ length: availablePlan.rounds }, (_, index) => index + 1).map((round) => (
+                    <button key={round} type="button" onClick={() => document.getElementById(`game-round-${round}`)?.scrollIntoView({ block: 'start' })}>
+                      Round {round}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               {viewMode !== 'statistics' && viewMode !== 'reference' && plan && !historyPlan && plan.frozenThroughRound < plan.rounds ? (
                 <details className="game-roster-changes">
                   <summary>Roster changes</summary>

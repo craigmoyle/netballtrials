@@ -121,7 +121,7 @@ describe('RegisterPage', () => {
   it('saves a public draft in this tab and restores it after reload', async () => {
     const api = client(vi.fn());
     const currentPage = render(<RegisterPage client={api} eventId="e1" />);
-    expect(await screen.findByText(/reload this tab within 1 hour to restore your draft/i)).toBeInTheDocument();
+    expect(await screen.findByText(/your draft is saved in this tab for up to 1 hour after your last change/i)).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
 
     await waitFor(() => expect(JSON.parse(window.sessionStorage.getItem(publicDraftKey) ?? 'null')).toMatchObject({
@@ -307,6 +307,10 @@ describe('RegisterPage', () => {
 
     const firstField = await screen.findByLabelText(/player first name/i);
     expect(summary.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const draftNotice = screen.getByText(/your draft is saved in this tab.*anyone with access.*closing the tab clears it/i);
+    expect(draftNotice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(firstField.compareDocumentPosition(screen.getByText('Privacy details')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(firstField.compareDocumentPosition(screen.getByRole('link', { name: 'Selection policy (new tab)' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
     expect(within(eligibility).getAllByRole('listitem')).toHaveLength(3);
   });
