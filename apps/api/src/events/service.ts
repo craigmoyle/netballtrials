@@ -52,6 +52,10 @@ function assertValid(input: unknown): EventInput {
   return parsed.data;
 }
 
+/** Event shape safe to return from the API: never includes the check-in PIN hash. */
+export type EventResponse = Omit<Event, 'checkInPinHash'>;
+const omitSecrets = { checkInPinHash: true } as const;
+
 export class EventLifecycleError extends Error {
   constructor() {
     super('Invalid event lifecycle transition');
@@ -59,77 +63,79 @@ export class EventLifecycleError extends Error {
   }
 }
 
-export async function createEvent(prisma: PrismaClient, input: EventInput): Promise<Event> {
+export async function createEvent(prisma: PrismaClient, input: EventInput): Promise<EventResponse> {
   const valid = assertValid(input);
-  return prisma.event.create({ data: toEventData(valid) });
+  return prisma.event.create({ data: toEventData(valid), omit: omitSecrets });
 }
 
-export async function listEvents(prisma: PrismaClient): Promise<Event[]> {
-  return prisma.event.findMany({ orderBy: [{ eventDate: 'asc' }, { name: 'asc' }] });
+export async function listEvents(prisma: PrismaClient): Promise<EventResponse[]> {
+  return prisma.event.findMany({ orderBy: [{ eventDate: 'asc' }, { name: 'asc' }], omit: omitSecrets });
 }
 
-export async function getEvent(prisma: PrismaClient, id: string): Promise<Event | null> {
-  return prisma.event.findUnique({ where: { id } });
+export async function getEvent(prisma: PrismaClient, id: string): Promise<EventResponse | null> {
+  return prisma.event.findUnique({ where: { id }, omit: omitSecrets });
 }
 
 export async function updateEvent(
   prisma: PrismaClient,
   id: string,
   patch: EventPatch,
-): Promise<Event | null> {
-  const existing = await prisma.event.findUnique({ where: { id } });
-  if (!existing) {
-    return null;
-  }
-
-  const parsedPatch = eventPatchSchema.safeParse(patch);
-  if (!parsedPatch.success) {
-    throw new EventValidationError(parsedPatch.error.issues.map((issue) => String(issue.path[0])));
-  }
-
-  const merged = {
-    name: existing.name,
-    competitionYear: existing.competitionYear,
-    division: existing.division,
-    section: existing.section,
-    eventDate: existing.eventDate.toISOString().slice(0, 10),
-    venue: existing.venue,
-    startTime: existing.startTime,
-    endTime: existing.endTime,
-    firstWhistle: existing.firstWhistle,
-    lastWhistle: existing.lastWhistle,
-    registrationFeeCents: existing.registrationFeeCents,
-    courts: existing.courts,
-    rank1Min: existing.rank1Min,
-    rank2Min: existing.rank2Min,
-    rank3Min: existing.rank3Min,
-    playMinutes: existing.playMinutes,
-    changeoverMinutes: existing.changeoverMinutes,
-    minAge: existing.minAge,
-    maxAge: existing.maxAge,
-    policyUrl: existing.policyUrl ?? DEFAULT_POLICY_URL,
-    ...parsedPatch.data,
-  };
-  const valid = assertValid(merged);
-  const ageSettingsChanged = valid.competitionYear !== existing.competitionYear ||
-    valid.minAge !== existing.minAge || valid.maxAge !== existing.maxAge;
-
+): Promise<EventResponse | null> {
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.event.update({ where: { id }, data: toEventData(valid) });
+    // Lock the row first so concurrent edits merge onto the latest values instead of a stale read.
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${id} FOR UPDATE`);
+    if (locked.length !== 1) return null;
+    const existing = await tx.event.findUniqueOrThrow({ where: { id } });
+
+    const parsedPatch = eventPatchSchema.safeParse(patch);
+    if (!parsedPatch.success) {
+      throw new EventValidationError(parsedPatch.error.issues.map((issue) => String(issue.path[0])));
+    }
+
+    const merged = {
+      name: existing.name,
+      competitionYear: existing.competitionYear,
+      division: existing.division,
+      section: existing.section,
+      eventDate: existing.eventDate.toISOString().slice(0, 10),
+      venue: existing.venue,
+      startTime: existing.startTime,
+      endTime: existing.endTime,
+      firstWhistle: existing.firstWhistle,
+      lastWhistle: existing.lastWhistle,
+      registrationFeeCents: existing.registrationFeeCents,
+      courts: existing.courts,
+      rank1Min: existing.rank1Min,
+      rank2Min: existing.rank2Min,
+      rank3Min: existing.rank3Min,
+      playMinutes: existing.playMinutes,
+      changeoverMinutes: existing.changeoverMinutes,
+      minAge: existing.minAge,
+      maxAge: existing.maxAge,
+      policyUrl: existing.policyUrl ?? DEFAULT_POLICY_URL,
+      ...parsedPatch.data,
+    };
+    const valid = assertValid(merged);
+    const ageSettingsChanged = valid.competitionYear !== existing.competitionYear ||
+      valid.minAge !== existing.minAge || valid.maxAge !== existing.maxAge;
+
+    const updated = await tx.event.update({ where: { id }, data: toEventData(valid), omit: omitSecrets });
     if (ageSettingsChanged) {
       const registrations = await tx.registration.findMany({
         where: { eventId: id, status: { in: ['PENDING', 'PAID'] } },
-        select: { id: true, dateOfBirth: true, ageFlagged: true },
+        select: { id: true, dateOfBirth: true },
       });
+      const flagged: string[] = [];
+      const unflagged: string[] = [];
       for (const registration of registrations) {
         const age = ageAtDecember31(registration.dateOfBirth, valid.competitionYear);
-        const ageFlagged = !isAgeInRange(age, valid.minAge, valid.maxAge);
-        if (ageFlagged !== registration.ageFlagged) {
-          await tx.registration.updateMany({
-            where: { id: registration.id, ageFlagged: registration.ageFlagged },
-            data: { ageFlagged },
-          });
-        }
+        (isAgeInRange(age, valid.minAge, valid.maxAge) ? unflagged : flagged).push(registration.id);
+      }
+      if (flagged.length > 0) {
+        await tx.registration.updateMany({ where: { id: { in: flagged }, ageFlagged: false }, data: { ageFlagged: true } });
+      }
+      if (unflagged.length > 0) {
+        await tx.registration.updateMany({ where: { id: { in: unflagged }, ageFlagged: true }, data: { ageFlagged: false } });
       }
     }
     return updated;
@@ -141,25 +147,25 @@ async function transitionEvent(
   id: string,
   from: EventStatus,
   to: EventStatus,
-): Promise<Event | null> {
-  const event = await prisma.event.findUnique({ where: { id } });
+): Promise<EventResponse | null> {
+  const event = await prisma.event.findUnique({ where: { id }, omit: omitSecrets });
   if (!event) return null;
   if (event.status === to) return event;
   if (event.status !== from) throw new EventLifecycleError();
 
   const changed = await prisma.event.updateMany({ where: { id, status: from }, data: { status: to } });
-  if (changed.count === 1) return prisma.event.findUnique({ where: { id } });
-  const current = await prisma.event.findUnique({ where: { id } });
+  if (changed.count === 1) return prisma.event.findUnique({ where: { id }, omit: omitSecrets });
+  const current = await prisma.event.findUnique({ where: { id }, omit: omitSecrets });
   if (current?.status === to) return current;
   if (!current) return null;
   throw new EventLifecycleError();
 }
 
-export function openEvent(prisma: PrismaClient, id: string): Promise<Event | null> {
+export function openEvent(prisma: PrismaClient, id: string): Promise<EventResponse | null> {
   return transitionEvent(prisma, id, 'DRAFT', 'OPEN');
 }
 
-export function closeEvent(prisma: PrismaClient, id: string): Promise<Event | null> {
+export function closeEvent(prisma: PrismaClient, id: string): Promise<EventResponse | null> {
   return transitionEvent(prisma, id, 'OPEN', 'CLOSED');
 }
 

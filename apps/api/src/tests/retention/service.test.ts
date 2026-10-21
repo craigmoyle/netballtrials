@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { anonymizeExpiredRegistrations, retentionCutoff } from '../../retention/service';
+import { anonymizeExpiredRegistrations, pruneRateLimitBuckets, retentionCutoff } from '../../retention/service';
 import { verifyPlan } from '../../planner/verify';
 import { eventFixture, registrationFixture as regFixture } from '../helpers/fixtures';
 
@@ -96,5 +96,44 @@ describe('anonymizeExpiredRegistrations', () => {
     await prisma.registration.create({ data: { ...regFixture(boundary.id), status: 'PAID' } });
     expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T12:59:59Z'))).toBe(0);
     expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T13:00:00Z'))).toBe(1);
+  });
+
+  it('anonymises member association and many email logs in one pass', async () => {
+    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2025-09-12T00:00:00Z') } });
+    const reg = await prisma.registration.create({ data: { ...regFixture(old.id), status: 'PAID' } });
+    await prisma.emailLog.createMany({
+      data: Array.from({ length: 1500 }, (_, index) => ({
+        eventId: old.id, registrationId: index % 2 ? reg.id : null, batchId: `batch-${index % 3}`,
+        idempotencyKey: `key-${index}`, to: `parent${index}@example.com`, subject: 'Private', body: 'Private body',
+        messagePayload: { html: 'private' }, error: 'provider_rejected_403', kind: 'message', status: 'SENT' as const,
+      })),
+    });
+    const current = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z') } });
+    const kept = await prisma.emailLog.create({
+      data: { eventId: current.id, batchId: 'current', idempotencyKey: 'current-key', to: 'keep@example.com', subject: 'Keep', body: 'Keep', kind: 'message', status: 'SENT' },
+    });
+
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T00:00:00Z'))).toBe(1);
+
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })).memberAssociation).toBe('');
+    const logs = await prisma.emailLog.findMany({ where: { eventId: old.id } });
+    expect(logs).toHaveLength(1500);
+    expect(logs.every((log) => log.status === 'ANONYMIZED' && log.to === '' && log.subject === '' && log.body === ''
+      && log.messagePayload === null && log.error === null && log.registrationId === null && log.kind === 'retention'
+      && log.batchId === `retained:${log.id}` && log.idempotencyKey === `retained:${log.id}`)).toBe(true);
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: kept.id } })).toMatchObject({ to: 'keep@example.com', status: 'SENT' });
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T00:00:00Z'))).toBe(0);
+  });
+
+  it('deletes rate-limit buckets idle for more than a day', async () => {
+    const now = new Date('2026-10-10T00:00:00Z');
+    await prisma.requestRateLimitBucket.createMany({
+      data: [
+        { key: 'stale', windowStartedAt: new Date('2026-10-08T00:00:00Z'), hits: 3, updatedAt: new Date('2026-10-08T23:59:59Z') },
+        { key: 'fresh', windowStartedAt: new Date('2026-10-09T12:00:00Z'), hits: 1, updatedAt: new Date('2026-10-09T12:00:00Z') },
+      ],
+    });
+    expect(await pruneRateLimitBuckets(prisma, now)).toBe(1);
+    expect((await prisma.requestRateLimitBucket.findMany()).map((bucket) => bucket.key)).toEqual(['fresh']);
   });
 });

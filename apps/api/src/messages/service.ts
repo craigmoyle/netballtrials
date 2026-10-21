@@ -24,7 +24,7 @@ export class EmailBatchConflictError extends Error {
 
 type DeliveryDeps = { prisma: PrismaClient; mailer: EmailProvider };
 type OutboundContent = Omit<EmailMessage, 'to'>;
-type DeliveryOptions = { batchId?: string; senderUserId?: string };
+type DeliveryOptions = { batchId?: string; senderUserId?: string; maxAttempts?: number };
 type DeliveryRow = Prisma.EmailLogGetPayload<{}>;
 type Recipient = { email: string; registrationId: string | null };
 type StoredPayload = {
@@ -79,7 +79,15 @@ function restoreMessage(row: DeliveryRow): EmailMessage {
   };
 }
 
+/** Cron jobs stop retrying a delivery once it has been attempted this many times. */
+export const AUTOMATIC_RETRY_LIMIT = 5;
+
 function safeError(error: unknown): { status: 'FAILED' | 'AMBIGUOUS'; message: string } {
+  // Failures before the send request (OAuth refresh, MIME composition) cannot
+  // have delivered anything, so they are safe to retry automatically.
+  if (error instanceof GmailDeliveryError && error.notSent) {
+    return { status: 'FAILED', message: 'delivery_not_attempted' };
+  }
   if (error instanceof GmailDeliveryError && error.status !== undefined && error.status < 500 && error.status !== 408) {
     return { status: 'FAILED', message: `provider_rejected_${error.status}` };
   }
@@ -156,12 +164,17 @@ async function dispatchOne(
   row: DeliveryRow,
   now: Date,
   allowAmbiguous = false,
+  maxAttempts?: number,
 ): Promise<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> {
   const retryable: EmailDeliveryState[] = allowAmbiguous
     ? ['PENDING', 'FAILED', 'AMBIGUOUS']
     : ['PENDING', 'FAILED'];
   const claim = await deps.prisma.emailLog.updateMany({
-    where: { id: row.id, status: { in: retryable } },
+    where: {
+      id: row.id,
+      status: { in: retryable },
+      ...(maxAttempts !== undefined ? { attempts: { lt: maxAttempts } } : {}),
+    },
     data: { status: 'SENDING', attempts: { increment: 1 }, lastAttemptAt: now, failedAt: null, error: null },
   });
   if (claim.count !== 1) return 'SKIPPED';
@@ -238,8 +251,9 @@ async function dispatchBatch(
   rows: DeliveryRow[],
   now: Date,
   allowAmbiguous = false,
+  maxAttempts?: number,
 ): Promise<Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>> {
-  return Promise.all(rows.map((row) => dispatchOne(deps, row, now, allowAmbiguous)));
+  return Promise.all(rows.map((row) => dispatchOne(deps, row, now, allowAmbiguous, maxAttempts)));
 }
 
 function runCounts(results: Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>) {
@@ -262,7 +276,7 @@ async function sendBatch(
   const batchId = options.batchId ?? randomUUID();
   await expireSendingLease(deps.prisma, batchId, now);
   const rows = await prepareBatch(deps.prisma, eventId, message, kind, batchId, options.senderUserId, recipient);
-  const outcomes = await dispatchBatch(deps, rows, now);
+  const outcomes = await dispatchBatch(deps, rows, now, false, options.maxAttempts);
   return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
 }
 
@@ -318,7 +332,7 @@ export async function retryFailedDeliveries(
   batchId: string,
   deliveryIds: string[],
   now: Date,
-  options: { includeAmbiguous?: boolean } = {},
+  options: { includeAmbiguous?: boolean; maxAttempts?: number } = {},
 ): Promise<DeliverySummary> {
   await expireSendingLease(deps.prisma, batchId, now);
   const rows = await deps.prisma.emailLog.findMany({
@@ -330,7 +344,7 @@ export async function retryFailedDeliveries(
     },
   });
   const outcomes = rows.length
-    ? await dispatchBatch(deps, rows, now, options.includeAmbiguous ?? false)
+    ? await dispatchBatch(deps, rows, now, options.includeAmbiguous ?? false, options.maxAttempts)
     : [];
   return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
 }

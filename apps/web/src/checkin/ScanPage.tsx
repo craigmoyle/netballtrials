@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { CheckInResult } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 import { announceResult, resultLabel } from './feedback';
 import { notifyCheckInUpdated } from './refresh';
-
-type Client = ReturnType<typeof apiClient>;
 
 function announce(result: CheckInResult, contexts: Set<AudioContext>) {
   announceResult(result, {
@@ -61,6 +59,7 @@ export function ScanPage({ client }: { client: Client }) {
       const scanned = await client.scan(token);
       if (!isActive()) return;
       setResult(scanned);
+      setCanRescanLastToken(true);
       setUndoableId(scanned.registrationId && scanned.result !== 'refused' ? scanned.registrationId : null);
       if (scanned.result === 'checked_in') notifyCheckInUpdated();
       announce(scanned, audioContexts.current);
@@ -122,6 +121,7 @@ export function ScanPage({ client }: { client: Client }) {
     lastToken.current = '';
     setCanRescanLastToken(false);
     setMessage(null);
+    setResult(null);
   }
 
   async function retryScan() {
@@ -130,7 +130,9 @@ export function ScanPage({ client }: { client: Client }) {
   }
 
   async function undo() {
-    if (!undoableId || busy) return;
+    if (!undoableId || busyRef.current) return;
+    // Block camera decodes until the undo settles.
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -144,6 +146,7 @@ export function ScanPage({ client }: { client: Client }) {
     } catch {
       setError('Could not undo the check-in. Refresh and try again.');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

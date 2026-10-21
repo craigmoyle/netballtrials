@@ -1,21 +1,35 @@
 import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { AppDeps } from '../app';
 import { generateToken } from '../auth/tokens';
 import { sendConfirmation } from '../registrations/confirmation';
 import { deliveryIdempotencyKey } from '../messages/service';
 import type { WebhookEvent } from './provider';
 
-export type PaymentOutcome = 'paid' | 'already_paid' | 'expired' | 'failed' | 'ignored';
+export type PaymentOutcome = 'paid' | 'already_paid' | 'expired' | 'failed' | 'orphaned' | 'ignored';
+
+export const ORPHANED_PAYMENT_REVIEW_REASON = 'payment_without_registration';
 
 export type PaymentConfirmationResult = {
   registrationId: string;
   outcome: PaymentOutcome;
 };
 
+function storedOutcome(outcome: string | undefined): PaymentOutcome {
+  return outcome === 'PAID' ? 'already_paid' :
+    outcome === 'EXPIRED' ? 'expired' :
+      outcome === 'FAILED' ? 'failed' :
+        outcome === 'ORPHANED' ? 'orphaned' : 'ignored';
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null &&
     (error as { code?: string }).code === 'P2002';
+}
+
+function isSettledPayment(event: Extract<WebhookEvent, { kind: 'checkout_completed' }>): boolean {
+  return event.paymentStatus === 'paid' ||
+    (event.paymentStatus === 'no_payment_required' && event.amountCents === 0);
 }
 
 export async function confirmPayment(
@@ -40,12 +54,7 @@ export async function confirmPayment(
         const existing = await tx.processedStripeEvent.findUnique({
           where: { stripeEventId: event.stripeEventId },
         });
-        return {
-          registrationId: event.registrationId,
-          outcome: existing?.outcome === 'PAID' ? 'already_paid' :
-            existing?.outcome === 'EXPIRED' ? 'expired' :
-              existing?.outcome === 'FAILED' ? 'failed' : 'ignored',
-        };
+        return { registrationId: event.registrationId, outcome: storedOutcome(existing?.outcome) };
       }
 
       const registration = await tx.registration.findUnique({
@@ -59,8 +68,7 @@ export async function confirmPayment(
         registration.checkoutSessionId === event.sessionId
       ) {
         if (event.kind === 'checkout_completed') {
-          const isSettled = event.paymentStatus === 'paid' ||
-            (event.paymentStatus === 'no_payment_required' && event.amountCents === 0);
+          const isSettled = isSettledPayment(event);
           const amountMatches = registration.amountCents === event.amountCents;
           const currencyMatches = registration.currency.toLowerCase() === event.currency.toLowerCase();
 
@@ -98,6 +106,10 @@ export async function confirmPayment(
               });
               outcome = 'paid';
             }
+          } else if (isSettled) {
+            // Paid, but not the amount or currency this registration expects.
+            await flagOrphanedPayment(tx, registration, event, 'the amount or currency did not match the registration');
+            outcome = 'orphaned';
           }
         } else {
           const status = event.kind === 'checkout_expired' ? 'EXPIRED' : 'FAILED';
@@ -118,6 +130,17 @@ export async function confirmPayment(
         registration.checkoutSessionId === event.sessionId
       ) {
         outcome = 'already_paid';
+      } else if (
+        registration &&
+        registration.checkoutSessionId === event.sessionId &&
+        event.kind === 'checkout_completed' &&
+        isSettledPayment(event)
+      ) {
+        // Money was taken for a registration that is no longer pending (for
+        // example it expired or was withdrawn). Never resurrect it; flag it so
+        // an admin can refund or reinstate by hand.
+        await flagOrphanedPayment(tx, registration, event, `the registration was ${registration.status.toLowerCase()}`);
+        outcome = 'orphaned';
       }
 
       await tx.processedStripeEvent.update({
@@ -133,12 +156,7 @@ export async function confirmPayment(
         where: { stripeEventId: event.stripeEventId },
       });
       if (existing) {
-        return {
-          registrationId: event.registrationId,
-          outcome: existing.outcome === 'PAID' ? 'already_paid' :
-            existing.outcome === 'EXPIRED' ? 'expired' :
-              existing.outcome === 'FAILED' ? 'failed' : 'ignored',
-        };
+        return { registrationId: event.registrationId, outcome: storedOutcome(existing.outcome) };
       }
     }
     throw error;
@@ -206,5 +224,23 @@ export function registerStripeWebhookRoute(app: FastifyInstance, deps: AppDeps):
 
       return reply.code(200).send({ status: 'ok' });
     });
+  });
+}
+
+async function flagOrphanedPayment(
+  tx: Prisma.TransactionClient,
+  registration: { id: string; eventId: string },
+  event: { paymentIntentId?: string | null; sessionId: string; amountCents: number; currency: string },
+  why: string,
+): Promise<void> {
+  await tx.reviewItem.createMany({
+    skipDuplicates: true,
+    data: [{
+      eventId: registration.eventId,
+      registrationId: registration.id,
+      reason: ORPHANED_PAYMENT_REVIEW_REASON,
+      note: `Stripe payment ${event.paymentIntentId ?? '(no payment intent)'} for checkout ${event.sessionId} ` +
+        `(${event.amountCents} ${event.currency.toUpperCase()}) was not applied because ${why}. Refund or reinstate manually.`,
+    }],
   });
 }

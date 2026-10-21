@@ -20,6 +20,7 @@ describe('RegistrationPendingPage', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(screen.getByRole('heading', { name: /payment received/i })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /check-in qr code for ada lovelace/i })).toHaveAttribute('src', 'data:image/png;base64,YWJj');
+    expect(screen.getByText('12 September 2026 · arrival 08:30 · SNC')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /open ticket/i })).toHaveAttribute('href', '/ticket/opaque-token');
     expect(screen.getByRole('link', { name: /download calendar/i })).toHaveAttribute('href', 'https://api.example/calendar.ics');
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });

@@ -48,14 +48,14 @@ describe('confirmPayment', () => {
   });
 
   it.each([
-    ['wrong checkout session', { sessionId: 'cs_other' }],
-    ['wrong currency', { currency: 'usd' }],
-    ['wrong amount', { amountCents: 1 }],
-    ['unpaid Checkout session', { paymentStatus: 'unpaid' }],
-  ])('does not settle a pending registration with %s', async (_label, overrides) => {
+    ['wrong checkout session', { sessionId: 'cs_other' }, 'ignored'],
+    ['wrong currency', { currency: 'usd' }, 'orphaned'],
+    ['wrong amount', { amountCents: 1 }, 'orphaned'],
+    ['unpaid Checkout session', { paymentStatus: 'unpaid' }, 'ignored'],
+  ] as const)('does not settle a pending registration with %s', async (_label, overrides, outcome) => {
     const registration = await pending();
     const result = await confirmPayment(prisma, completed(registration.id, overrides), now);
-    expect(result?.outcome).toBe('ignored');
+    expect(result?.outcome).toBe(outcome);
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).status).toBe('PENDING');
   });
 
@@ -91,10 +91,11 @@ describe('confirmPayment', () => {
   it('never revives a withdrawn registration on a signed payment replay', async () => {
     const registration = await pending({ status: 'WITHDRAWN' });
     const result = await confirmPayment(prisma, completed(registration.id), now);
-    expect(result?.outcome).toBe('ignored');
+    expect(result?.outcome).toBe('orphaned');
     const after = await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } });
     expect(after.status).toBe('WITHDRAWN');
     expect(after.qrToken).toBeNull();
+    expect(await prisma.reviewItem.count({ where: { registrationId: registration.id, reason: 'payment_without_registration' } })).toBe(1);
   });
 
   it('expires only the registration belonging to the matching Checkout session', async () => {

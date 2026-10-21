@@ -72,6 +72,49 @@ describe('ScanPage', () => {
     ]);
   });
 
+  it('ignores camera decodes while an undo is in flight', async () => {
+    let finishUndo!: () => void;
+    const client = {
+      scan: vi.fn().mockResolvedValue(result({ referToCommittee: false })),
+      undoCheckIn: vi.fn(() => new Promise<void>((resolve) => { finishUndo = resolve; })),
+    };
+    render(<MemoryRouter><ScanPage client={client as any} /></MemoryRouter>);
+    await waitForDecoder();
+    await act(async () => { decoded!({ getText: () => 'first-token' }); });
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 7');
+
+    fireEvent.click(screen.getByRole('button', { name: /undo last check-in/i }));
+    await waitFor(() => expect(client.undoCheckIn).toHaveBeenCalledWith('registration-1'));
+    await act(async () => { decoded!({ getText: () => 'second-token' }); });
+    expect(client.scan).toHaveBeenCalledTimes(1);
+
+    await act(async () => { finishUndo(); });
+    expect(await screen.findByRole('status')).toHaveTextContent(/check-in undone/i);
+    await act(async () => { decoded!({ getText: () => 'second-token' }); });
+    expect(client.scan.mock.calls.map(([token]) => token)).toEqual(['first-token', 'second-token']);
+  });
+
+  it('offers to scan the same code again after a refusal and re-processes it', async () => {
+    const client = {
+      scan: vi.fn()
+        .mockResolvedValueOnce({ result: 'refused', reason: 'not_paid', referToCommittee: false })
+        .mockResolvedValueOnce(result({ referToCommittee: false })),
+    };
+    render(<MemoryRouter><ScanPage client={client as any} /></MemoryRouter>);
+    await waitForDecoder();
+    await act(async () => { decoded!({ getText: () => 'unpaid-token' }); });
+    expect(await screen.findByRole('status')).toHaveTextContent('Not paid. Send to the desk.');
+
+    await act(async () => { decoded!({ getText: () => 'unpaid-token' }); });
+    expect(client.scan).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scan same code again' }));
+    expect(screen.queryByRole('button', { name: 'Scan same code again' })).not.toBeInTheDocument();
+    await act(async () => { decoded!({ getText: () => 'unpaid-token' }); });
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace, Number 7');
+    expect(client.scan.mock.calls.map(([token]) => token)).toEqual(['unpaid-token', 'unpaid-token']);
+  });
+
   it('refreshes the live arrival count after a QR check-in', async () => {
     const client = {
       checkInSummary: vi.fn()

@@ -18,7 +18,7 @@ let fixtures: Fixtures;
 
 async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Chisholm Admin' }).click();
+  await page.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
   await page.getByLabel('Email').fill(fixtures.adminEmail);
   await page.getByRole('button', { name: /send link/i }).click();
@@ -32,8 +32,39 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.getByRole('link', { name: /go to events/i }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
   await page.goto('/');
-  await page.getByRole('link', { name: 'Chisholm Admin' }).click();
+  await page.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
+}
+
+async function openEventTool(page: Page, name: string): Promise<void> {
+  const nav = page.getByRole('navigation', { name: 'Event workflows' });
+  await expect(nav).toBeVisible();
+  const toggle = nav.getByRole('button', { name: /^Event tools/ });
+  if (await toggle.isVisible() && (await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await nav.getByRole('link', { name, exact: true }).click();
+}
+
+// With the fake provider the public form opens the test payment simulation; the
+// registration response carries the fake Checkout session id used as its token.
+async function submitPublicRegistration(page: Page): Promise<string> {
+  const response = page.waitForResponse((candidate) => candidate.request().method() === 'POST' && /\/api\/public\/events\/[^/]+\/registrations$/.test(new URL(candidate.url()).pathname));
+  await page.getByRole('button', { name: 'Submit registration' }).click();
+  const body = await (await response).json() as { simulationToken?: string };
+  expect(body.simulationToken).toBeTruthy();
+  await expect(page.getByRole('heading', { name: 'Test payment simulation' })).toBeVisible();
+  return body.simulationToken!;
+}
+
+// Roster-change tools on the Full Game List start collapsed so assignments lead.
+async function openRosterChanges(page: Page): Promise<void> {
+  const disclosure = page.locator('details.game-roster-changes');
+  if (!(await disclosure.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await disclosure.getByText('Roster changes').click();
+  }
+}
+
+function workspace(page: Page) {
+  return page.locator('main > section');
 }
 
 async function adminGet(page: Page, request: APIRequestContext, url: string) {
@@ -80,16 +111,15 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   const logo = page.getByRole('link', { name: 'Trials home' });
   await expect(logo).toHaveAttribute('href', '/');
   await expect.poll(() => logo.locator('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  const signIn = page.getByRole('navigation', { name: 'Sign in options' });
-  await expect(signIn.getByRole('link', { name: 'Chisholm Admin' })).toHaveAttribute('href', '/admin');
-  await signIn.getByRole('link', { name: 'Chisholm Admin' }).click();
+  const signIn = page.getByRole('navigation', { name: 'Staff and volunteer access' });
+  await expect(signIn.getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
+  await signIn.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
-  await expect(signIn.getByRole('link', { name: 'Committee member' })).toHaveAttribute('href', '/check-in');
-  await expect(signIn.getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/check-in');
-  await signIn.getByRole('link', { name: 'Committee member' }).click();
+  await expect(signIn.getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in');
+  await signIn.getByRole('link', { name: 'Volunteer check-in' }).click();
   await expect(page).toHaveURL(/\/check-in$/);
   await expect(page.getByRole('heading', { name: 'Check-in' })).toBeVisible();
-  await expect(page.getByLabel('Event ID')).toBeVisible();
+  await expect(page.getByLabel('Trial', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Event PIN')).toBeVisible();
   expect(externalRequests).toEqual([]);
 });
@@ -131,7 +161,7 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('Player last name')).toBeFocused();
 
-  await page.getByRole('button', { name: 'Continue to payment' }).click();
+  await page.getByRole('button', { name: 'Submit registration' }).click();
   const summary = page.locator('[aria-labelledby="registration-errors-title"]');
   await expect(summary).toBeFocused();
   await expect(page.locator('#dateOfBirth')).toHaveAttribute('aria-invalid', 'true');
@@ -145,16 +175,10 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await page.getByLabel('Parent or guardian mobile').fill('0400000000');
   await page.getByLabel('Member association').selectOption({ label: 'MENA' });
   await page.getByLabel('First position').selectOption('WA');
-  await page.getByLabel(/I confirm the player meets the eligibility requirements/).check();
-  await page.getByRole('button', { name: 'Continue to payment' }).click();
-  await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
+  await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
+  const sessionId = await submitPublicRegistration(page);
+  await expect(page.getByText(/no real payment will be taken/i)).toBeVisible();
   await expect(page.getByText(/duplicate/i)).toHaveCount(0);
-
-  const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=browser-parent%40example.test`).then((response) => response.json());
-  const checkoutMail = outbox.messages.find((message: { subject: string }) => message.subject.includes('Continue your Netball Trials registration'));
-  expect(checkoutMail).toBeTruthy();
-  const sessionId = checkoutMail.text.match(/checkout\.test\/([^\s]+)/)?.[1];
-  expect(sessionId).toBeTruthy();
   await page.goto(`/register/${fixtures.mainEventId}/pending?session=${encodeURIComponent(sessionId!)}`);
   await expect(page.getByRole('heading', { name: 'Confirming your payment' })).toBeVisible();
   await expect(page.getByText(/Payment received/i)).toHaveCount(0);
@@ -185,16 +209,17 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(unauthorizedExport.status()).toBe(401);
   await signIn(page, request);
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
-  await expect(page.getByRole('navigation', { name: 'Sign in options' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expectAccessible(page);
 
   await page.getByRole('link', { name: 'E2E Draft event' }).click();
+  await openEventTool(page, 'Event operations');
   await expect(page.getByText('Status: draft')).toBeVisible();
   await expectAccessible(page);
   page.on('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: /open registration/i }).click();
   await expect(page.getByText('Status: open')).toBeVisible();
-  await page.getByLabel('Set or rotate check-in PIN').fill('4821');
+  await page.getByLabel('Set or rotate check-in PIN').fill('482193');
   await page.getByRole('button', { name: /set or rotate pin/i }).click();
   await expect(page.getByText('PIN: Configured')).toBeVisible();
   await page.getByRole('button', { name: /close check-in/i }).click();
@@ -210,7 +235,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
 
   await page.getByRole('link', { name: 'Events', exact: true }).click();
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
-  await page.getByRole('link', { name: 'Roster and export' }).click();
+  await openEventTool(page, 'Roster and export');
   await expect(page.getByRole('heading', { name: 'Event roster' })).toBeVisible();
   await expect(page.getByText(/Player1 Trial/)).toBeVisible();
   await expectAccessible(page);
@@ -220,7 +245,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   ]);
   expect(csv.suggestedFilename()).toBe(`roster-${fixtures.mainEventId}.csv`);
 
-  await page.getByRole('link', { name: 'Review queue' }).click();
+  await openEventTool(page, 'Review queue');
   await expect(page.getByRole('heading', { name: 'Review queue' })).toBeVisible();
   await expect(page.getByLabel('Note')).toHaveCount(2);
   await expectAccessible(page);
@@ -230,7 +255,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await page.getByRole('button', { name: /withdraw/i }).click();
   await expect(page.getByText('Nothing to review.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Messages' }).click();
+  await openEventTool(page, 'Messages');
   await page.getByLabel('Subject').fill('Trial day update');
   await page.getByLabel('Message').fill('Please arrive at the usual time.');
   await page.getByRole('button', { name: 'Review recipients' }).click();
@@ -245,6 +270,7 @@ test('Admin opens event-scoped check-in without a PIN', async ({ page, request }
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E Check-in' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+  await openEventTool(page, 'Event operations');
   await page.getByRole('link', { name: 'Admin check-in' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
   await expect(page.getByLabel('Event PIN')).toHaveCount(0);
@@ -263,6 +289,7 @@ test('Admin assists a family on a closed event day and sends hosted Checkout wit
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E Day-of registration' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+  await openEventTool(page, 'Event operations');
   await page.getByRole('link', { name: 'Add day-of player' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Day-of registration' })).toBeVisible();
   await page.getByLabel('Player first name').fill('Day-of');
@@ -273,15 +300,15 @@ test('Admin assists a family on a closed event day and sends hosted Checkout wit
   await page.getByLabel('Parent or guardian mobile').fill('0400000000');
   await page.getByLabel('Member association').selectOption({ label: 'MENA' });
   await page.getByLabel('First position').selectOption('C');
-  await page.getByLabel(/I confirm the player meets the eligibility requirements/).check();
-  await page.getByRole('button', { name: 'Continue to payment' }).click();
+  await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
+  await page.getByRole('button', { name: 'Send payment link' }).click();
   await expect(page.getByRole('heading', { name: 'Checkout link sent' })).toBeVisible();
   await expect(page.getByText(/remains pending.*not eligible for check-in or game planning until payment is confirmed/i)).toBeVisible();
   await expectAccessible(page);
 
   const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=dayofparent%40example.test`).then((response) => response.json());
   const checkoutEmail = outbox.messages.find((message: { subject: string }) => message.subject === 'Continue your Netball Trials registration');
-  expect(checkoutEmail?.text).toMatch(/https:\/\/checkout\.test\/fake_\d+/);
+  expect(checkoutEmail?.text).toMatch(/https:\/\/checkout\.test\/fake_[\w-]+/);
   const rosterResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.dayOfEventId}/roster`);
   expect(rosterResponse.status()).toBe(200);
   const roster = await rosterResponse.json();
@@ -302,13 +329,13 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/check-in');
-  await page.getByLabel('Event ID').fill(fixtures.checkInEventId);
-  await page.getByLabel('Event PIN').fill('4821');
+  await page.goto(`/check-in?eventId=${encodeURIComponent(fixtures.checkInEventId)}`);
+  await expect(page.getByLabel('Event ID')).toHaveValue(fixtures.checkInEventId);
+  await page.getByLabel('Event PIN').fill('482193');
   await page.getByRole('button', { name: 'Start check-in' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
-  await expect(page.getByRole('navigation', { name: 'Sign in options' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expect(page.getByText('0 of 14 arrived')).toBeVisible();
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Checkin1 Trial');
@@ -326,14 +353,14 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
-  await page.getByRole('link', { name: 'Plan rounds' }).click();
+  await openEventTool(page, 'Plan rounds');
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await expect(page.getByRole('button', { name: 'Publish revision' })).toBeVisible();
   await page.getByRole('button', { name: 'Publish revision' }).click();
-  await expect(page.getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
+  await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
   await page.getByRole('link', { name: 'Adjust event settings' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
-  await page.getByRole('link', { name: 'Full Game List' }).click();
+  await openEventTool(page, 'Full Game List');
   await expect(page.getByRole('heading', { name: 'Full Game List' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Round 1' })).toBeVisible();
   const reviewDirectory = fileURLToPath(new URL('../../../.impeccable/review/full-game-list/', import.meta.url));
@@ -363,6 +390,7 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
 
   const publishedBefore = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`).then((response) => response.json());
   await page.setViewportSize({ width: 390, height: 844 });
+  await openRosterChanges(page);
   await page.getByRole('button', { name: 'Remove early leaver' }).click();
   await page.getByLabel('Remove Player1 Trial from round 1 onward').check();
   await page.getByRole('button', { name: 'Rebuild fixtures from round' }).click();
@@ -383,7 +411,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   });
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
-  await page.getByRole('link', { name: 'Plan rounds' }).click();
+  await openEventTool(page, 'Plan rounds');
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await page.getByRole('button', { name: 'Publish revision' }).click();
 
@@ -460,13 +488,8 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await page.getByLabel('Parent or guardian mobile').fill('0400000001');
   await page.getByLabel('Member association').selectOption({ label: 'MENA' });
   await page.getByLabel('First position').selectOption('GS');
-  await page.getByLabel(/I confirm the player meets the eligibility requirements/).check();
-  await page.getByRole('button', { name: 'Continue to payment' }).click();
-  await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
-  const checkoutOutbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=${encodeURIComponent(parentEmail)}`).then((response) => response.json());
-  const checkoutMessage = checkoutOutbox.messages.find((message: { subject: string }) => message.subject === 'Continue your Netball Trials registration');
-  const sessionId = checkoutMessage?.text.match(/checkout\.test\/(fake_\d+)/)?.[1];
-  expect(sessionId).toBeTruthy();
+  await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
+  const sessionId = await submitPublicRegistration(page);
   const pendingRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
   const lateRegistration = pendingRoster.registrations.find((registration: { playerName: string }) => registration.playerName === 'Late Arrival Trial');
   expect(lateRegistration).toMatchObject({ status: 'PENDING', bibNumber: null, checkedInAt: null });
@@ -492,7 +515,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await expect(page.getByRole('heading', { name: 'Full Game List' })).toBeVisible();
   await expect(page.getByText('Late Arrival Trial')).toHaveCount(0);
 
-  await page.goto(`/admin/events/${fixtures.mainEventId}`);
+  await page.goto(`/admin/events/${fixtures.mainEventId}/operations`);
   await page.getByRole('link', { name: 'Admin check-in' }).click();
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Late Arrival Trial');
@@ -516,6 +539,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   const beforeRebuild = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
   const playerOneBefore = (await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json())).registrations.find((registration: { id: string }) => registration.id === playerOneId);
 
+  await openRosterChanges(page);
   await page.getByRole('button', { name: 'Remove early leaver' }).click();
   await page.getByLabel('Remove future assignments from round').selectOption('2');
   await page.getByLabel('Remove Player1 Trial from round 2 onward').check();
@@ -586,7 +610,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
 test('planner previews, publishes, regenerates without changing the prefix, and prints four landscape sheets', async ({ page, request }) => {
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
-  await page.getByRole('link', { name: 'Plan rounds' }).click();
+  await openEventTool(page, 'Plan rounds');
   await expect(page.getByText(/28 checked-in players/i)).toBeVisible();
   await expect(page.getByText(/minimum round lower bound: 2/i)).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
@@ -597,9 +621,9 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await expect(page.locator('table caption', { hasText: 'schedule preview' })).toBeVisible();
   await expect(page.locator('table.schedule-preview tbody tr')).toHaveCount(56);
-  await expect(page.getByRole('link', { name: 'Print selector sheets' })).toHaveCount(0);
+  await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Publish revision' }).click();
-  await expect(page.getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
+  await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
 
   const publishedBeforeResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`);
   expect(publishedBeforeResponse.status()).toBe(200);
@@ -615,7 +639,7 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   expect(prefix(draft)).toEqual(prefix(publishedBefore));
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(page.getByText(/Published revision 2/)).toBeVisible();
-  await page.getByRole('link', { name: 'Print selector sheets' }).click();
+  await workspace(page).getByRole('link', { name: 'Print selector sheets' }).click();
   await expect(page.locator('.sheet-preview .sheet')).toHaveCount(4);
   await expect(page.getByRole('button', { name: 'Print selector sheets' })).toBeVisible();
   const selectorText = await page.locator('.sheet-preview').innerText();

@@ -62,9 +62,9 @@ describe('EventOperationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /open registration/i }));
     await waitFor(() => expect(client.openEvent).toHaveBeenCalledWith('e1'));
     expect(await screen.findByText('Registration is open.')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '4821' } });
+    fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '482193' } });
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
-    await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
+    await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '482193'));
     const closeCheckIn = screen.getByRole('button', { name: /close check-in/i });
     const checkInAction = closeCheckIn.parentElement!;
     fireEvent.click(closeCheckIn);
@@ -83,15 +83,21 @@ describe('EventOperationsPage', () => {
     const pin = await screen.findByLabelText(/set or rotate check-in pin/i);
     const pinField = pin.closest('p')!;
 
-    fireEvent.change(pin, { target: { value: '123' } });
-    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
-    const alert = await within(pinField).findByRole('alert');
-    expect(alert).toHaveTextContent('PIN must contain 4 to 8 digits.');
-    expect(pin).toHaveAttribute('aria-invalid', 'true');
-    expect(pin).toHaveAttribute('aria-describedby', 'checkInPin-error');
-    expect(client.setCheckInPin).not.toHaveBeenCalled();
+    expect(pin).toHaveAttribute('inputmode', 'numeric');
+    expect(pin).toHaveAttribute('minlength', '6');
+    expect(pin).toHaveAttribute('maxlength', '8');
+    expect(pin).toHaveAttribute('pattern', '[0-9]{6,8}');
+    expect(pin).toHaveAccessibleDescription('Use 6 to 8 digits.');
 
     fireEvent.change(pin, { target: { value: '4821' } });
+    fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
+    const alert = await within(pinField).findByRole('alert');
+    expect(alert).toHaveTextContent('PIN must contain 6 to 8 digits.');
+    expect(pin).toHaveAttribute('aria-invalid', 'true');
+    expect(pin).toHaveAttribute('aria-describedby', 'checkInPin-hint checkInPin-error');
+    expect(client.setCheckInPin).not.toHaveBeenCalled();
+
+    fireEvent.change(pin, { target: { value: '482193' } });
     expect(within(pinField).queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -100,7 +106,7 @@ describe('EventOperationsPage', () => {
     renderOperations(client);
     const pin = await screen.findByLabelText(/set or rotate check-in pin/i);
     const pinField = pin.closest('p')!;
-    fireEvent.change(pin, { target: { value: '4821' } });
+    fireEvent.change(pin, { target: { value: '482193' } });
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
 
     expect(await within(pinField).findByRole('alert')).toHaveTextContent(/could not save the pin/i);
@@ -111,7 +117,7 @@ describe('EventOperationsPage', () => {
     renderOperations(client);
     const pin = await screen.findByLabelText(/set or rotate check-in pin/i);
     const pinField = pin.closest('p')!;
-    fireEvent.change(pin, { target: { value: '4821' } });
+    fireEvent.change(pin, { target: { value: '482193' } });
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
 
     expect(await within(pinField).findByRole('status')).toHaveTextContent(/check-in pin saved/i);
@@ -201,9 +207,9 @@ describe('EventOperationsPage', () => {
 
     expect(await screen.findByRole('link', { name: 'Admin check-in' })).toHaveAttribute('href', '/admin/events/e1/check-in');
     expect(screen.getByRole('link', { name: 'Add day-of player' })).toHaveAttribute('href', '/admin/events/e1/day-of-registration');
-    fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '4821' } });
+    fireEvent.change(screen.getByLabelText(/check-in pin/i), { target: { value: '482193' } });
     fireEvent.click(screen.getByRole('button', { name: /set or rotate pin/i }));
-    await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '4821'));
+    await waitFor(() => expect(client.setCheckInPin).toHaveBeenCalledWith('e1', '482193'));
     fireEvent.click(screen.getByRole('button', { name: /close check-in/i }));
     await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
   });

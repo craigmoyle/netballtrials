@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
 
 export function VerifyPage({
   client,

@@ -4,7 +4,11 @@ import { generateToken, hashToken } from '../auth/tokens';
 import { ensureReviewItems } from '../review/service';
 import { consumeRateLimit, resetRateLimit } from '../security/rate-limit';
 import { localDateTimeToUtc } from '../time/melbourne';
-import { hashPin, verifyPin } from './pin';
+import { hashPin, isPinInput, verifyPin } from './pin';
+
+const PIN_WINDOW_MS = 10 * 60_000;
+const PIN_CLIENT_LIMIT = 10;
+const PIN_EVENT_FAILURE_LIMIT = 30;
 
 export async function setCheckInPin(
   prisma: PrismaClient,
@@ -93,12 +97,27 @@ export async function openCheckInSession(
   if (event.checkInClosedAt) throw new CheckInClosedError();
 
   const key = createHash('sha256').update(`checkin:${input.eventId}:${input.clientKey}`).digest('hex');
-  if (!(await consumeRateLimit(deps.prisma, key, now, 10, 10 * 60_000))) {
+  if (!(await consumeRateLimit(deps.prisma, key, now, PIN_CLIENT_LIMIT, PIN_WINDOW_MS))) {
+    throw new PinLockedError();
+  }
+  // Reject malformed input before it reaches scrypt.
+  if (!isPinInput(input.pin)) throw new PinInvalidError();
+
+  // Event-wide cap on wrong PINs so rotating client addresses cannot brute-force the PIN.
+  // Record the attempt before the slow scrypt check so concurrent guesses cannot all pass
+  // a stale read, then give it back for a correct PIN. Keyed by PIN version so rotating
+  // the PIN clears a lockout.
+  const failureKey = `checkin-fail:${input.eventId}:${event.checkInPinVersion}`;
+  if (!(await consumeRateLimit(deps.prisma, failureKey, now, PIN_EVENT_FAILURE_LIMIT, PIN_WINDOW_MS))) {
     throw new PinLockedError();
   }
   if (!(await verifyPin(input.pin, event.checkInPinHash))) {
     throw new PinInvalidError();
   }
+  await deps.prisma.requestRateLimitBucket.updateMany({
+    where: { key: failureKey, hits: { gt: 0 } },
+    data: { hits: { decrement: 1 } },
+  });
   await resetRateLimit(deps.prisma, key);
 
   const token = generateToken();
@@ -273,8 +292,8 @@ async function checkInRegistration(
       const session = await findActiveSession(tx, sessionToken, now);
       if (!session || session.event.id !== registration.eventId) throw new CheckInSessionRevokedError();
 
-      // Lock the event counter and re-check closure and PIN version before claiming the registration.
-      const advanced = await tx.event.updateMany({
+      // Lock the event row and re-check closure and PIN version before claiming the registration.
+      const locked = await tx.event.updateMany({
         where: {
           id: registration.eventId,
           checkInClosedAt: null,
@@ -283,10 +302,21 @@ async function checkInRegistration(
             checkInPinHash: { not: null },
           }),
         },
-        data: { nextBibNumber: { increment: 1 } },
+        data: { nextBibNumber: { increment: 0 } },
       });
-      if (advanced.count !== 1) throw new CheckInSessionRevokedError();
-      const event = await tx.event.findUniqueOrThrow({ where: { id: registration.eventId } });
+      if (locked.count !== 1) throw new CheckInSessionRevokedError();
+
+      // A registration keeps its number across undo/redo; only new arrivals advance the counter.
+      const current = await tx.registration.findUnique({ where: { id: registration.id }, select: { bibNumber: true } });
+      let bibNumber = current?.bibNumber ?? null;
+      if (bibNumber === null) {
+        const event = await tx.event.update({
+          where: { id: registration.eventId },
+          data: { nextBibNumber: { increment: 1 } },
+          select: { nextBibNumber: true },
+        });
+        bibNumber = event.nextBibNumber - 1;
+      }
 
       const claimed = await tx.registration.updateMany({
         where: {
@@ -298,11 +328,11 @@ async function checkInRegistration(
         data: {
           checkedInAt: now,
           checkedInBy: session.adminSessionId ? 'Chisholm Admin' : label,
-          bibNumber: event.nextBibNumber - 1,
+          bibNumber,
         },
       });
       if (claimed.count !== 1) throw new CheckInClaimLost();
-      return event.nextBibNumber - 1;
+      return bibNumber;
     });
 
     return {
@@ -363,7 +393,8 @@ export async function lookupRegistrations(
   return rows.map((row) => ({
     id: row.id,
     playerName: displayName(row),
-    bibNumber: row.bibNumber,
+    // An undone check-in keeps its reserved number, but only show numbers for players who are here.
+    bibNumber: row.checkedInAt ? row.bibNumber : null,
     checkedIn: row.checkedInAt !== null,
   }));
 }
@@ -392,7 +423,8 @@ export async function undoCheckIn(
     if (event.count !== 1) return null;
     const result = await tx.registration.updateMany({
       where: { id: registrationId, eventId, status: 'PAID', checkedInAt: { not: null } },
-      data: { checkedInAt: null, checkedInBy: null, bibNumber: null },
+      // Keep bibNumber so a redo reuses the same number instead of issuing a new one.
+      data: { checkedInAt: null, checkedInBy: null },
     });
     return result.count === 1;
   });

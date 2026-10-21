@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
 import { defaultAgeRange } from '@netball-trials/types';
-import { ApiError, type apiClient } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
 
-type Client = ReturnType<typeof apiClient>;
 type FormState = Record<string, string>;
 
 const EMPTY: FormState = {
@@ -185,6 +184,14 @@ export function EventFormPage({ client }: { client: Client }) {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    const missingNumbers = FIELDS
+      .filter((field) => field.type === 'number' && (form[field.name] ?? '').trim() === '')
+      .map((field) => field.name);
+    if (missingNumbers.length > 0) {
+      setFieldErrors(missingNumbers);
+      setError('Please fix the highlighted fields.');
+      return;
+    }
     setBusy(true);
     setError(null);
     setFieldErrors([]);

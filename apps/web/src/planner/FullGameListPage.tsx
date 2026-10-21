@@ -1,15 +1,14 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
-import { ApiError, type apiClient } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 
-type Client = ReturnType<typeof apiClient>;
 type ViewMode = 'team' | 'position' | 'statistics' | 'reference';
 type DisplayPlayer = { playerName: string; bibNumber: number | null };
 
 const POSITION_INDEX = new Map(POSITIONS.map((position, index) => [position, index]));
 
-function slotKey(slot: Pick<PlanSlotInputDTO, 'round' | 'court' | 'position' | 'team'>): string {
+function slotKey(slot: { round: number; court: number; position: string; team: number }): string {
   return `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
 }
 
@@ -133,15 +132,20 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     return { playerName: slot?.playerName ?? 'Former participant', bibNumber: slot?.bibNumber ?? null };
   }
 
-  const baseSlots = (displayedPlan?.slots ?? []).map(planSlot);
-  const renderedSlots = editing
-    ? [...baseSlots.filter((slot) => slot.round !== selectedRound), ...editedSlots]
-    : baseSlots;
+  const renderedSlots = useMemo(() => {
+    const baseSlots = (displayedPlan?.slots ?? []).map(planSlot);
+    return editing ? [...baseSlots.filter((slot) => slot.round !== selectedRound), ...editedSlots] : baseSlots;
+  }, [displayedPlan, editing, selectedRound, editedSlots]);
+  const renderedSlotByKey = useMemo(() => new Map(renderedSlots.map((slot) => [slotKey(slot), slot])), [renderedSlots]);
+  const displayedSlotByKey = useMemo(
+    () => new Map((displayedPlan?.slots ?? []).map((slot) => [slotKey(planSlot(slot)), slot])),
+    [displayedPlan],
+  );
   const selectedRoundSlots = editing ? editedSlots : renderedSlots.filter((slot) => slot.round === selectedRound);
   const selectedIds = new Set(selectedRoundSlots.map((slot) => slot.registrationId));
   const restingPlayers = (readOnly
     ? (displayedPlan?.players ?? []).filter((player) => player.active).map((player) => ({
-        registrationId: player.registrationId, playerName: player.playerName, bibNumber: player.bibNumber ?? 0,
+        registrationId: player.registrationId, playerName: player.playerName, bibNumber: player.bibNumber,
         rank1Position: player.rank1Position, rank2Position: player.rank2Position, rank3Position: player.rank3Position,
         optInExtraPositions: player.optInExtraPositions,
       }))
@@ -479,9 +483,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
           <thead><tr><th scope="col">Position</th><th scope="col">Player</th><th scope="col">Number</th></tr></thead>
           <tbody>
             {POSITIONS.map((position) => {
-              const slot = renderedSlots.find((item) => item.round === round && item.court === court && item.position === position && item.team === team);
+              const slot = renderedSlotByKey.get(slotKey({ round, court, position, team }));
               if (!slot) return <tr key={position}><th scope="row">{position}</th><td>Unfilled</td><td>—</td></tr>;
-              const fullSlot = displayedPlan?.slots.find((item) => slotKey(planSlot(item)) === slotKey(slot));
+              const fullSlot = displayedSlotByKey.get(slotKey(slot));
               const player = playerDetails(slot.registrationId, fullSlot);
               const movable = editing && !stalePlan && rosterById.has(slot.registrationId);
               return (
@@ -543,8 +547,8 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                     <tr key={position}>
                       <th scope="row">{position}</th>
                       {[0, 1].map((team) => {
-                        const slot = renderedSlots.find((item) => item.round === round && item.court === court && item.position === position && item.team === team);
-                        const fullSlot = slot && displayedPlan?.slots.find((item) => slotKey(planSlot(item)) === slotKey(slot));
+                        const slot = renderedSlotByKey.get(slotKey({ round, court, position, team }));
+                        const fullSlot = slot && displayedSlotByKey.get(slotKey(slot));
                         const player = slot ? playerDetails(slot.registrationId, fullSlot) : null;
                         return <td key={team}>{player ? <><span>{player.playerName}</span><span className="game-player-number">Number {player.bibNumber ?? '—'}</span></> : 'Unfilled'}</td>;
                       })}

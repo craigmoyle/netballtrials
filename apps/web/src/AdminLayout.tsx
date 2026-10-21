@@ -1,8 +1,6 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import type { apiClient } from './api/client';
+import type { ApiClient as Client } from './api/client';
 import { ClubLogoLink } from './SiteNavigation';
-
-type Client = ReturnType<typeof apiClient>;
 
 export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: () => void }) {
   const { pathname } = useLocation();

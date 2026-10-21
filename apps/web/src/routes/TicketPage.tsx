@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { TicketDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
+import { formatTrialDate } from '../formatTrialDate';
 
 export function TicketPage({ client, token }: { client: Client; token: string }) {
   const [ticket, setTicket] = useState<TicketDTO | null>(null);
@@ -24,7 +23,7 @@ export function TicketPage({ client, token }: { client: Client; token: string })
     <section className="public-page">
       <h1>{ticket.playerName}</h1>
       <p>{ticket.event.name}</p>
-      {ticket.event.eventDate ? <p>{ticket.event.eventDate.slice(0, 10)}</p> : null}
+      {ticket.event.eventDate ? <p>{formatTrialDate(ticket.event.eventDate)}</p> : null}
       {ticket.event.startTime ? <p>Arrival {ticket.event.startTime}</p> : null}
       {ticket.event.firstWhistle ? <p>First whistle {ticket.event.firstWhistle}</p> : null}
       {ticket.event.venue ? <p>{ticket.event.venue}</p> : null}

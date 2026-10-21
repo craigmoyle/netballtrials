@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { isValidPinFormat } from './pin';
+import { rateLimitClientKey } from '../security/rate-limit';
 import {
   CheckInClosedError,
   CheckInUnavailableError,
@@ -34,8 +35,9 @@ function nowFrom(request: FastifyRequest): Date {
 }
 
 function labelFrom(request: FastifyRequest): string {
-  const label = request.headers['x-checkin-label'];
-  return typeof label === 'string' && label ? label : 'Volunteer';
+  const raw = request.headers['x-checkin-label'];
+  const label = typeof raw === 'string' ? raw.trim().slice(0, 40).trim() : '';
+  return label || 'Volunteer';
 }
 
 export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -114,7 +116,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
     }
 
     const now = nowFrom(req);
-    const clientKey = req.ip ?? 'unknown';
+    const clientKey = rateLimitClientKey(req.ip);
 
     try {
       const session = await openCheckInSession(

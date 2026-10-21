@@ -52,7 +52,7 @@ describe('admin-scoped check-in sessions', () => {
     });
     const opened = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`, cookies: { nt_session: cookie }, headers: nowHeader });
     const checkInCookie = opened.cookies.find((item) => item.name === 'nt_checkin')!;
-    await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '4821' }, cookies: { nt_session: cookie } });
+    await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '482193' }, cookies: { nt_session: cookie } });
 
     const summary = await app.inject({ method: 'GET', url: '/api/check-in/session', cookies: { nt_checkin: checkInCookie.value }, headers: nowHeader });
     const checked = await app.inject({ method: 'POST', url: `/api/check-in/registrations/${registration.id}`, cookies: { nt_checkin: checkInCookie.value }, headers: nowHeader });
@@ -127,7 +127,7 @@ describe('admin check-in pin', () => {
     const initial = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/check-in-settings`, cookies: { nt_session: cookie } });
     expect(initial.statusCode).toBe(200);
     expect(initial.json()).toEqual({ pinConfigured: false, checkInClosedAt: null });
-    await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '4821' }, cookies: { nt_session: cookie } });
+    await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '482193' }, cookies: { nt_session: cookie } });
     await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie } });
     const configured = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/check-in-settings`, cookies: { nt_session: cookie } });
     expect(configured.json()).toMatchObject({ pinConfigured: true });
@@ -136,11 +136,11 @@ describe('admin check-in pin', () => {
   });
 
   it('sets and clears a pin, storing only a hash', async () => {
-    const set = await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '4821' }, cookies: { nt_session: cookie } });
+    const set = await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '482193' }, cookies: { nt_session: cookie } });
     expect(set.statusCode).toBe(204);
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     expect(event?.checkInPinHash).toContain('scrypt$');
-    expect(event?.checkInPinHash).not.toContain('4821');
+    expect(event?.checkInPinHash).not.toContain('482193');
     const clear = await app.inject({ method: 'DELETE', url: `/api/admin/events/${eventId}/check-in-pin`, cookies: { nt_session: cookie } });
     expect(clear.statusCode).toBe(204);
     expect((await prisma.event.findUnique({ where: { id: eventId } }))?.checkInPinHash).toBeNull();
@@ -148,6 +148,11 @@ describe('admin check-in pin', () => {
   it('rejects a badly formatted pin', async () => {
     const res = await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: 'abcd' }, cookies: { nt_session: cookie } });
     expect(res.statusCode).toBe(400);
+  });
+  it('rejects setting a new 4-digit pin', async () => {
+    const res = await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '4821' }, cookies: { nt_session: cookie } });
+    expect(res.statusCode).toBe(400);
+    expect((await prisma.event.findUnique({ where: { id: eventId } }))?.checkInPinHash).toBeNull();
   });
   it('closes check-in', async () => {
     const res = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie } });

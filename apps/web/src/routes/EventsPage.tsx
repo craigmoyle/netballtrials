@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { EventDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
+import { formatTrialDate } from '../formatTrialDate';
 
 export function EventsPage({ client }: { client: Client }) {
   const [events, setEvents] = useState<EventDTO[] | null>(null);
@@ -46,7 +45,7 @@ export function EventsPage({ client }: { client: Client }) {
             <li key={event.id}>
               <Link to={`/admin/events/${event.id}`}>{event.name}</Link>
               <p>
-                {event.eventDate.slice(0, 10)} · {event.division} {event.section} · {event.courts} courts · {event.status?.toLowerCase() ?? 'draft'}
+                {formatTrialDate(event.eventDate)} · {event.division} {event.section} · {event.courts} courts · {event.status?.toLowerCase() ?? 'draft'}
               </p>
             </li>
           ))}

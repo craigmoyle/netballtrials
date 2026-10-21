@@ -1,17 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { PublicTrialDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
 
-type Client = ReturnType<typeof apiClient>;
-
-export function CheckInPage({ client, eventId }: { client: Client; eventId?: string }) {
+export function CheckInPage({ client }: { client: Client }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const eventIdFromQuery = eventId ? '' : searchParams.get('eventId') ?? '';
-  const initialEventId = eventId ?? eventIdFromQuery;
-  const [eventIdInput, setEventIdInput] = useState(initialEventId);
+  const eventIdFromQuery = searchParams.get('eventId') ?? '';
+  const [eventIdInput, setEventIdInput] = useState(eventIdFromQuery);
   const [eventPreview, setEventPreview] = useState<PublicTrialDTO | null>(null);
   const [previewState, setPreviewState] = useState<'loading' | 'verified' | 'unverified' | null>(null);
   const [publicEvents, setPublicEvents] = useState<PublicTrialDTO[]>([]);
@@ -20,12 +17,11 @@ export function CheckInPage({ client, eventId }: { client: Client; eventId?: str
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const isGenericEntry = !eventId && !eventIdFromQuery;
+  const isGenericEntry = !eventIdFromQuery;
 
-  useEffect(() => setEventIdInput(initialEventId), [initialEventId]);
+  useEffect(() => setEventIdInput(eventIdFromQuery), [eventIdFromQuery]);
 
   useEffect(() => {
-    if (eventId) return;
     let active = true;
     setPublicEventsState('loading');
     if (eventIdFromQuery) {
@@ -49,7 +45,7 @@ export function CheckInPage({ client, eventId }: { client: Client; eventId?: str
         if (eventIdFromQuery) setPreviewState('unverified');
       });
     return () => { active = false; };
-  }, [client, eventId, eventIdFromQuery, eventListAttempt]);
+  }, [client, eventIdFromQuery, eventListAttempt]);
 
   const verifiedEvent = previewState === 'verified' && eventPreview?.id === eventIdInput
     ? eventPreview
@@ -84,7 +80,7 @@ export function CheckInPage({ client, eventId }: { client: Client; eventId?: str
   return (
     <section>
       <h1>Check-in</h1>
-      <p>{eventId ? 'Enter the Event PIN for this trial.' : isGenericEntry ? 'Choose your trial, then enter the Event PIN.' : 'Enter the Event ID and PIN for your trial. If you don’t have them, ask your event coordinator.'}</p>
+      <p>{isGenericEntry ? 'Choose your trial, then enter the Event PIN.' : 'Enter the Event ID and PIN for your trial. If you don’t have them, ask your event coordinator.'}</p>
       {isGenericEntry && publicEventsState === 'loading' ? <p role="status">Loading upcoming trials...</p> : null}
       {isGenericEntry && publicEventsState === 'error' ? (
         <p role="alert">
@@ -103,7 +99,7 @@ export function CheckInPage({ client, eventId }: { client: Client; eventId?: str
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
       <form onSubmit={onSubmit} noValidate>
-        {eventId ? null : eventIdFromQuery ? (
+        {eventIdFromQuery ? (
           <p>
             <label htmlFor="eventId">Event ID</label>
             <input

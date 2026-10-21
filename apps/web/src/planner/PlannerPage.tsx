@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { EventDTO, PlannerGapDTO, PlannerPreviewDTO, RoundPlanDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 
-type Client = ReturnType<typeof apiClient>;
 type PlanAction = { ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] };
 
 export function PlannerPage({ client, eventId }: { client: Client; eventId: string }) {

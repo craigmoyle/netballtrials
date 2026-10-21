@@ -110,20 +110,22 @@ async function loadPlan(deps: AppDeps, eventId: string, planId?: string, publish
   }
   const event = await deps.prisma.event.findUnique({ where: { id: eventId }, select: { publishedPlanId: true } });
   if (!event) return null;
-  if (publishedOnly) {
-    return event.publishedPlanId
-      ? deps.prisma.roundPlan.findUnique({ where: { id: event.publishedPlanId }, include: { slots: true, players: true } })
-      : null;
-  }
+  const published = event.publishedPlanId
+    ? await deps.prisma.roundPlan.findUnique({ where: { id: event.publishedPlanId }, include: { slots: true, players: true } })
+    : null;
+  if (publishedOnly) return published;
+  // Only a draft newer than, and based on, the active published revision is current.
   const draft = await deps.prisma.roundPlan.findFirst({
-    where: { eventId, status: 'DRAFT' },
+    where: {
+      eventId,
+      status: 'DRAFT',
+      revision: { gt: published?.revision ?? 0 },
+      OR: [{ sourcePlanId: null }, { sourcePlanId: event.publishedPlanId }],
+    },
     orderBy: { revision: 'desc' },
     include: { slots: true, players: true },
   });
-  if (draft) return draft;
-  return event.publishedPlanId
-    ? deps.prisma.roundPlan.findUnique({ where: { id: event.publishedPlanId }, include: { slots: true, players: true } })
-    : null;
+  return draft ?? published;
 }
 
 export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -132,7 +134,7 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     { preHandler: requireAdmin(deps) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const result = await generateDraftPlan(deps.prisma, id, new Date());
+      const result = await generateDraftPlan(deps.prisma, id);
       if (!result.ok) {
         return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
       }

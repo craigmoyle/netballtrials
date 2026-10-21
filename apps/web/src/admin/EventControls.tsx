@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { melbourneDateKey, type EventStatus } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 import { EventCourtColors } from './EventCourtColors';
-
-type Client = ReturnType<typeof apiClient>;
 
 export function EventControls({
   client,
@@ -64,8 +62,8 @@ export function EventControls({
   }
 
   async function savePin() {
-    if (!/^\d{4,8}$/.test(pin)) {
-      setPinError('PIN must contain 4 to 8 digits.');
+    if (!/^\d{6,8}$/.test(pin)) {
+      setPinError('PIN must contain 6 to 8 digits.');
       setPinMessage(null);
       return;
     }
@@ -150,15 +148,18 @@ export function EventControls({
       {checkInSettingsError ? <p role="alert">{checkInSettingsError}</p> : null}
       <p>
         <label htmlFor="checkInPin">Set or rotate check-in PIN</label>
+        <span id="checkInPin-hint" className="field-hint">Use 6 to 8 digits.</span>
         <input
           id="checkInPin"
           type="text"
           inputMode="numeric"
           autoComplete="off"
+          minLength={6}
           maxLength={8}
+          pattern="[0-9]{6,8}"
           value={pin}
           aria-invalid={pinError ? true : undefined}
-          aria-describedby={pinError ? 'checkInPin-error' : undefined}
+          aria-describedby={pinError ? 'checkInPin-hint checkInPin-error' : 'checkInPin-hint'}
           onChange={(event) => {
             setPin(event.target.value);
             setPinError(null);

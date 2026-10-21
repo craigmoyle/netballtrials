@@ -288,4 +288,27 @@ describe('EventFormPage', () => {
     expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ registrationFeeCents: 3500 }));
     expect(screen.getByLabelText('Event name')).toHaveValue('15/U Ladies');
   });
+  it('treats an empty fee as missing instead of saving a free event', async () => {
+    const createEvent = vi.fn();
+    renderForm({ createEvent });
+    fireEvent.change(screen.getByLabelText('Registration fee (AUD)'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Courts'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /save event/i }));
+
+    const summary = await screen.findByRole('alert', { name: /check these event details/i });
+    expect(summary).toHaveTextContent('Registration fee (AUD)');
+    expect(summary).toHaveTextContent('Courts');
+    expect(screen.getByLabelText('Registration fee (AUD)')).toHaveAttribute('aria-invalid', 'true');
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not update an existing event when the fee is cleared', async () => {
+    const client = editEventClient();
+    renderEditRoute(client);
+    fireEvent.change(await screen.findByLabelText('Registration fee (AUD)'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /save event/i }));
+
+    expect(await screen.findByRole('alert', { name: /check these event details/i })).toHaveTextContent('Registration fee (AUD)');
+    expect(client.updateEvent).not.toHaveBeenCalled();
+  });
 });

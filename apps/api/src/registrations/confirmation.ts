@@ -71,6 +71,7 @@ export async function sendConfirmation(
     parentEmail: string;
     policyReference: string;
     qrToken: string | null;
+    paidAt?: Date | null;
   },
   event: {
     id: string;
@@ -85,7 +86,8 @@ export async function sendConfirmation(
   options: { batchId?: string } = {},
 ): Promise<void> {
   const eventDate = event.eventDate.toISOString().slice(0, 10);
-  const calendar = buildTrialCalendar(event, `${registration.id}@chisholmnetball.com`);
+  // A stable stamp keeps retried confirmations byte-identical to the first attempt.
+  const calendar = buildTrialCalendar(event, `${registration.id}@chisholmnetball.com`, registration.paidAt ?? undefined);
   const email = buildConfirmation({
     playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
     event: { name: event.name, eventDate, venue: event.venue, firstWhistle: event.firstWhistle },

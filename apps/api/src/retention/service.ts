@@ -33,10 +33,8 @@ export async function anonymizeExpiredRegistrations(
   });
   let anonymized = 0;
 
-  const batches = registrations.length
-    ? Array.from({ length: Math.ceil(registrations.length / BATCH_SIZE) }, (_, index) => registrations.slice(index * BATCH_SIZE, (index + 1) * BATCH_SIZE))
-    : [[]];
-  for (const batch of batches) {
+  for (let start = 0; start < registrations.length; start += BATCH_SIZE) {
+    const batch = registrations.slice(start, start + BATCH_SIZE);
     await prisma.$transaction(async (tx) => {
       for (const registration of batch) {
         const anonymizedRef = `anon_${randomUUID()}`;
@@ -50,6 +48,7 @@ export async function anonymizeExpiredRegistrations(
             parentName: '',
             parentEmail: '',
             parentMobile: '',
+            memberAssociation: '',
             qrToken: null,
             checkoutSessionId: null,
             paymentIntentId: null,
@@ -76,30 +75,37 @@ export async function anonymizeExpiredRegistrations(
         });
         anonymized += 1;
       }
-      const emailLogs = await tx.emailLog.findMany({
-        where: { eventId: { in: expiredEventIds }, status: { not: 'ANONYMIZED' } },
-        select: { id: true },
-      });
-      for (const log of emailLogs) {
-        await tx.emailLog.update({
-          where: { id: log.id },
-          data: {
-            registrationId: null,
-            batchId: `retained:${log.id}`,
-            idempotencyKey: `retained:${log.id}`,
-            to: '',
-            subject: '',
-            body: '',
-            messagePayload: Prisma.DbNull,
-            error: null,
-            kind: 'retention',
-            status: 'ANONYMIZED',
-          },
-        });
-      }
-      await tx.reviewItem.deleteMany({ where: { eventId: { in: expiredEventIds } } });
-      await tx.checkInSession.deleteMany({ where: { eventId: { in: expiredEventIds } } });
-    });
+    }, { timeout: 60_000 });
   }
+
+  // One set-based statement instead of a row-by-row update inside every
+  // registration batch. batchId/idempotencyKey stay unique via the row id.
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "EmailLog"
+    SET "registrationId" = NULL,
+        "batchId" = 'retained:' || "id",
+        "idempotencyKey" = 'retained:' || "id",
+        "to" = '',
+        "subject" = '',
+        "body" = '',
+        "messagePayload" = NULL,
+        "error" = NULL,
+        "kind" = 'retention',
+        "status" = 'ANONYMIZED',
+        "updatedAt" = ${now}
+    WHERE "eventId" = ANY(${expiredEventIds}::text[])
+      AND "status" <> 'ANONYMIZED'
+  `);
+  await prisma.reviewItem.deleteMany({ where: { eventId: { in: expiredEventIds } } });
+  await prisma.checkInSession.deleteMany({ where: { eventId: { in: expiredEventIds } } });
   return anonymized;
+}
+
+const RATE_LIMIT_BUCKET_TTL_MS = 24 * 60 * 60 * 1000;
+
+export async function pruneRateLimitBuckets(prisma: PrismaClient, now: Date): Promise<number> {
+  const result = await prisma.requestRateLimitBucket.deleteMany({
+    where: { updatedAt: { lt: new Date(now.getTime() - RATE_LIMIT_BUCKET_TTL_MS) } },
+  });
+  return result.count;
 }

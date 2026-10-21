@@ -7,13 +7,18 @@ const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/
 
 export class GmailDeliveryError extends Error {
   readonly status: number | undefined;
+  /** True when the failure happened before the Gmail send request was made. */
+  readonly notSent: boolean;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, options: { notSent?: boolean } = {}) {
     super(message);
     this.name = 'GmailDeliveryError';
     this.status = status;
+    this.notSent = options.notSent ?? false;
   }
 }
+
+const NOT_SENT = { notSent: true } as const;
 
 type GmailConfig = {
   clientId: string;
@@ -52,18 +57,18 @@ export function createGmailMailer(
           signal: AbortSignal.timeout(10_000),
         });
       } catch {
-        throw new GmailDeliveryError('Gmail OAuth token refresh failed');
+        throw new GmailDeliveryError('Gmail OAuth token refresh failed', undefined, NOT_SENT);
       }
-      if (!response.ok) throw new GmailDeliveryError('Gmail OAuth token refresh failed', response.status);
+      if (!response.ok) throw new GmailDeliveryError('Gmail OAuth token refresh failed', response.status, NOT_SENT);
 
       let result: TokenResponse;
       try {
         result = await response.json() as TokenResponse;
       } catch {
-        throw new GmailDeliveryError('Gmail OAuth token response was invalid', response.status);
+        throw new GmailDeliveryError('Gmail OAuth token response was invalid', response.status, NOT_SENT);
       }
       if (typeof result.access_token !== 'string' || typeof result.expires_in !== 'number') {
-        throw new GmailDeliveryError('Gmail OAuth token response was invalid', response.status);
+        throw new GmailDeliveryError('Gmail OAuth token response was invalid', response.status, NOT_SENT);
       }
       accessToken = result.access_token;
       expiresAt = Date.now() + result.expires_in * 1000;
@@ -112,7 +117,7 @@ export function createGmailMailer(
           raw = Buffer.concat(chunks);
         }
       } catch {
-        throw new GmailDeliveryError('Email could not be composed');
+        throw new GmailDeliveryError('Email could not be composed', undefined, NOT_SENT);
       }
 
       let token = await getAccessToken();

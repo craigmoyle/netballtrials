@@ -16,6 +16,9 @@ export function createStripePaymentProvider(config: {
     async createCheckout(request: CheckoutRequest, idempotencyKey: string): Promise<CheckoutSession> {
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
+        // Card only: delayed methods (e.g. BECS debit) can settle after the
+        // registration hold has expired.
+        allowed_payment_method_types: ['card'],
         client_reference_id: request.registrationId,
         success_url: request.successUrl,
         cancel_url: request.cancelUrl,

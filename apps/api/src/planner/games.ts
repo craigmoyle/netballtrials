@@ -1,6 +1,7 @@
-import { Prisma, type PrismaClient, type RoundPlan, type RoundPlanPlayer, type RoundSlot } from '@prisma/client';
+import type { Prisma, PrismaClient, RoundPlan, RoundPlanPlayer, RoundSlot } from '@prisma/client';
 import type { GamePlayerDTO, ManualRoundInputDTO, ManualSuffixInputDTO } from '@netball-trials/types';
 import { totalTimeMinutes } from './minimum';
+import { lockEvent, settingsMatch } from './service';
 import { COURT_POSITIONS, type PlannerGap, type PlannerPlayer, type PlanSlot } from './types';
 
 type LoadedPlan = RoundPlan & { slots: RoundSlot[]; players: RoundPlanPlayer[] };
@@ -35,11 +36,6 @@ function gap(message: string, detail?: Record<string, unknown>): PlannerGap {
 
 function positionWarning(message: string, detail?: Record<string, unknown>): PlannerGap {
   return { code: 'position_preference_warning', message, ...(detail ? { detail } : {}) };
-}
-
-function minutes(value: string): number {
-  const [hours, mins] = value.split(':').map(Number);
-  return hours * 60 + mins;
 }
 
 function placeKey(slot: { round: number; court: number; position: PlanSlot['position']; team: number }): string {
@@ -88,15 +84,6 @@ function snapshotFromSource(player: RoundPlanPlayer): PlanPlayerSnapshot {
   };
 }
 
-function settingsMatch(source: RoundPlan, event: Prisma.EventGetPayload<{}>): boolean {
-  const windowMinutes = Math.max(1, minutes(event.lastWhistle) - minutes(event.firstWhistle));
-  return source.eventName === event.name && source.eventDate.getTime() === event.eventDate.getTime() &&
-    source.venue === event.venue && source.firstWhistle === event.firstWhistle &&
-    source.courts === event.courts && source.playMinutes === event.playMinutes &&
-    source.changeoverMinutes === event.changeoverMinutes && source.windowMinutes === windowMinutes &&
-    source.rank1Min === event.rank1Min && source.rank2Min === event.rank2Min && source.rank3Min === event.rank3Min;
-}
-
 function mergePlayers(source: LoadedPlan, registrations: EligibleRegistration[], inactiveRegistrationIds: string[] = []): PlanPlayerSnapshot[] {
   const eligible = new Map(registrations.map((registration) => [registration.id, toPlannerPlayer(registration)]));
   const inactive = new Set(inactiveRegistrationIds);
@@ -122,10 +109,6 @@ function slotsForRound(source: LoadedPlan, round: number, input: ManualRoundInpu
     registrationId: slot.registrationId,
   }]));
   const submittedPlaces = new Set<string>();
-  const expectedForRound = source.courts * 14;
-  if (input.slots.length !== expectedForRound) {
-    errors.push(gap(`Round ${round} must contain all ${expectedForRound} court positions.`, { expected: expectedForRound, actual: input.slots.length }));
-  }
 
   for (const submitted of input.slots) {
     if (submitted.round !== round) {
@@ -165,8 +148,6 @@ function slotsForSuffix(source: LoadedPlan, input: ManualSuffixInputDTO): { slot
   }));
   const suffix: PlanSlot[] = [];
   const submittedPlaces = new Set<string>();
-  const expected = (source.rounds - input.fromRound + 1) * source.courts * 14;
-  if (input.slots.length !== expected) errors.push(gap(`The suffix must contain all ${expected} court positions.`, { expected, actual: input.slots.length }));
 
   for (const submitted of input.slots) {
     if (submitted.round < input.fromRound || submitted.round > source.rounds ||
@@ -182,17 +163,6 @@ function slotsForSuffix(source: LoadedPlan, input: ManualSuffixInputDTO): { slot
     }
     submittedPlaces.add(key);
     suffix.push({ ...submitted, team: submitted.team });
-  }
-
-  for (let round = input.fromRound; round <= source.rounds; round += 1) {
-    for (let court = 1; court <= source.courts; court += 1) {
-      for (const position of COURT_POSITIONS) {
-        for (const team of [0, 1]) {
-          const key = `${round}:${court}:${position}:${team}`;
-          if (!submittedPlaces.has(key)) errors.push(gap(`Suffix is missing round ${round}, court ${court}, ${position}, team ${team}.`));
-        }
-      }
-    }
   }
   return { slots: [...prefix, ...suffix], errors };
 }
@@ -358,8 +328,7 @@ export async function saveManualRoundRevision(
   now: Date,
 ): Promise<ManualRoundResult> {
   return prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
-    if (locked.length !== 1) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
+    if (!(await lockEvent(tx, eventId))) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
 
     const event = await tx.event.findUnique({ where: { id: eventId } });
     const source = await tx.roundPlan.findFirst({
@@ -409,8 +378,7 @@ export async function saveManualSuffixRevision(
   now: Date,
 ): Promise<ManualRoundResult> {
   return prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
-    if (locked.length !== 1) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
+    if (!(await lockEvent(tx, eventId))) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
 
     const event = await tx.event.findUnique({ where: { id: eventId } });
     const source = await tx.roundPlan.findFirst({

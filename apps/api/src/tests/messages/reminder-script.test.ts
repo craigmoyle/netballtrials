@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const apiDirectory = resolve(import.meta.dirname, '../../..');
-const testDatabase = 'postgresql://postgres:postgres@localhost:5432/netballtrials_test';
+const testDatabase = process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/netballtrials_test';
 
 describe('send-reminders command safeguards', () => {
   it('refuses production without Gmail OAuth credentials', () => {

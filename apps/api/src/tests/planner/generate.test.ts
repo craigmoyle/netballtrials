@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { generatePlan } from '../../planner/generate';
 import { verifyPlan } from '../../planner/verify';
 import { COURT_POSITIONS } from '../../planner/types';
-import { plannerInput } from '../helpers/planner';
+import { player, plannerInput } from '../helpers/planner';
 
 // Ruling: the plan's `{ courts: 2, players: 21 }` case is infeasible (21 players
 // cannot fill two courts of 14, and the gap test calls 20 players too few), so it
@@ -129,5 +129,78 @@ describe('generatePlan', () => {
     const result = generatePlan(plannerInput({ courts: 2, players: 21 }), 1);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.gaps.map((gap) => gap.code)).toContain('too_few_players');
+  });
+
+  const fixedRoster = (skip: number) => Array.from({ length: 30 }, (_, index) => index)
+    .filter((index) => index !== skip)
+    .map((index) => player(`f${index}`, COURT_POSITIONS[index % COURT_POSITIONS.length], null, null, { optInExtra: false, bib: index + 1 }));
+
+  it('balances fixed-position players across courts when a position has exactly enough players', () => {
+    // Removing one of five GS players leaves exactly four GS for two courts every round.
+    const input = plannerInput({ courts: 2, players: fixedRoster(7) });
+    for (let seed = 1; seed <= 10; seed += 1) {
+      const result = generatePlan(input, seed);
+      expect(result.ok, `seed ${seed}`).toBe(true);
+      if (result.ok) expect(verifyPlan(input, result.plan)).toEqual([]);
+    }
+  });
+
+  it('explains which position has too few players instead of a generic failure', () => {
+    // Removing one of four WA players leaves three WA-only players for four WA places.
+    const result = generatePlan(plannerInput({ courts: 2, players: fixedRoster(2) }), 1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.gaps).toContainEqual(expect.objectContaining({
+        code: 'unmet_position_minimum',
+        message: 'only 3 players can play WA but 2 courts need 4 each round',
+      }));
+    }
+  });
+});
+
+describe('assignCourt with mixed opt-in rosters', () => {
+  const ranks = ['GA', 'GA', 'WA', 'WA', 'C', 'C', 'WD', 'WD', 'GD', 'GD', 'GK', 'GK'] as const;
+  const mixed = plannerInput({
+    courts: 1,
+    rank1Min: 0,
+    rank2Min: 0,
+    rank3Min: 0,
+    players: [
+      ...ranks.map((rank1, index) => ({
+        registrationId: `a-opted-${String(index).padStart(2, '0')}`,
+        name: `Opted ${index}`,
+        bibNumber: index + 1,
+        rank1,
+        rank2: COURT_POSITIONS[(index + 3) % COURT_POSITIONS.length],
+        rank3: null,
+        optInExtra: true,
+      })),
+      ...[0, 1].map((index) => ({
+        registrationId: `z-gs-only-${index}`,
+        name: `GS only ${index}`,
+        bibNumber: 20 + index,
+        rank1: 'GS' as const,
+        rank2: null,
+        rank3: null,
+        optInExtra: false,
+      })),
+    ],
+  });
+
+  it('fills the court for every seed when non-opted-in players need the same position', () => {
+    for (let seed = 1; seed <= 25; seed += 1) {
+      const result = generatePlan(mixed, seed);
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (result.ok) expect(verifyPlan(mixed, result.plan)).toEqual([]);
+    }
+  });
+
+  it('places opted-in players on their ranked positions when those seats are free', () => {
+    const result = generatePlan(mixed, 3);
+    if (!result.ok) throw new Error('expected a plan');
+    const byId = new Map(mixed.players.map((player) => [player.registrationId, player]));
+    for (const slot of result.plan.slots) {
+      expect(slot.position).toBe(byId.get(slot.registrationId)!.rank1);
+    }
   });
 });

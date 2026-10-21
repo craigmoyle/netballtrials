@@ -17,7 +17,7 @@ beforeEach(async () => {
   cookie = await signInAsNewAdmin(app, 'manual-routes-admin@example.com');
   const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
   eventId = event.id;
-  const draft = await generateDraftPlan(prisma, event.id, new Date(), 17);
+  const draft = await generateDraftPlan(prisma, event.id, 17);
   if (!draft.ok) throw new Error('manual route fixture is infeasible');
   const published = await publishPlan(prisma, event.id, draft.plan.id);
   if (!published.ok) throw new Error('manual route fixture did not publish');
@@ -53,7 +53,8 @@ describe('manual game-plan read routes', () => {
   });
 
   it('keeps prior revisions readable and unchanged after a manual save', async () => {
-    const sourceSlots = await prisma.roundSlot.findMany({ where: { planId, round: 1 } });
+    const slotOrder = [{ court: 'asc' as const }, { position: 'asc' as const }, { team: 'asc' as const }];
+    const sourceSlots = await prisma.roundSlot.findMany({ where: { planId, round: 1 }, orderBy: slotOrder });
     const before = sourceSlots.map(({ round, court, position, team, registrationId }) => ({ round, court, position, team, registrationId }));
     const saved = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/plan/rounds/1/manual`, cookies: { nt_session: cookie },
@@ -70,7 +71,7 @@ describe('manual game-plan read routes', () => {
     const prior = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/plan/revisions/${planId}`, cookies: { nt_session: cookie } });
     expect(prior.statusCode).toBe(200);
     expect(prior.json().revision).toBe(1);
-    expect((await prisma.roundSlot.findMany({ where: { planId } })).filter((slot) => slot.round === 1).map(({ round, court, position, team, registrationId }) => ({ round, court, position, team, registrationId }))).toEqual(before);
+    expect((await prisma.roundSlot.findMany({ where: { planId }, orderBy: slotOrder })).filter((slot) => slot.round === 1).map(({ round, court, position, team, registrationId }) => ({ round, court, position, team, registrationId }))).toEqual(before);
   });
 
   it('returns only paid, checked-in player fields for the available game roster', async () => {

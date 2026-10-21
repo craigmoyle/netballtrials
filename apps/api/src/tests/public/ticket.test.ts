@@ -22,6 +22,11 @@ describe('public ticket', () => {
     expect(res.json()).not.toHaveProperty('amountCents');
     expect(res.json()).not.toHaveProperty('status');
   });
+  it('hides a retained bib number after check-in was undone', async () => {
+    const { token } = await seedPaid({ checkedInAt: null });
+    const res = await app.inject({ method: 'GET', url: `/api/public/ticket/${token}` });
+    expect(res.json().bibNumber).toBeNull();
+  });
   it('serves the matching Melbourne-time calendar file for a paid ticket', async () => {
     const { token } = await seedPaid();
     const res = await app.inject({ method: 'GET', url: `/api/public/ticket/${token}/calendar` });
@@ -39,9 +44,9 @@ describe('public ticket', () => {
   });
 });
 
-async function seedPaid() {
+async function seedPaid(overrides: { checkedInAt?: Date | null } = {}) {
   const event = await prisma.event.create({ data: eventFixture() });
   const token = 'a'.repeat(43);
-  await prisma.registration.create({ data: { ...registrationFixture(event.id), status: 'PAID', bibNumber: 42, qrToken: token } });
+  await prisma.registration.create({ data: { ...registrationFixture(event.id), status: 'PAID', bibNumber: 42, checkedInAt: new Date('2026-09-12T00:00:00Z'), qrToken: token, ...overrides } });
   return { token };
 }

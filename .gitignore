@@ -9,6 +9,9 @@ test-results/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+!.env.test
 
 # Project agent skills (installed tooling)
 .pi/

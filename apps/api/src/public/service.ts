@@ -71,7 +71,7 @@ export async function getTicket(
       startTime: registration.event.startTime,
       firstWhistle: registration.event.firstWhistle,
     },
-    bibNumber: registration.bibNumber,
+    bibNumber: registration.checkedInAt ? registration.bibNumber : null,
   };
 }
 

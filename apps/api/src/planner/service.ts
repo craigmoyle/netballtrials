@@ -13,6 +13,25 @@ function toMinutes(value: string): number {
   return hours * 60 + minutes;
 }
 
+function eventWindowMinutes(event: { firstWhistle: string; lastWhistle: string }): number {
+  return Math.max(1, toMinutes(event.lastWhistle) - toMinutes(event.firstWhistle));
+}
+
+export async function lockEvent(tx: Prisma.TransactionClient, eventId: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
+  return rows.length === 1;
+}
+
+// True when a plan snapshot was built from the event's current settings.
+export function settingsMatch(snapshot: RoundPlan, event: Prisma.EventGetPayload<{}>): boolean {
+  return snapshot.eventId === event.id && snapshot.eventName === event.name &&
+    snapshot.eventDate.toISOString().slice(0, 10) === event.eventDate.toISOString().slice(0, 10) &&
+    snapshot.venue === event.venue && snapshot.firstWhistle === event.firstWhistle &&
+    snapshot.courts === event.courts && snapshot.playMinutes === event.playMinutes &&
+    snapshot.changeoverMinutes === event.changeoverMinutes && snapshot.windowMinutes === eventWindowMinutes(event) &&
+    snapshot.rank1Min === event.rank1Min && snapshot.rank2Min === event.rank2Min && snapshot.rank3Min === event.rank3Min;
+}
+
 async function buildInput(prisma: Database, eventId: string): Promise<BuiltInput | null> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) return null;
@@ -30,7 +49,7 @@ async function buildInput(prisma: Database, eventId: string): Promise<BuiltInput
     rank3: registration.rank3Position,
     optInExtra: registration.optInExtraPositions,
   }));
-  const windowMinutes = Math.max(1, toMinutes(event.lastWhistle) - toMinutes(event.firstWhistle));
+  const windowMinutes = eventWindowMinutes(event);
   const input = {
     courts: event.courts,
     rounds: 1,
@@ -131,11 +150,6 @@ function inputFromSnapshot(plan: {
   };
 }
 
-async function lockEvent(tx: Prisma.TransactionClient, eventId: string): Promise<boolean> {
-  const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
-  return rows.length === 1;
-}
-
 async function nextRevision(tx: Prisma.TransactionClient, eventId: string): Promise<number> {
   const latest = await tx.roundPlan.findFirst({
     where: { eventId },
@@ -189,29 +203,6 @@ async function saveDraftRevision(
   return created;
 }
 
-function settingsMatch(snapshot: {
-  eventId: string;
-  eventName: string;
-  eventDate: Date;
-  venue: string;
-  firstWhistle: string;
-  courts: number;
-  playMinutes: number;
-  changeoverMinutes: number;
-  windowMinutes: number;
-  rank1Min: number;
-  rank2Min: number;
-  rank3Min: number;
-}, built: BuiltInput): boolean {
-  const event = built.event;
-  return snapshot.eventId === event.id && snapshot.eventName === event.name &&
-    snapshot.eventDate.toISOString() === event.eventDate.toISOString() && snapshot.venue === event.venue &&
-    snapshot.firstWhistle === event.firstWhistle && snapshot.courts === event.courts &&
-    snapshot.playMinutes === event.playMinutes && snapshot.changeoverMinutes === event.changeoverMinutes &&
-    snapshot.windowMinutes === built.input.windowMinutes && snapshot.rank1Min === event.rank1Min &&
-    snapshot.rank2Min === event.rank2Min && snapshot.rank3Min === event.rank3Min;
-}
-
 function rosterMatches(
   snapshotPlayers: Array<{
     registrationId: string;
@@ -242,6 +233,10 @@ function stalePlanGap(): PlannerGap {
   return { code: 'no_solution', message: 'The checked-in roster or event settings changed. Generate a new draft for review.' };
 }
 
+function failure(message: string): GenerateResult {
+  return { ok: false, gaps: [{ code: 'no_solution', message }] };
+}
+
 function sameRoster(a: PlannerInput, b: PlannerInput): boolean {
   if (a.players.length !== b.players.length) return false;
   const current = new Map(b.players.map((player) => [player.registrationId, player]));
@@ -265,7 +260,6 @@ function sameEvent(a: BuiltInput, b: BuiltInput): boolean {
 export async function generateDraftPlan(
   prisma: PrismaClient,
   eventId: string,
-  _now: Date,
   seed = 1,
 ): Promise<GenerateResult> {
   const built = await buildInput(prisma, eventId);
@@ -282,69 +276,40 @@ export async function publishPlan(
   eventId: string,
   planId?: string,
 ): Promise<GenerateResult> {
-  const eventState = await prisma.event.findUnique({ where: { id: eventId }, select: { publishedPlanId: true } });
-  if (!eventState) return { ok: false, gaps: [{ code: 'no_solution', message: 'Event not found.' }] };
-  const candidate = planId
-    ? await prisma.roundPlan.findFirst({ where: { id: planId, eventId }, include: { slots: true, players: true } })
-    : await prisma.roundPlan.findFirst({
-        where: { eventId, status: 'DRAFT' },
-        orderBy: { revision: 'desc' },
-        include: { slots: true, players: true },
-      }) ?? (eventState.publishedPlanId
-        ? await prisma.roundPlan.findUnique({ where: { id: eventState.publishedPlanId }, include: { slots: true, players: true } })
-        : null);
-  if (!candidate) return { ok: false, gaps: [{ code: 'no_solution', message: 'No plan is available to publish.' }] };
-  if (candidate.id === eventState.publishedPlanId && candidate.status === 'PUBLISHED') {
-    return { ok: true, plan: candidate };
-  }
-  if (candidate.status !== 'DRAFT') {
-    return { ok: false, gaps: [{ code: 'no_solution', message: 'Only a draft revision can be published.' }] };
-  }
-
-  const built = await buildInput(prisma, eventId);
-  if (!built) throw new Error('event not found');
-  if (!settingsMatch(candidate, built) || !rosterMatches(candidate.players, built.input.players)) {
-    return { ok: false, gaps: [stalePlanGap()] };
-  }
-
-  const input = inputFromSnapshot(candidate);
-  const plan: PlannerPlan = {
-    rounds: candidate.rounds,
-    slots: candidate.slots.map((slot) => ({
-      round: slot.round,
-      court: slot.court,
-      position: slot.position,
-      team: slot.team === 0 ? 0 : 1,
-      registrationId: slot.registrationId,
-    })),
-  };
-  const gaps = verifyPlan(input, plan);
-  if (gaps.length) return { ok: false, gaps };
-
-  const published = await prisma.$transaction(async (tx) => {
-    if (!(await lockEvent(tx, eventId))) return null;
-    const current = await tx.roundPlan.findFirst({
-      where: { id: candidate.id, eventId, status: 'DRAFT' },
-      include: { slots: true, players: true },
+  return prisma.$transaction(async (tx): Promise<GenerateResult> => {
+    if (!(await lockEvent(tx, eventId))) return failure('Event not found.');
+    const built = await buildInput(tx, eventId);
+    if (!built) return failure('Event not found.');
+    const { publishedPlanId } = built.event;
+    const include = { slots: true, players: true } as const;
+    const candidate = planId
+      ? await tx.roundPlan.findFirst({ where: { id: planId, eventId }, include })
+      : await tx.roundPlan.findFirst({ where: { eventId, status: 'DRAFT' }, orderBy: { revision: 'desc' }, include }) ??
+        (publishedPlanId ? await tx.roundPlan.findUnique({ where: { id: publishedPlanId }, include }) : null);
+    if (!candidate) return failure('No plan is available to publish.');
+    // Already published (repeat click or a concurrent publish of the same draft).
+    if (candidate.id === publishedPlanId) return { ok: true, plan: candidate };
+    if (candidate.status !== 'DRAFT') return failure('Only a draft revision can be published.');
+    const newerPublished = await tx.roundPlan.count({ where: { eventId, status: 'PUBLISHED', revision: { gt: candidate.revision } } });
+    if ((candidate.sourcePlanId && candidate.sourcePlanId !== publishedPlanId) || newerPublished > 0) {
+      return failure('A newer revision has been published since this draft was created. Review the current plan and regenerate if needed.');
+    }
+    if (!settingsMatch(candidate, built.event) || !rosterMatches(candidate.players, built.input.players)) {
+      return { ok: false, gaps: [stalePlanGap()] };
+    }
+    const gaps = verifyPlan(inputFromSnapshot(candidate), {
+      rounds: candidate.rounds,
+      slots: candidate.slots.map((slot) => ({ ...slot, team: slot.team === 0 ? 0 : 1 })),
     });
-    if (!current) return null;
-    const currentBuilt = await buildInput(tx, eventId);
-    if (!currentBuilt || !settingsMatch(current, currentBuilt) || !rosterMatches(current.players, currentBuilt.input.players)) return null;
-    const currentGaps = verifyPlan(inputFromSnapshot(current), {
-      rounds: current.rounds,
-      slots: current.slots.map((slot) => ({ ...slot, team: slot.team === 0 ? 0 : 1 })),
-    });
-    if (currentGaps.length) return null;
+    if (gaps.length) return { ok: false, gaps };
 
-    const updated = await tx.roundPlan.update({
-      where: { id: current.id },
+    const plan = await tx.roundPlan.update({
+      where: { id: candidate.id },
       data: { status: 'PUBLISHED', publishedAt: new Date() },
     });
-    await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: updated.id } });
-    return updated;
+    await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: plan.id } });
+    return { ok: true, plan };
   });
-  if (!published) return { ok: false, gaps: [stalePlanGap()] };
-  return { ok: true, plan: published };
 }
 
 export async function regenerateFromRound(
@@ -355,35 +320,38 @@ export async function regenerateFromRound(
   sourcePlanId?: string,
   removedRegistrationIds: string[] = [],
 ): Promise<GenerateResult> {
-  const source = await prisma.roundPlan.findFirst({
-    where: { eventId, ...(sourcePlanId ? { id: sourcePlanId } : { status: 'PUBLISHED' }) },
-    orderBy: { revision: 'desc' },
-    include: { slots: true, players: true },
-  });
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error('event not found');
+  const sourceId = sourcePlanId ?? event.publishedPlanId;
+  const source = sourceId
+    ? await prisma.roundPlan.findFirst({ where: { id: sourceId, eventId }, include: { slots: true, players: true } })
+    : null;
   if (!source || source.status !== 'PUBLISHED' || event.publishedPlanId !== source.id) {
-    return { ok: false, gaps: [{ code: 'no_solution', message: 'The source plan is not the active published revision.' }] };
+    return failure('The source plan is not the active published revision.');
   }
   if (!Number.isInteger(fromRound) || fromRound < 1 || fromRound > source.rounds) {
-    return { ok: false, gaps: [{ code: 'no_solution', message: `fromRound must be between 1 and ${source.rounds}` }] };
+    return failure(`fromRound must be between 1 and ${source.rounds}`);
+  }
+  if (fromRound <= source.frozenThroughRound) {
+    const played = source.frozenThroughRound === 1 ? 'Round 1 is' : `Rounds 1-${source.frozenThroughRound} are`;
+    return failure(`${played} already played and frozen. Regenerate from round ${source.frozenThroughRound + 1} or later.`);
   }
 
   const built = await buildInput(prisma, eventId);
   if (!built) throw new Error('event not found');
-  if (fromRound > 1 && !settingsMatch(source, built)) {
+  if (fromRound > 1 && !settingsMatch(source, built.event)) {
     return { ok: false, gaps: [stalePlanGap()] };
   }
   const uniqueRemovedIds = new Set(removedRegistrationIds);
   if (uniqueRemovedIds.size !== removedRegistrationIds.length) {
-    return { ok: false, gaps: [{ code: 'no_solution', message: 'Early-leaver selections must be unique.' }] };
+    return failure('Early-leaver selections must be unique.');
   }
   const currentPlayers = new Map(built.input.players.map((player) => [player.registrationId, player]));
   const sourcePlayers = new Map(source.players.map((player) => [player.registrationId, player]));
   const removedIds = [...uniqueRemovedIds];
   if (removedIds.some((id) => !currentPlayers.has(id) || !sourcePlayers.get(id)?.active ||
     !source.slots.some((slot) => slot.round >= fromRound && slot.registrationId === id))) {
-    return { ok: false, gaps: [{ code: 'no_solution', message: 'Each early leaver must be an active, paid and checked-in player assigned in the selected suffix.' }] };
+    return failure('Each early leaver must be an active, paid and checked-in player assigned in the selected suffix.');
   }
 
   const frozenRows = source.slots.filter((slot) => slot.round < fromRound);
@@ -397,7 +365,7 @@ export async function regenerateFromRound(
   ])];
   const inactiveSnapshots = inactiveRegistrationIds.map((registrationId) => sourcePlayers.get(registrationId));
   if (inactiveSnapshots.some((player) => !player)) {
-    return { ok: false, gaps: [{ code: 'no_solution', message: 'An inactive or frozen slot has no roster snapshot.' }] };
+    return failure('An inactive or frozen slot has no roster snapshot.');
   }
   for (const player of inactiveSnapshots) {
     currentPlayers.set(player!.registrationId, {

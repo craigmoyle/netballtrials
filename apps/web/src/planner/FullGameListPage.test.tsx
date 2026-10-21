@@ -348,6 +348,22 @@ describe('FullGameListPage', () => {
     expect(screen.getByRole('button', { name: 'Return to active revision' })).toBeInTheDocument();
   });
 
+  it('shows a dash for a resting player without a number in revision history', async () => {
+    const historical = makePlan({ id: 'plan-0', revision: 1, sourcePlanId: null });
+    historical.players = [...historical.players, {
+      registrationId: 'unnumbered', playerName: 'Unnumbered Player', bibNumber: null, rank1Position: 'GS',
+      rank2Position: null, rank3Position: null, optInExtraPositions: true, active: true,
+    }];
+    renderPage(makeClient({ getPlanRevision: vi.fn().mockResolvedValue(historical) }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Revision history' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View revision 1' }));
+    await screen.findByText('Viewing revision 1 — read-only');
+
+    const resting = within(screen.getByRole('region', { name: 'Resting players' }));
+    expect(resting.getByText('Unnumbered Player').closest('li')).toHaveTextContent('Unnumbered Player Number —');
+    expect(resting.queryByText('Number 0')).not.toBeInTheDocument();
+  });
+
   it('links an empty event to Plan Rounds', async () => {
     renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(null), getPlanRevisions: vi.fn().mockResolvedValue([]) }));
     expect(await screen.findByText('No published game plan yet.')).toBeInTheDocument();

@@ -1,7 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
 
 export function LoginPage({ client }: { client: Client }) {
   const [email, setEmail] = useState('');

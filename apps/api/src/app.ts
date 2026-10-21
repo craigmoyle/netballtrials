@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import type { PrismaClient } from '@prisma/client';
@@ -26,7 +26,55 @@ export type AppDeps = {
   mailer: EmailProvider;
   env: Env;
   payment: PaymentProvider;
+  /** Application logger; silent in tests. Never pass request bodies or PII. */
+  log?: Pick<FastifyBaseLogger, 'error' | 'warn' | 'info'>;
 };
+
+export type AppOptions = {
+  /** Destination for structured logs. Enables logging even in tests. */
+  logStream?: { write(line: string): void };
+};
+
+/**
+ * Logs only the HTTP method and matched route pattern. Raw URLs can carry
+ * ticket tokens and checkout session ids, and headers carry cookies.
+ */
+export function serializeRequestForLog(request: Pick<FastifyRequest, 'method'> & { routeOptions?: { url?: string } }) {
+  return { method: request.method, route: request.routeOptions?.url };
+}
+
+function redactErrorForLog(error: Error & { code?: unknown; statusCode?: unknown }) {
+  return {
+    type: error.name,
+    ...(typeof error.code === 'string' ? { code: error.code } : {}),
+    ...(typeof error.statusCode === 'number' ? { statusCode: error.statusCode } : {}),
+  };
+}
+
+function loggerOptions(env: Env, options: AppOptions): FastifyServerOptions['logger'] {
+  if (env.NODE_ENV === 'test' && !options.logStream) return false;
+  return {
+    level: 'info',
+    ...(options.logStream ? { stream: options.logStream } : {}),
+    serializers: {
+      req: serializeRequestForLog,
+      res: (reply: { statusCode: number }) => ({ statusCode: reply.statusCode }),
+      // Error messages can echo request bodies (JSON parse errors) or query arguments
+      // with personal data (Prisma), so log only the error's type and codes.
+      err: redactErrorForLog as never,
+    },
+    hooks: {
+      // Fastify logs errors as (bindings, err.message); drop that message for the same reason.
+      logMethod(args, method) {
+        const [bindings] = args as unknown[];
+        if (bindings && typeof bindings === 'object' && 'err' in bindings && typeof args[1] === 'string') {
+          args[1] = 'request error';
+        }
+        return method.apply(this, args);
+      },
+    },
+  };
+}
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -34,7 +82,7 @@ declare module 'fastify' {
   }
 }
 
-export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
+export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions = {}): FastifyInstance {
   const env = overrides.env ?? loadEnv();
   const hasStripeSecret = env.STRIPE_SECRET_KEY.length > 0;
   const hasWebhookSecret = env.STRIPE_WEBHOOK_SECRET.length > 0;
@@ -84,11 +132,18 @@ export function createApp(overrides: Partial<AppDeps> = {}): FastifyInstance {
   const webOrigin = new URL(env.WEB_ORIGIN).origin;
   const trustedProxies = env.TRUST_PROXY.split(',').map((value) => value.trim()).filter(Boolean);
   const app = Fastify({
-    logger: false,
+    logger: loggerOptions(env, options),
     bodyLimit: 1_048_576,
     trustProxy: trustedProxies.length > 0 ? trustedProxies : false,
   });
+  deps.log = app.log;
   app.decorate('testDeps', deps);
+
+  // Fastify's default 404 handler logs the raw URL; reply the same way
+  // without logging it.
+  app.setNotFoundHandler((request, reply) => {
+    reply.code(404).send({ message: `Route ${request.method}:${request.url} not found`, error: 'Not Found', statusCode: 404 });
+  });
 
   app.register(cors, {
     origin: webOrigin,

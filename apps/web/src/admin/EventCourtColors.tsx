@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BibColorDTO, EventCourtColorDTO } from '@netball-trials/types';
-import { ApiError, type apiClient } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 
-type Client = ReturnType<typeof apiClient>;
 type Pair = { teamAColorId: string; teamBColorId: string };
 
 function pairFrom(row: EventCourtColorDTO | undefined): Pair {

@@ -49,7 +49,8 @@ export async function getRoster(prisma: PrismaClient, eventId: string): Promise<
     status: row.status,
     amountCents: row.amountCents,
     currency: row.currency,
-    bibNumber: row.bibNumber,
+    // An undone check-in keeps its number for re-check-in; only show it while checked in.
+    bibNumber: row.checkedInAt ? row.bibNumber : null,
     checkedInAt: row.checkedInAt?.toISOString() ?? null,
   }));
   return { eventId, registrations, positionCounts: countPositions(activeRows) };

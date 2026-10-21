@@ -44,7 +44,7 @@ function sortedSlots(slots: Array<{ round: number; court: number; position: stri
 async function createPublishedEvent(players = 28, optInExtra = false) {
   const event = await seedEventWithPlayers(players, { courts: 2, checkedIn: players, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
   if (optInExtra) await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
-  const draft = await generateDraftPlan(prisma, event.id, new Date(), 7);
+  const draft = await generateDraftPlan(prisma, event.id, 7);
   if (!draft.ok) throw new Error(`manual revision fixture is infeasible: ${draft.gaps.map((gap) => gap.message).join('; ')}`);
   const published = await publishPlan(prisma, event.id, draft.plan.id);
   if (!published.ok) throw new Error('manual revision fixture did not publish');
@@ -291,5 +291,26 @@ describe('manual published-plan revisions', () => {
     expect(stale.statusCode).toBe(409);
     expect(stale.json()).toEqual({ error: 'stale_plan' });
     expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).publishedPlanId).toBe(first.json().id);
+  });
+
+  it('does not publish a regenerated draft after a newer manual revision supersedes its source', async () => {
+    const rebuilt = await regenerateFromRound(prisma, eventId, 2, new Date(), activePlanId);
+    expect(rebuilt.ok, JSON.stringify(rebuilt)).toBe(true);
+    if (!rebuilt.ok) return;
+    const source = await prisma.roundPlan.findUniqueOrThrow({ where: { id: activePlanId }, include: { slots: true } });
+    const manual = await saveRound(1, planInput(source.slots.filter((slot) => slot.round === 1).map(slotInput)));
+    expect(manual.statusCode, manual.body).toBe(201);
+    const newerId = manual.json().id;
+
+    const current = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/plan`, cookies: { nt_session: adminCookie } });
+    expect(current.json().id).toBe(newerId);
+
+    const fallback = await publishPlan(prisma, eventId);
+    expect(fallback.ok).toBe(false);
+    if (!fallback.ok) expect(fallback.gaps[0].message).toMatch(/newer revision/i);
+    const explicit = await publishPlan(prisma, eventId, rebuilt.plan.id);
+    expect(explicit.ok).toBe(false);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).publishedPlanId).toBe(newerId);
+    expect((await prisma.roundPlan.findUniqueOrThrow({ where: { id: rebuilt.plan.id } })).status).toBe('DRAFT');
   });
 });

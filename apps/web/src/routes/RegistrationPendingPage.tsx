@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { RegistrationStatus, TicketDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
+import { formatTrialDate } from '../formatTrialDate';
 
 export function RegistrationPendingPage({
   client,
@@ -58,7 +57,7 @@ export function RegistrationPendingPage({
           <>
             <p>{ticket.playerName} is registered for {ticket.event.name}.</p>
             <img className="ticket-qr" src={ticket.qrCode} alt={`Check-in QR code for ${ticket.playerName}`} />
-            <p>{ticket.event.eventDate?.slice(0, 10)} · arrival {ticket.event.startTime} · {ticket.event.venue}</p>
+            <p>{ticket.event.eventDate ? formatTrialDate(ticket.event.eventDate) : null} · arrival {ticket.event.startTime} · {ticket.event.venue}</p>
             {ticketPath ? <p><Link to={ticketPath}>Open ticket</Link></p> : null}
             {calendarUrl ? <p><a href={calendarUrl} download>Download calendar invite</a></p> : null}
           </>

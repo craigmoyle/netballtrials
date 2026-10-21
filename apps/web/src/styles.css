@@ -115,6 +115,7 @@ form p { margin-block: 1rem; }
 .form-group legend { padding: 0; font-size: clamp(1.25rem, 3vw, 1.6rem); font-weight: 700; line-height: 1.2; }
 .event-form-context { margin-block: 0 1rem; font-weight: 650; }
 label { display: block; margin-bottom: 0.3rem; font-weight: 650; }
+.field-hint { display: block; margin-bottom: 0.3rem; }
 
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: min(100%, 36rem);

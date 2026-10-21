@@ -30,14 +30,25 @@ describe('requestLoginLink', () => {
     await expect(requestLoginLink(deps(), 'nobody@example.com', new Date())).resolves.toEqual({ sent: true });
     expect(mailer.sent).toHaveLength(0);
   });
-  it('invalidates an earlier unused link when a new one is requested', async () => {
+  it('keeps an earlier unused link valid when a new one is requested', async () => {
     const now = new Date('2026-10-07T00:00:00Z');
     await requestLoginLink(deps(), 'craig@example.com', now);
     const first = extractToken(mailer.sent[0].text);
-    await requestLoginLink(deps(), 'craig@example.com', now);
+    await requestLoginLink(deps(), 'craig@example.com', new Date(now.getTime() + 1000));
     const second = extractToken(mailer.sent[1].text);
-    expect(await consumeLoginToken({ prisma }, first, now)).toBeNull();
+    expect(await consumeLoginToken({ prisma }, first, now)).not.toBeNull();
     expect(await consumeLoginToken({ prisma }, second, now)).not.toBeNull();
+  });
+  it('keeps only the three newest unused links', async () => {
+    const now = new Date('2026-10-07T00:00:00Z');
+    for (let i = 0; i < 4; i++) {
+      await requestLoginLink(deps(), 'craig@example.com', new Date(now.getTime() + i * 1000));
+    }
+    const tokens = mailer.sent.map((message) => extractToken(message.text));
+    expect(await consumeLoginToken({ prisma }, tokens[0], now)).toBeNull();
+    for (const token of tokens.slice(1)) {
+      expect(await consumeLoginToken({ prisma }, token, now)).not.toBeNull();
+    }
   });
 });
 

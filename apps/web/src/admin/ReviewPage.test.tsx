@@ -37,6 +37,19 @@ describe('ReviewPage', () => {
     expect(listReview).toHaveBeenCalledTimes(2);
   });
 
+  it('explains an orphaned payment, shows its note, and does not offer withdrawal', async () => {
+    const client = {
+      listReview: vi.fn().mockResolvedValue([{
+        id: 'i2', reason: 'payment_without_registration', note: 'Stripe payment pi_123',
+        registration: { id: 'r2', playerName: 'Grace Hopper' },
+      }]),
+    };
+    renderPage(client);
+    expect(await screen.findByText(/payment received after the registration expired or was withdrawn/i)).toBeInTheDocument();
+    expect(screen.getByText('Stripe payment pi_123')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /withdraw/i })).not.toBeInTheDocument();
+  });
+
   it('uses the note entered when resolving a review item', async () => {
     const resolveReview = vi.fn().mockResolvedValue({ id: 'i1', resolvedAt: '2026-09-01T00:00:00Z' });
     const client = {

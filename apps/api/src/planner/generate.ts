@@ -55,12 +55,11 @@ function preferenceOrder(state: PlayerState, input: PlannerInput): Position[] {
     if (position && !order.includes(position)) order.push(position);
   };
   for (const position of owedPositions(state, input)) push(position);
+  push(state.player.rank1);
+  push(state.player.rank2);
+  push(state.player.rank3);
   if (state.player.optInExtra) {
     for (const position of COURT_POSITIONS) push(position);
-  } else {
-    push(state.player.rank1);
-    push(state.player.rank2);
-    push(state.player.rank3);
   }
   return order;
 }
@@ -84,12 +83,14 @@ function assignCourt(players: PlayerState[], input: PlannerInput): Assigned[] | 
     }
   }
 
+  // Most-constrained players (fewest allowed positions) choose first.
   const remaining = players
     .filter((state) => !assigned.has(state))
-    .sort((a, b) => a.appearances - b.appearances);
-  for (const state of remaining) {
-    const position = preferenceOrder(state, input).find((candidate) => (used.get(candidate) ?? 0) < 2);
-    if (!position) return null;
+    .map((state) => ({ state, order: preferenceOrder(state, input) }))
+    .sort((a, b) => a.order.length - b.order.length || a.state.appearances - b.state.appearances);
+  for (const { state, order } of remaining) {
+    const position = order.find((candidate) => (used.get(candidate) ?? 0) < 2);
+    if (!position) return matchCourt(players, input);
     used.set(position, (used.get(position) ?? 0) + 1);
     assigned.set(state, position);
   }
@@ -101,6 +102,83 @@ function assignCourt(players: PlayerState[], input: PlannerInput): Assigned[] | 
     teamCount.set(position, index + 1);
     return { state, position, team: index === 0 ? 0 : 1 };
   });
+}
+
+// Maximum bipartite matching of players to the court's 14 seats (two per position).
+// Players try owed positions first, so quotas still win when a full matching allows it.
+function matchSeats(players: PlayerState[], input: PlannerInput): Map<string, PlayerState> {
+  const owners = new Map<string, PlayerState>();
+  const orders = new Map(players.map((state) => [state, preferenceOrder(state, input)]));
+  const place = (state: PlayerState, visited: Set<string>): boolean => {
+    for (const position of orders.get(state)!) {
+      for (const team of [0, 1]) {
+        const seat = `${position}:${team}`;
+        if (visited.has(seat)) continue;
+        visited.add(seat);
+        const owner = owners.get(seat);
+        if (!owner || place(owner, visited)) {
+          owners.set(seat, state);
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  const byConstraint = [...players].sort((a, b) => orders.get(a)!.length - orders.get(b)!.length);
+  for (const state of byConstraint) place(state, new Set());
+  return owners;
+}
+
+function courtShortfall(players: PlayerState[], input: PlannerInput): number {
+  return players.length - matchSeats(players, input).size;
+}
+
+function matchCourt(players: PlayerState[], input: PlannerInput): Assigned[] | null {
+  const owners = matchSeats(players, input);
+  if (owners.size !== players.length) return null;
+  const seats = new Map([...owners].map(([seat, state]) => [state, seat]));
+  return players.map((state) => {
+    const [position, team] = seats.get(state)!.split(':');
+    return { state, position: position as Position, team: team === '0' ? 0 : 1 };
+  });
+}
+
+// Fixed-position players can bunch on one court while another lacks them. Swap players
+// between courts while that lowers the number of seats no one can legally take.
+function rebalanceCourts(byCourt: Map<number, PlayerState[]>, input: PlannerInput): void {
+  const courts = [...byCourt.keys()];
+  const shortfall = new Map(courts.map((court) => [court, courtShortfall(byCourt.get(court)!, input)]));
+  for (let pass = 0; pass < 14 * courts.length; pass += 1) {
+    const court = courts.find((candidate) => shortfall.get(candidate)! > 0);
+    if (court === undefined) return;
+    let best: { other: number; i: number; j: number; gain: number; seen: number; a: number; b: number } | null = null;
+    const players = byCourt.get(court)!;
+    for (const other of courts) {
+      if (other === court) continue;
+      const others = byCourt.get(other)!;
+      const before = shortfall.get(court)! + shortfall.get(other)!;
+      for (let i = 0; i < players.length; i += 1) {
+        for (let j = 0; j < others.length; j += 1) {
+          const trial = [...players];
+          const otherTrial = [...others];
+          [trial[i], otherTrial[j]] = [others[j], players[i]];
+          const a = courtShortfall(trial, input);
+          const b = courtShortfall(otherTrial, input);
+          const gain = before - a - b;
+          // Prefer swaps that also send both players to courts they have not seen.
+          const seen = Number(others[j].courtsSeen.has(court)) + Number(players[i].courtsSeen.has(other));
+          if (gain > 0 && (!best || gain > best.gain || (gain === best.gain && seen < best.seen))) {
+            best = { other, i, j, gain, seen, a, b };
+          }
+        }
+      }
+    }
+    if (!best) return;
+    const others = byCourt.get(best.other)!;
+    [players[best.i], others[best.j]] = [others[best.j], players[best.i]];
+    shortfall.set(court, best.a);
+    shortfall.set(best.other, best.b);
+  }
 }
 
 function preflightGaps(input: PlannerInput, rounds: number): PlannerGap[] | null {
@@ -144,6 +222,19 @@ function preflightGaps(input: PlannerInput, rounds: number): PlannerGap[] | null
         code: 'unmet_position_minimum',
         message: `only ${capacityPerPosition} places at ${position} but ${required} are required`,
         detail: { position, required, capacity: capacityPerPosition },
+      });
+    }
+  }
+  // Every court needs two players at each position in every round.
+  const perRound = 2 * input.courts;
+  for (const position of COURT_POSITIONS) {
+    const eligible = activePlayers.filter((player) => player.optInExtra ||
+      player.rank1 === position || player.rank2 === position || player.rank3 === position).length;
+    if (eligible < perRound) {
+      gaps.push({
+        code: 'unmet_position_minimum',
+        message: `only ${eligible} players can play ${position} but ${input.courts} courts need ${perRound} each round`,
+        detail: { position, eligible, needed: perRound },
       });
     }
   }
@@ -228,6 +319,7 @@ function buildPlan(
         return { ok: false, gaps: [{ code: 'no_solution', message: `could not fill court ${court} in round ${round}` }] };
       }
     }
+    rebalanceCourts(byCourt, input);
 
     for (let court = 1; court <= input.courts; court += 1) {
       let courtPlayers = byCourt.get(court)!;

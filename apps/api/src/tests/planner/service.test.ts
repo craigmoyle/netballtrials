@@ -46,7 +46,7 @@ function orderedSlots(slots: Array<{ round: number; court: number; position: str
 describe('plan service', () => {
   it('generates a draft from checked-in players only and snapshots display fields', async () => {
     const event = await seedEventWithPlayers(29, { courts: 2, checkedIn: 28 });
-    const result = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const result = await generateDraftPlan(prisma, event.id, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.status).toBe('DRAFT');
@@ -59,14 +59,14 @@ describe('plan service', () => {
 
   it('does not save a plan when a check-in gap exists', async () => {
     const event = await seedEventWithPlayers(20, { courts: 2, checkedIn: 20 });
-    const result = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const result = await generateDraftPlan(prisma, event.id, 1);
     expect(result.ok).toBe(false);
     expect(await prisma.roundPlan.count()).toBe(0);
   });
 
   it('creates a new verified draft revision and preserves the played prefix', async () => {
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
-    const first = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const first = await generateDraftPlan(prisma, event.id, 1);
     if (!first.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, first.plan.id);
     expect(published.ok).toBe(true);
@@ -95,7 +95,7 @@ describe('plan service', () => {
 
   it('does not publish a draft after the checked-in roster changes', async () => {
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
-    const draft = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const draft = await generateDraftPlan(prisma, event.id, 1);
     if (!draft.ok) throw new Error('setup failed');
     await prisma.registration.updateMany({
       where: { eventId: event.id, bibNumber: 1 },
@@ -109,7 +109,7 @@ describe('plan service', () => {
 
   it('publishing the current published revision again is idempotent', async () => {
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
-    const draft = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const draft = await generateDraftPlan(prisma, event.id, 1);
     if (!draft.ok) throw new Error('setup failed');
     const first = await publishPlan(prisma, event.id, draft.plan.id);
     const second = await publishPlan(prisma, event.id, draft.plan.id);
@@ -121,7 +121,7 @@ describe('plan service', () => {
   it('rejects a late arrival that cannot fit the frozen prefix and leaves the published revision unchanged', async () => {
     const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
     await prisma.event.update({ where: { id: event.id }, data: { lastWhistle: '09:28' } });
-    const first = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const first = await generateDraftPlan(prisma, event.id, 1);
     if (!first.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, first.plan.id);
     if (!published.ok) throw new Error('publish setup failed');
@@ -148,12 +148,12 @@ describe('plan service', () => {
 
   it('freezes played rounds and excludes a withdrawn player from the regenerated suffix', async () => {
     const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
-    const original = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const original = await generateDraftPlan(prisma, event.id, 1);
     if (!original.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, original.plan.id);
     if (!published.ok) throw new Error('publish setup failed');
     const frozenBefore = await prisma.roundSlot.findMany({ where: { planId: original.plan.id, round: { lt: 3 } } });
-    const departing = await prisma.registration.findFirstOrThrow({ where: { eventId: event.id, status: 'PAID' } });
+    const departing = await prisma.registration.findFirstOrThrow({ where: { eventId: event.id, status: 'PAID' }, orderBy: { playerFirstName: 'asc' } });
     await prisma.registration.update({ where: { id: departing.id }, data: { status: 'WITHDRAWN', checkedInAt: null, bibNumber: null } });
 
     const regenerated = await regenerateFromRound(prisma, event.id, 3, new Date(1_000_000), original.plan.id);
@@ -189,7 +189,7 @@ describe('plan service', () => {
   it('keeps a withdrawn player in the frozen snapshot but excludes them from future rounds', async () => {
     const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
     await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
-    const first = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const first = await generateDraftPlan(prisma, event.id, 1);
     if (!first.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, first.plan.id);
     if (!published.ok) throw new Error('publish setup failed');
@@ -232,7 +232,7 @@ describe('plan service', () => {
   it('rebuilds the suffix without assigning a selected early leaver or mutating registration history', async () => {
     const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
     await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
-    const draft = await generateDraftPlan(prisma, event.id, new Date(), 31);
+    const draft = await generateDraftPlan(prisma, event.id, 31);
     if (!draft.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, draft.plan.id);
     if (!published.ok) throw new Error('publish setup failed');
@@ -264,7 +264,7 @@ describe('plan service', () => {
   it('does not create a suffix draft when early leavers make the remaining roster too small', async () => {
     const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
     await prisma.registration.updateMany({ where: { eventId: event.id }, data: { optInExtraPositions: true } });
-    const draft = await generateDraftPlan(prisma, event.id, new Date(), 41);
+    const draft = await generateDraftPlan(prisma, event.id, 41);
     if (!draft.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, draft.plan.id);
     if (!published.ok) throw new Error('publish setup failed');
@@ -278,9 +278,48 @@ describe('plan service', () => {
     expect(await prisma.registration.count({ where: { id: { in: removedIds }, status: 'PAID' } })).toBe(3);
   });
 
+  it('returns the published plan when two admins publish the same draft concurrently', async () => {
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const draft = await generateDraftPlan(prisma, event.id, 1);
+    if (!draft.ok) throw new Error('setup failed');
+    const [first, second] = await Promise.all([publishPlan(prisma, event.id, draft.plan.id), publishPlan(prisma, event.id, draft.plan.id)]);
+    expect(first.ok, JSON.stringify(first)).toBe(true);
+    expect(second.ok, JSON.stringify(second)).toBe(true);
+    if (first.ok && second.ok) expect(second.plan.id).toBe(first.plan.id);
+  });
+
+  it('refuses to regenerate rounds that are already frozen', async () => {
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const first = await generateDraftPlan(prisma, event.id, 1);
+    if (!first.ok) throw new Error('setup failed');
+    if (!(await publishPlan(prisma, event.id, first.plan.id)).ok) throw new Error('publish setup failed');
+    const rebuilt = await regenerateFromRound(prisma, event.id, 2, new Date(), first.plan.id);
+    if (!rebuilt.ok) throw new Error('regenerate setup failed');
+    const published = await publishPlan(prisma, event.id, rebuilt.plan.id);
+    if (!published.ok) throw new Error('republish setup failed');
+    const countBefore = await prisma.roundPlan.count({ where: { eventId: event.id } });
+
+    const result = await regenerateFromRound(prisma, event.id, 1, new Date(), published.plan.id);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.gaps[0].message).toMatch(/round 1 is already played and frozen/i);
+    expect(await prisma.roundPlan.count({ where: { eventId: event.id } })).toBe(countBefore);
+  });
+
+  it('regenerates from the active published revision when no source is given', async () => {
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const first = await generateDraftPlan(prisma, event.id, 1);
+    if (!first.ok) throw new Error('setup failed');
+    const published = await publishPlan(prisma, event.id, first.plan.id);
+    if (!published.ok) throw new Error('publish setup failed');
+    const result = await regenerateFromRound(prisma, event.id, 2, new Date());
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (result.ok) expect(result.plan.sourcePlanId).toBe(published.plan.id);
+  });
+
   it('refuses an invalid regeneration round without changing the source revision', async () => {
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
-    const first = await generateDraftPlan(prisma, event.id, new Date(), 1);
+    const first = await generateDraftPlan(prisma, event.id, 1);
     if (!first.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, first.plan.id);
     if (!published.ok) throw new Error('publish setup failed');

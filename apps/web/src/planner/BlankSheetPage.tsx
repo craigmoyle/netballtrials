@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
 
 export function BlankSheetPage({ client, eventId }: { client: Client; eventId: string }) {
   const [html, setHtml] = useState<string | null>(null);

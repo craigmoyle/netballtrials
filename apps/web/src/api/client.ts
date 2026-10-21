@@ -22,14 +22,26 @@ async function fetchResponse(baseUrl: string, path: string, init?: RequestInit):
   }
 }
 
+// Returns null for an empty body and undefined when the body is not JSON
+// (e.g. an HTML error page from a proxy).
+async function readJson(response: Response): Promise<any> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 async function request<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetchResponse(baseUrl, path, init);
-  const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
+  const body = await readJson(response);
 
   if (!response.ok) {
     throw new ApiError(response.status, body?.error ?? 'request_failed', body?.fields);
   }
+  if (body === undefined) throw new ApiError(response.status, 'invalid_json');
 
   return body as T;
 }
@@ -52,7 +64,7 @@ type ManualRoundResult =
 
 async function manualPlanAction(baseUrl: string, path: string, input: ManualRoundInputDTO | ManualSuffixInputDTO): Promise<ManualRoundResult> {
   const response = await fetchResponse(baseUrl, path, { method: 'POST', body: JSON.stringify(input) });
-  const body = await response.json().catch(() => null);
+  const body = await readJson(response);
   if (response.status === 422 && body?.error === 'invalid_plan') {
     return { ok: false, reason: 'invalid_plan', errors: (body.errors ?? []) as PlannerGapDTO[] };
   }
@@ -73,7 +85,7 @@ async function planAction(
   init?: RequestInit,
 ): Promise<{ ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] }> {
   const response = await fetchResponse(baseUrl, path, init);
-  const body = await response.json().catch(() => null);
+  const body = await readJson(response);
   if (response.status === 422) {
     return { ok: false, gaps: (body?.gaps ?? []) as PlannerGapDTO[] };
   }
@@ -120,7 +132,7 @@ export function apiClient(baseUrl: string) {
     downloadRoster: async (id: string) => {
       const response = await fetchResponse(baseUrl, `/api/admin/events/${id}/roster/export`);
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
+        const body = await readJson(response);
         throw new ApiError(response.status, body?.error ?? 'request_failed');
       }
       return response.blob();
@@ -240,7 +252,7 @@ export function apiClient(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ ...message, batchId: message.batchId ?? crypto.randomUUID() }),
       });
-      const body = await response.json().catch(() => null);
+      const body = await readJson(response);
       if (!response.ok) {
         throw new ApiError(response.status, body?.error ?? 'request_failed');
       }
@@ -256,3 +268,5 @@ export function apiClient(baseUrl: string) {
       request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/email-log`),
   };
 }
+
+export type ApiClient = ReturnType<typeof apiClient>;

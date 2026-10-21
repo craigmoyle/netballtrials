@@ -29,10 +29,10 @@ describe('CheckInPage', () => {
     const listPublicEvents = vi.fn().mockResolvedValue(events);
     renderCheckIn({ listPublicEvents });
 
-    const trialSelect = await screen.findByLabelText('Trial');
-    expect(screen.getByRole('option', {
+    expect(await screen.findByRole('option', {
       name: '17/U State Titles Trial · 12 September 2026 · Chisholm Netball Centre',
     })).toBeInTheDocument();
+    const trialSelect = screen.getByLabelText('Trial');
     expect(screen.getByRole('option', {
       name: '15/U Ladies Trial · 19 September 2026 · Riverside Courts',
     })).toBeInTheDocument();
@@ -50,7 +50,9 @@ describe('CheckInPage', () => {
     const openCheckIn = vi.fn().mockResolvedValue({ eventName: event.name });
     renderCheckIn({ listPublicEvents: vi.fn().mockResolvedValue([event]), openCheckIn });
 
-    fireEvent.change(await screen.findByLabelText('Trial'), { target: { value: event.id } });
+    // The selector is disabled until the trial list loads; wait for the option first.
+    await screen.findByRole('option', { name: /17\/U State Titles Trial/ });
+    fireEvent.change(screen.getByLabelText('Trial'), { target: { value: event.id } });
     fireEvent.change(screen.getByLabelText('Event PIN'), { target: { value: '1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
 

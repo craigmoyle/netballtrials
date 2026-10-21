@@ -49,7 +49,22 @@ export async function createRegistrationCheckout(
     }
 
     return checkout;
-  } catch {
+  } catch (error) {
+    deps.log?.error({ error: error instanceof Error ? error.message : 'unknown_error' }, 'checkout_create_failed');
+    // A registration that never got a Checkout session cannot be paid, but it
+    // still blocks the child from registering again until it expires. Expire
+    // it now so the parent can retry with a fresh registration. The fake
+    // provider's dev simulation binds its own token to the PENDING row instead.
+    if (registration.checkoutSessionId === null && deps.env.PAYMENT_PROVIDER !== 'fake') {
+      try {
+        await deps.prisma.registration.updateMany({
+          where: { id: registration.id, status: 'PENDING', checkoutSessionId: null },
+          data: { status: 'EXPIRED' },
+        });
+      } catch {
+        // Leave the normal expiry sweep to clean up.
+      }
+    }
     return null;
   }
 }

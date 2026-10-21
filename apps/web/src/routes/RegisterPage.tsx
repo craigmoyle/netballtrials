@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker, useLocation } from 'react-router-dom';
 import { melbourneDateKey, POSITIONS, type EventDTO, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
+import { formatFee } from '../formatFee';
 import { formatTrialDate } from '../formatTrialDate';
-
-type Client = ReturnType<typeof apiClient>;
 
 const FIELD_LABELS: Record<string, string> = {
   playerFirstName: 'Player first name',
@@ -360,9 +359,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   }
   if (!event) return <p role="status">Loading trial details...</p>;
   const currency = 'currency' in event ? event.currency : 'aud';
-  const fee = new Intl.NumberFormat('en-AU', {
-    style: 'currency', currency: currency.toUpperCase(),
-  }).format(event.registrationFeeCents / 100);
+  const fee = formatFee(event.registrationFeeCents, currency);
 
   if (simulationToken) {
     return (

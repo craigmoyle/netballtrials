@@ -117,4 +117,30 @@ describe('Gmail OAuth mail provider', () => {
       expect((error as Error).message).not.toContain('access-token-secret');
     }
   });
+
+  it('marks OAuth refresh failures as not sent', async () => {
+    const networkDown = vi.fn(async () => { throw new TypeError('fetch failed'); });
+    await expect(createGmailMailer(config, networkDown as typeof fetch).send({ to: 'a@example.com', subject: 's', text: 't' }))
+      .rejects.toMatchObject({ name: 'GmailDeliveryError', notSent: true });
+    const rejected = vi.fn(async () => response({ error: 'invalid_grant' }, 400));
+    await expect(createGmailMailer(config, rejected as typeof fetch).send({ to: 'a@example.com', subject: 's', text: 't' }))
+      .rejects.toMatchObject({ notSent: true, status: 400 });
+    const unavailable = vi.fn(async () => response({ error: 'backend' }, 503));
+    await expect(createGmailMailer(config, unavailable as typeof fetch).send({ to: 'a@example.com', subject: 's', text: 't' }))
+      .rejects.toMatchObject({ notSent: true });
+  });
+
+  it('keeps send-request network failures and 5xx responses ambiguous', async () => {
+    const timeout = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      if (String(input).includes('/token')) return response({ access_token: 'token', expires_in: 3600 });
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    });
+    await expect(createGmailMailer(config, timeout as typeof fetch).send({ to: 'a@example.com', subject: 's', text: 't' }))
+      .rejects.toMatchObject({ notSent: false });
+    const serverError = vi.fn(async (input: Parameters<typeof fetch>[0]) => String(input).includes('/token')
+      ? response({ access_token: 'token', expires_in: 3600 })
+      : response({ error: 'backend' }, 500));
+    await expect(createGmailMailer(config, serverError as typeof fetch).send({ to: 'a@example.com', subject: 's', text: 't' }))
+      .rejects.toMatchObject({ notSent: false, status: 500 });
+  });
 });

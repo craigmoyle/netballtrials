@@ -8,7 +8,7 @@ describe('EventsPage', () => {
     const events = [{ id: 'e1', name: '15/U Ladies', eventDate: '2026-09-12', courts: 5 }];
     render(<MemoryRouter><EventsPage client={{ listEvents: async () => events } as any} /></MemoryRouter>);
     expect(await screen.findByText('15/U Ladies')).toBeTruthy();
-    expect(screen.getByText(/5 courts/)).toBeTruthy();
+    expect(screen.getByText(/5 courts/)).toHaveTextContent(/^12 September 2026 · /);
     expect(screen.getByRole('link', { name: 'New event' })).toHaveClass('events-new-action');
   });
 });

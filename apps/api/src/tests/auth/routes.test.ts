@@ -20,6 +20,26 @@ describe('auth routes', () => {
     expect(known.statusCode).toBe(202);
     expect(unknown.statusCode).toBe(202);
   });
+  it('sends at most three links per email per link lifetime but still answers 202', async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const res = await app.inject({
+        method: 'POST', url: '/api/auth/request-link', payload: { email: 'Craig@Example.com' },
+        remoteAddress: `198.51.100.${i + 1}`,
+      });
+      statuses.push(res.statusCode);
+    }
+    expect(statuses).toEqual([202, 202, 202, 202]);
+    expect(outbox.sent).toHaveLength(3);
+    expect(await prisma.loginToken.count()).toBe(3);
+  });
+  it('keeps an earlier link working after a newer request', async () => {
+    await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
+    await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
+    const first = new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+    const verified = await app.inject({ method: 'POST', url: '/api/auth/verify', payload: { token: first } });
+    expect(verified.statusCode).toBe(200);
+  });
   it('rejects a request with no body field', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: {} });
     expect(res.statusCode).toBe(400);

@@ -1,24 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { CheckInSummary } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 import { CHECK_IN_UPDATED_EVENT } from './refresh';
 import { ClubLogoLink } from '../SiteNavigation';
 
-type Client = ReturnType<typeof apiClient>;
+const SESSION_ENDED_STATUSES = new Set([401, 403, 404, 409]);
 
 export function CheckInLayout({ client }: { client: Client }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [summary, setSummary] = useState<CheckInSummary | null>(null);
+  const latestRequest = useRef(0);
 
   useEffect(() => {
     let active = true;
     const load = () => {
+      const requestId = ++latestRequest.current;
+      const current = () => active && requestId === latestRequest.current;
       client
         .checkInSummary()
-        .then((loaded) => { if (active) setSummary(loaded); })
-        .catch(() => { if (active) navigate('/check-in', { replace: true }); });
+        .then((loaded) => { if (current()) setSummary(loaded); })
+        .catch((error) => {
+          // Only a rejected check-in session ends the volunteer's session; transient
+          // failures keep the last summary on screen.
+          if (current() && error instanceof ApiError && SESSION_ENDED_STATUSES.has(error.status)) {
+            navigate('/check-in', { replace: true });
+          }
+        });
     };
     load();
     window.addEventListener(CHECK_IN_UPDATED_EVENT, load);

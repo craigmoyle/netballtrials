@@ -79,7 +79,7 @@ async function resetFixtures(): Promise<Record<string, string>> {
   const checkInEvent = await prisma.event.create({
     data: { ...eventFixture({
       name: 'E2E Check-in', status: 'OPEN', eventDate: new Date('2027-09-19T00:00:00Z'),
-      courts: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0, checkInPinHash: await hashPin('4821'),
+      courts: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0, checkInPinHash: await hashPin('482193'),
     }) },
   });
   for (let index = 0; index < 14; index++) {

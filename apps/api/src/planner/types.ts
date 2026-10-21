@@ -45,7 +45,6 @@ export interface PlannerPlan {
 
 export type PlannerGapCode =
   | 'too_few_players'
-  | 'too_many_players'
   | 'unmet_position_minimum'
   | 'missing_court_visit'
   | 'position_preference_warning'

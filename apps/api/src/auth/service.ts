@@ -2,6 +2,8 @@ import type { PrismaClient, StaffUser } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
 import { hashToken, newLoginToken, newSession } from './tokens';
 
+const MAX_ACTIVE_LOGIN_LINKS = 3;
+
 export type LoginDeps = {
   prisma: PrismaClient;
   mailer: EmailProvider;
@@ -86,19 +88,30 @@ export async function requestLoginLink(
     return { sent: true };
   }
 
-  await deps.prisma.loginToken.updateMany({
-    where: { userId: user.id, usedAt: null },
-    data: { usedAt: now },
-  });
-
   const record = newLoginToken(now);
   await deps.prisma.loginToken.create({
     data: {
       userId: user.id,
       tokenHash: record.tokenHash,
       expiresAt: record.expiresAt,
+      createdAt: now,
     },
   });
+
+  // Keep a few recent links usable so a newer request (or someone else
+  // requesting on the admin's behalf) does not void the link they are about to open.
+  const stale = await deps.prisma.loginToken.findMany({
+    where: { userId: user.id, usedAt: null, expiresAt: { gt: now } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    skip: MAX_ACTIVE_LOGIN_LINKS,
+    select: { id: true },
+  });
+  if (stale.length > 0) {
+    await deps.prisma.loginToken.updateMany({
+      where: { id: { in: stale.map((token) => token.id) }, usedAt: null },
+      data: { usedAt: now },
+    });
+  }
 
   const link = `${deps.webOrigin}/admin/verify?token=${record.token}`;
   await deps.mailer.send({

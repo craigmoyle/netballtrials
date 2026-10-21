@@ -60,6 +60,29 @@ describe('event admin routes', () => {
     expect(await prisma.registration.findUnique({ where: { id: registration.id } })).not.toBeNull();
   });
 
+  it('never returns the check-in PIN hash from event responses', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).not.toHaveProperty('checkInPinHash');
+    const eventId = created.json().id as string;
+    await prisma.event.update({ where: { id: eventId }, data: { checkInPinHash: 'scrypt$secret$hash' } });
+
+    const responses = [
+      await app.inject({ method: 'GET', url: '/api/admin/events', cookies: { nt_session: cookie } }),
+      await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}`, cookies: { nt_session: cookie } }),
+      await app.inject({ method: 'PATCH', url: `/api/admin/events/${eventId}`, payload: { courts: 3 }, cookies: { nt_session: cookie } }),
+      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie } }),
+      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie } }),
+      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/close`, cookies: { nt_session: cookie } }),
+    ];
+    for (const response of responses) {
+      expect(response.statusCode).toBe(200);
+      expect(response.body).not.toContain('checkInPinHash');
+      expect(response.body).not.toContain('scrypt$secret$hash');
+    }
+    expect(responses[2].json().courts).toBe(3);
+  });
+
   it('returns 400 with field errors for a reversed window', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/admin/events', payload: { ...payload, lastWhistle: '08:45' }, cookies: { nt_session: cookie } });
     expect(res.statusCode).toBe(400);

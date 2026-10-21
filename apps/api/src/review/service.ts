@@ -14,7 +14,7 @@ function toDTO(item: ItemWithRegistration): ReviewItemDTO {
     registration: {
       id: item.registration.id,
       playerName: `${item.registration.playerFirstName} ${item.registration.playerLastName}`,
-      bibNumber: item.registration.bibNumber,
+      bibNumber: item.registration.checkedInAt ? item.registration.bibNumber : null,
       ageFlagged: item.registration.ageFlagged,
     },
   };
@@ -53,7 +53,15 @@ export async function listReviewQueue(
   const items = await prisma.reviewItem.findMany({
     where: {
       eventId,
-      ...(includeResolved ? {} : { resolvedAt: null, registration: { is: { status: 'PAID' } } }),
+      ...(includeResolved ? {} : {
+        resolvedAt: null,
+        // Orphaned payments belong to registrations that are no longer PAID
+        // by definition, so they must stay visible until resolved.
+        OR: [
+          { reason: 'payment_without_registration' },
+          { registration: { is: { status: 'PAID' } } },
+        ],
+      }),
     },
     orderBy: { createdAt: 'asc' },
     include: { registration: true },
@@ -68,12 +76,17 @@ export async function resolveReviewItem(
   resolution: { resolvedByUserId: string; note?: string | null },
   now: Date,
 ): Promise<ReviewItemDTO | null> {
+  const existing = await prisma.reviewItem.findFirst({ where: { id: itemId, eventId }, select: { note: true } });
+  const resolutionNote = resolution.note?.trim() || null;
+  const note = existing?.note && resolutionNote
+    ? `${existing.note}\n\nResolution: ${resolutionNote}`
+    : existing?.note ?? resolutionNote;
   const result = await prisma.reviewItem.updateMany({
     where: { id: itemId, eventId, resolvedAt: null },
     data: {
       resolvedAt: now,
       resolvedByUserId: resolution.resolvedByUserId,
-      note: resolution.note ?? null,
+      note,
     },
   });
 

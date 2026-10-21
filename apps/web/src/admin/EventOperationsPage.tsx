@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { EventDTO } from '@netball-trials/types';
 import { formatTrialDate } from '../formatTrialDate';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 import { EventControls } from './EventControls';
-
-type Client = ReturnType<typeof apiClient>;
 
 export function EventOperationsPage({ client, eventId }: { client: Client; eventId: string }) {
   const [loaded, setLoaded] = useState<{ eventId: string; event: EventDTO } | null>(null);

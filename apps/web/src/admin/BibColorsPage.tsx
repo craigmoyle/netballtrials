@@ -1,8 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { BibColorDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
 
 export function BibColorsPage({ client }: { client: Client }) {
   const [colors, setColors] = useState<BibColorDTO[] | null>(null);

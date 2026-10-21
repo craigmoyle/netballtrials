@@ -13,14 +13,16 @@ beforeEach(async () => {
   await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
 });
 
-function makeDeps() {
+function makeDeps(provider: 'fake' | 'stripe' = 'fake') {
   const payment = createFakePaymentProvider();
   const mailer = createDevMailer([]);
   const deps = {
     prisma,
     payment,
     mailer,
-    env: loadEnv({ NODE_ENV: 'test', PAYMENT_PROVIDER: 'fake' }),
+    env: loadEnv(provider === 'fake'
+      ? { NODE_ENV: 'test', PAYMENT_PROVIDER: 'fake' }
+      : { NODE_ENV: 'test', PAYMENT_PROVIDER: 'stripe', STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: 'whsec_x' }),
   } satisfies AppDeps;
   return { deps, payment, mailer };
 }
@@ -53,5 +55,28 @@ describe('createRegistrationCheckout', () => {
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0].to).toBe('anne@example.com');
     expect(mailer.sent[0].text).toContain('https://checkout.test/fake_');
+  });
+
+  it('expires a registration that never got a Checkout session so the parent can register again', async () => {
+    const registration = await createPendingRegistration();
+    const { deps } = makeDeps('stripe');
+    const failing = { ...deps, payment: { ...deps.payment, createCheckout: async () => { throw new Error('Stripe unavailable'); } } };
+
+    await expect(createRegistrationCheckout(failing, registration)).resolves.toBeNull();
+
+    const saved = await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(saved.status).toBe('EXPIRED');
+  });
+
+  it('leaves a registration with an existing Checkout session pending when a refresh fails', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
+    const registration = await prisma.registration.create({ data: { ...registrationFixture(event.id), checkoutSessionId: 'cs_existing' } });
+    const { deps } = makeDeps('stripe');
+    const failing = { ...deps, payment: { ...deps.payment, createCheckout: async () => { throw new Error('Stripe unavailable'); } } };
+
+    await expect(createRegistrationCheckout(failing, registration)).resolves.toBeNull();
+
+    const saved = await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(saved).toMatchObject({ status: 'PENDING', checkoutSessionId: 'cs_existing' });
   });
 });

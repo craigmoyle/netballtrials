@@ -20,7 +20,7 @@ describe('admin roster routes', () => {
     await prisma.registration.create({
       data: registrationFixture(eventId, {
         playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
-        rank1Position: 'GS', rank2Position: 'WA', optInExtraPositions: true, status: 'PAID', bibNumber: 4,
+        rank1Position: 'GS', rank2Position: 'WA', optInExtraPositions: true, status: 'PAID', bibNumber: 4, checkedInAt: new Date('2026-09-12T00:00:00Z'),
       }),
     });
     expect((await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/roster` })).statusCode).toBe(401);

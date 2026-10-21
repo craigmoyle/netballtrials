@@ -100,6 +100,29 @@ describe('sendEventMessage delivery batches', () => {
     expect(confirmedRetry.sent).toBe(1);
   });
 
+  it('marks a delivery that failed before reaching Gmail as failed so it can be retried', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await paid(event.id, 'notsent@example.com', 'Ada');
+    const send = vi.fn()
+      .mockRejectedValueOnce(new GmailDeliveryError('Gmail OAuth token refresh failed', undefined, { notSent: true }))
+      .mockResolvedValue(undefined);
+    const mailer = { send };
+    const first = await sendEventMessage({ prisma, mailer }, event.id, { subject: 'Hi', text: 'Text' }, new Date(), { batchId: 'batch-notsent' });
+    expect(first).toMatchObject({ failed: 1, ambiguous: 0 });
+    const delivery = await prisma.emailLog.findFirstOrThrow({ where: { batchId: 'batch-notsent' } });
+    expect(delivery).toMatchObject({ status: 'FAILED', error: 'delivery_not_attempted' });
+    const retry = await retryFailedDeliveries({ prisma, mailer }, event.id, 'batch-notsent', [delivery.id], new Date());
+    expect(retry.sent).toBe(1);
+  });
+
+  it('keeps a Gmail send-request failure ambiguous', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await paid(event.id, 'timeout@example.com', 'Ada');
+    const mailer = { send: vi.fn().mockRejectedValue(new GmailDeliveryError('Gmail send request failed')) };
+    const result = await sendEventMessage({ prisma, mailer }, event.id, { subject: 'Hi', text: 'Text' }, new Date(), { batchId: 'batch-timeout' });
+    expect(result).toMatchObject({ failed: 0, ambiguous: 1 });
+  });
+
   it('moves an abandoned sending claim to ambiguous instead of retrying automatically', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     const delivery = await prisma.emailLog.create({

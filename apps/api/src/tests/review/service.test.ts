@@ -72,6 +72,20 @@ describe('review queue', () => {
     expect(await listReviewQueue(prisma, event.id, true)).toHaveLength(1);
   });
 
+  it('keeps the original item note when an admin resolves it', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const registration = await seedPaidFlagged(event.id);
+    const item = await prisma.reviewItem.create({
+      data: { eventId: event.id, registrationId: registration.id, reason: 'payment_without_registration', note: 'Stripe payment pi_123' },
+    });
+    const resolved = await resolveReviewItem(prisma, event.id, item.id, { resolvedByUserId: 'u1', note: 'Refunded' }, new Date());
+    expect(resolved?.note).toBe('Stripe payment pi_123\n\nResolution: Refunded');
+    const unchanged = await prisma.reviewItem.create({
+      data: { eventId: event.id, registrationId: registration.id, reason: 'other', note: 'Original' },
+    });
+    expect((await resolveReviewItem(prisma, event.id, unchanged.id, { resolvedByUserId: 'u1' }, new Date()))?.note).toBe('Original');
+  });
+
   it('does not overwrite an existing resolution', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     await seedPaidFlagged(event.id);

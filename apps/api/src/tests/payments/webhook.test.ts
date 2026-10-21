@@ -3,6 +3,7 @@ import { createApp } from '../../app';
 import { prisma } from '../../db';
 import { createFakePaymentProvider } from '../../payments/fake';
 import { confirmPayment } from '../../payments/webhook';
+import { listReviewQueue } from '../../review/service';
 import { signInAsNewAdmin } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
@@ -80,10 +81,47 @@ describe('stripe webhook', () => {
     expect((after.messagePayload as any).attachments[0].filename).toBe(`${registrationId}.ics`);
   });
 
-  it('ignores a payment for an amount that does not match', async () => {
+  it.each(['EXPIRED', 'WITHDRAWN'] as const)('flags a settled payment for a %s registration for review without marking it paid', async (status) => {
+    await prisma.registration.update({ where: { id: registrationId }, data: { status } });
+    const fake = { kind: 'checkout_completed' as const, stripeEventId: `evt_orphan_${status}`, registrationId, sessionId: 'cs_1', amountCents: 3500, currency: 'aud', paymentStatus: 'paid' as const, paymentIntentId: 'pi_orphan' };
+    const send = () => app.inject({ method: 'POST', url: '/api/webhooks/stripe', headers: { 'stripe-signature': 'ok', 'content-type': 'application/json' }, payload: fake });
+    const res = await send();
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('orphaned');
+    expect((await send()).json().status).toBe('orphaned');
+
+    const reg = await prisma.registration.findUniqueOrThrow({ where: { id: registrationId } });
+    expect(reg.status).toBe(status);
+    expect(reg.qrToken).toBeNull();
+    expect(reg.paymentIntentId).toBeNull();
+    expect(await prisma.emailLog.count({ where: { registrationId } })).toBe(0);
+    expect((await prisma.processedStripeEvent.findUniqueOrThrow({ where: { stripeEventId: fake.stripeEventId } })).outcome).toBe('ORPHANED');
+    const items = await prisma.reviewItem.findMany({ where: { registrationId } });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ eventId, reason: 'payment_without_registration' });
+    expect(items[0].note).toContain('pi_orphan');
+
+    const queue = await listReviewQueue(prisma, eventId);
+    expect(queue.map((item) => item.reason)).toEqual(['payment_without_registration']);
+  });
+
+  it('does not flag an unsettled completion for an expired registration', async () => {
+    await prisma.registration.update({ where: { id: registrationId }, data: { status: 'EXPIRED' } });
+    const result = await confirmPayment(prisma, {
+      kind: 'checkout_completed', stripeEventId: 'evt_unpaid_expired', registrationId,
+      sessionId: 'cs_1', amountCents: 3500, currency: 'aud', paymentStatus: 'unpaid', paymentIntentId: null,
+    }, new Date());
+    expect(result?.outcome).toBe('ignored');
+    expect(await prisma.reviewItem.count()).toBe(0);
+  });
+
+  it('flags a settled payment for an amount that does not match without marking it paid', async () => {
     const fake = { kind: 'checkout_completed' as const, stripeEventId: 'evt_bad_amount', registrationId, sessionId: 'cs_1', amountCents: 999, currency: 'aud', paymentStatus: 'paid' as const, paymentIntentId: 'pi_1' };
     const res = await app.inject({ method: 'POST', url: '/api/webhooks/stripe', headers: { 'stripe-signature': 'ok', 'content-type': 'application/json' }, payload: fake });
-    expect(res.json().status).toBe('ignored');
+    expect(res.json().status).toBe('orphaned');
     expect((await prisma.registration.findUnique({ where: { id: registrationId } }))?.status).toBe('PENDING');
+    const item = await prisma.reviewItem.findFirstOrThrow({ where: { registrationId } });
+    expect(item.reason).toBe('payment_without_registration');
+    expect(item.note).toContain('amount or currency did not match');
   });
 });

@@ -1,10 +1,25 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { apiClient } from './client';
+import { ApiError, apiClient } from './client';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('apiClient', () => {
+  it.each([502, 429])('rejects a %i HTML error body with an ApiError carrying the status', async (status) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>Bad gateway</html>', { status, headers: { 'content-type': 'text/html' } }));
+
+    const result = apiClient('http://api.test').listEvents();
+
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+    await expect(result).rejects.toMatchObject({ status, message: 'request_failed' });
+  });
+
+  it('rejects a successful non-JSON body as invalid_json', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>proxy page</html>', { status: 200 }));
+
+    await expect(apiClient('http://api.test').listEvents()).rejects.toMatchObject({ status: 200, message: 'invalid_json' });
+  });
+
   it('starts an Admin-scoped event check-in session', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"eventName":"Trials"}', { status: 200, headers: { 'content-type': 'application/json' } }));
 
@@ -239,9 +254,9 @@ describe('apiClient', () => {
     await expect(apiClient('http://api.test').getSheetsHtml('event-1')).rejects.toMatchObject({ status: 409, message: 'court_colors_unassigned' });
   });
 
-  it('keeps malformed JSON response behavior characterized', async () => {
+  it('rejects malformed JSON in a successful response as invalid_json', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{bad', { status: 200, headers: { 'content-type': 'application/json' } }));
-    await expect(apiClient('http://api.test').me()).rejects.toBeInstanceOf(SyntaxError);
+    await expect(apiClient('http://api.test').me()).rejects.toMatchObject({ name: 'ApiError', status: 200, message: 'invalid_json' });
   });
 
   it('converts fetch rejection to the network error contract', async () => {

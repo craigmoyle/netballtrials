@@ -1,9 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { MemberAssociationDTO } from '@netball-trials/types';
-import { ApiError, type apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import { ApiError, type ApiClient as Client } from '../api/client';
 
 export function AssociationsPage({ client }: { client: Client }) {
   const [associations, setAssociations] = useState<MemberAssociationDTO[] | null>(null);

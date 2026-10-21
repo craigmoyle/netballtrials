@@ -1,19 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { PublicTrialDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
+import { formatFee } from '../formatFee';
 import { formatTrialDate } from '../formatTrialDate';
 
-type Client = ReturnType<typeof apiClient>;
-
 const CHISHOLM_HOME = 'https://chisholmnetball.com/';
-
-function fee(trial: PublicTrialDTO): string {
-  return new Intl.NumberFormat('en-AU', {
-    style: 'currency',
-    currency: trial.currency.toUpperCase(),
-  }).format(trial.registrationFeeCents / 100);
-}
 
 export function PublicHomePage({ client }: { client: Client }) {
   const [trials, setTrials] = useState<PublicTrialDTO[] | null>(null);
@@ -61,7 +53,7 @@ export function PublicHomePage({ client }: { client: Client }) {
                         <div><dt>Venue</dt><dd>{trial.venue}</dd></div>
                         <div><dt>Arrival</dt><dd>{trial.startTime}</dd></div>
                         <div><dt>First whistle</dt><dd>{trial.firstWhistle}</dd></div>
-                        <div><dt>Registration fee</dt><dd>{fee(trial)}</dd></div>
+                        <div><dt>Registration fee</dt><dd>{formatFee(trial.registrationFeeCents, trial.currency)}</dd></div>
                       </dl>
                     </div>
                     <div className="public-trial-action">

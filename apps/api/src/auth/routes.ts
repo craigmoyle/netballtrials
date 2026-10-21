@@ -3,8 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { consumeLoginToken, inviteAdmin, normalizeEmail, requestLoginLink } from './service';
-import { consumeRateLimit } from '../security/rate-limit';
-import { hashToken } from './tokens';
+import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
+import { hashToken, LOGIN_TOKEN_TTL_MINUTES } from './tokens';
 import { requireAdmin } from './guard';
 
 export const SESSION_COOKIE = 'nt_session';
@@ -20,6 +20,9 @@ const verifySchema = z.object({
 const inviteSchema = z.object({ email: z.email().trim().max(320) });
 const LOGIN_LINK_LIMIT = 5;
 const LOGIN_LINK_WINDOW_MS = 15 * 60_000;
+const LOGIN_LINK_EMAIL_LIMIT = 3;
+// Match the link lifetime: whenever an address is throttled, a link that caused it is still valid.
+const LOGIN_LINK_EMAIL_WINDOW_MS = LOGIN_TOKEN_TTL_MINUTES * 60_000;
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/auth/request-link', async (req, reply) => {
@@ -30,11 +33,17 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
 
     const normalizedEmail = normalizeEmail(parsed.data.email);
     const key = createHash('sha256')
-      .update(`login-link\\0${req.ip ?? 'unknown'}\\0${normalizedEmail}`)
+      .update(`login-link\\0${rateLimitClientKey(req.ip)}\\0${normalizedEmail}`)
       .digest('hex');
     const now = new Date();
     if (!(await consumeRateLimit(deps.prisma, key, now, LOGIN_LINK_LIMIT, LOGIN_LINK_WINDOW_MS))) {
       return reply.code(429).send({ error: 'try_again_later' });
+    }
+    // Per-email cap across all clients. Answer 202 either way so the response
+    // never reveals whether the address is an admin or is being throttled.
+    const emailKey = createHash('sha256').update(`login-link-email\0${normalizedEmail}`).digest('hex');
+    if (!(await consumeRateLimit(deps.prisma, emailKey, now, LOGIN_LINK_EMAIL_LIMIT, LOGIN_LINK_EMAIL_WINDOW_MS))) {
+      return reply.code(202).send({ status: 'sent' });
     }
 
     await requestLoginLink(

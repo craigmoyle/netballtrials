@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
-import { apiClient } from './api/client';
+import { apiClient, type ApiClient as Client } from './api/client';
 import { AdminLayout } from './AdminLayout';
 import { EventWorkflowNav } from './admin/EventWorkflowNav';
 import { EventOperationsPage } from './admin/EventOperationsPage';
@@ -29,7 +29,6 @@ import { PublicHomePage } from './routes/PublicHomePage';
 import { PublicSiteHeader } from './SiteNavigation';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? '');
-type Client = ReturnType<typeof apiClient>;
 
 const TITLES: Array<[RegExp, string]> = [
   [/^\/$/, 'Upcoming trials'],

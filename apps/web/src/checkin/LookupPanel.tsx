@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { CheckInResult, LookupResult } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 import { resultLabel } from './feedback';
 import { notifyCheckInUpdated } from './refresh';
-
-type Client = ReturnType<typeof apiClient>;
 
 export function LookupPanel({ client }: { client: Client }) {
   const [query, setQuery] = useState('');

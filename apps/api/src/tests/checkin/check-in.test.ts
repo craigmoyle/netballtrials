@@ -16,10 +16,10 @@ const header = { 'x-test-now': '2026-09-12T00:00:00.000Z' };
 
 beforeEach(async () => {
   await resetDb();
-  const event = await prisma.event.create({ data: { ...eventFixture(), checkInPinHash: await hashPin('4821') } });
+  const event = await prisma.event.create({ data: { ...eventFixture(), checkInPinHash: await hashPin('482193') } });
   eventId = event.id;
   app = createApp();
-  const opened = await app.inject({ method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '4821' }, headers: header });
+  const opened = await app.inject({ method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '482193' }, headers: header });
   cookie = opened.cookies.find((c) => c.name === 'nt_checkin')!.value;
 });
 
@@ -149,6 +149,38 @@ describe('check-in', () => {
     const undo = await app.inject({ method: 'POST', url: `/api/check-in/registrations/${reg.id}/undo`, cookies: { nt_checkin: cookie }, headers: header });
     expect(undo.statusCode).toBe(204);
     expect((await prisma.registration.findUnique({ where: { id: reg.id } }))?.checkedInAt).toBeNull();
+  });
+  it('keeps the same bib number when a check-in is undone and redone', async () => {
+    const first = await paid('a'.repeat(43));
+    const second = await paid('b'.repeat(43), { playerFirstName: 'Bea', playerNameNormalized: 'bea lovelace' });
+    const checkIn = (id: string) => app.inject({ method: 'POST', url: `/api/check-in/registrations/${id}`, cookies: { nt_checkin: cookie }, headers: header });
+    expect((await checkIn(first.id)).json().bibNumber).toBe(1);
+    expect((await checkIn(second.id)).json().bibNumber).toBe(2);
+    const undo = await app.inject({ method: 'POST', url: `/api/check-in/registrations/${first.id}/undo`, cookies: { nt_checkin: cookie }, headers: header });
+    expect(undo.statusCode).toBe(204);
+    const undone = await prisma.registration.findUniqueOrThrow({ where: { id: first.id } });
+    expect(undone).toMatchObject({ checkedInAt: null, checkedInBy: null, bibNumber: 1 });
+    const lookup = await app.inject({ method: 'GET', url: '/api/check-in/lookup?q=ada', cookies: { nt_checkin: cookie }, headers: header });
+    expect(lookup.json().find((row: { id: string }) => row.id === first.id)).toMatchObject({ checkedIn: false, bibNumber: null });
+
+    const redo = await checkIn(first.id);
+    expect(redo.json()).toMatchObject({ result: 'checked_in', bibNumber: 1 });
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).nextBibNumber).toBe(3);
+    expect((await checkIn((await paid('c'.repeat(43), { playerFirstName: 'Cy', playerNameNormalized: 'cy lovelace' })).id)).json().bibNumber).toBe(3);
+  });
+  it('caps the volunteer label at 40 trimmed characters', async () => {
+    const reg = await paid('l'.repeat(43));
+    await app.inject({
+      method: 'POST', url: `/api/check-in/registrations/${reg.id}`, cookies: { nt_checkin: cookie },
+      headers: { ...header, 'x-checkin-label': `   ${'V'.repeat(100)}   ` },
+    });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })).checkedInBy).toBe('V'.repeat(40));
+    const blank = await paid('m'.repeat(43), { playerFirstName: 'Bea', playerNameNormalized: 'bea lovelace' });
+    await app.inject({
+      method: 'POST', url: `/api/check-in/registrations/${blank.id}`, cookies: { nt_checkin: cookie },
+      headers: { ...header, 'x-checkin-label': '    ' },
+    });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: blank.id } })).checkedInBy).toBe('Volunteer');
   });
   it('requires a check-in session', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/check-in/lookup?q=a' });

@@ -10,6 +10,7 @@ describe('TicketPage', () => {
     } as any} token="opaque-token" />);
     expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(screen.getByText('15/U Ladies')).toBeInTheDocument();
+    expect(screen.getByText('12 September 2026')).toBeInTheDocument();
     expect(screen.getByText('Number 42')).toBeInTheDocument();
     expect(screen.queryByText(/Bib 42/i)).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: /check-in qr code for ada lovelace/i })).toHaveAttribute('src', 'data:image/png;base64,YWJj');

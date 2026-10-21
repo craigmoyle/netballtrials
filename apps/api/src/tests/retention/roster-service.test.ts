@@ -10,11 +10,17 @@ describe('admin roster service', () => {
   it('returns limited roster rows and rank/extra-position counts', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     await prisma.registration.create({
-      data: registrationFixture(event.id, { rank1Position: 'GS', rank2Position: 'WA', optInExtraPositions: true, status: 'PAID', bibNumber: 6 }),
+      data: registrationFixture(event.id, { rank1Position: 'GS', rank2Position: 'WA', optInExtraPositions: true, status: 'PAID', bibNumber: 6, checkedInAt: new Date('2026-09-12T00:00:00Z') }),
     });
     const roster = await getRoster(prisma, event.id);
     expect(roster?.positionCounts).toMatchObject({ rank1: { GS: 1 }, rank2: { WA: 1 }, extraOptIn: 1 });
     expect(roster?.registrations[0]).toMatchObject({ playerName: 'Ada Lovelace', parentEmail: 'anne@example.com', bibNumber: 6 });
+  });
+
+  it('hides a retained number after check-in was undone', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await prisma.registration.create({ data: registrationFixture(event.id, { status: 'PAID', bibNumber: 6, checkedInAt: null }) });
+    expect((await getRoster(prisma, event.id))?.registrations[0].bibNumber).toBeNull();
   });
 
   it('exports a quoted formula-neutralized CSV only before the calendar cutoff', async () => {

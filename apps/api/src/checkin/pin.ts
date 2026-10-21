@@ -29,6 +29,12 @@ export async function verifyPin(pin: string, stored: string): Promise<boolean> {
   return timingSafeEqual(actual, expected);
 }
 
+/** Format required when an admin sets a new PIN. */
 export function isValidPinFormat(pin: string): boolean {
+  return /^\d{6,8}$/.test(pin);
+}
+
+/** Format accepted at login; 4-digit PINs set before the 6-digit minimum still verify. */
+export function isPinInput(pin: string): boolean {
   return /^\d{4,8}$/.test(pin);
 }

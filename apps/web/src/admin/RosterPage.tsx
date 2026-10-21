@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { POSITIONS, type Position, type RosterDTO } from '@netball-trials/types';
-import { ApiError, type apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import { ApiError, type ApiClient as Client } from '../api/client';
+import { formatFee } from '../formatFee';
 
 function saveCsv(blob: Blob, eventId: string): void {
   const url = URL.createObjectURL(blob);
@@ -98,7 +97,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
             </thead>
             <tbody>
               {roster.registrations.map((registration) => {
-                const amount = new Intl.NumberFormat('en-AU', { style: 'currency', currency: registration.currency.toUpperCase() }).format(registration.amountCents / 100);
+                const amount = formatFee(registration.amountCents, registration.currency);
                 const positions = [registration.rank1Position, registration.rank2Position, registration.rank3Position].filter(Boolean).join(', ');
                 const attendance = registration.checkedInAt
                   ? `Number ${registration.bibNumber ?? '—'} · checked in`

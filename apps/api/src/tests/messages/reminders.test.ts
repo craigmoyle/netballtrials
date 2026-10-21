@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { sendDueReminders, eventStartInstant } from '../../messages/reminders';
@@ -127,5 +127,77 @@ describe('Melbourne event start and reminders', () => {
     await sendDueReminders({ prisma, mailer }, new Date('2026-09-11T22:00:00Z'));
     expect(mailer.sent[0].subject).not.toMatch(/tomorrow/i);
     expect(mailer.sent[0].text).toContain('Trials');
+  });
+
+  it('keeps going after one event has a conflicting reminder batch', async () => {
+    const conflicted = await prisma.event.create({
+      data: { ...eventFixture(), name: 'Conflicted', eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30' },
+    });
+    const healthy = await prisma.event.create({
+      data: { ...eventFixture(), name: 'Healthy', eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:00' },
+    });
+    await paid(conflicted.id, 'anne@example.com', 'Ada');
+    await paid(healthy.id, 'bo@example.com', 'Bea');
+    const batchId = `reminder:${conflicted.id}:2026-09-12`;
+    await prisma.emailLog.create({
+      data: { eventId: conflicted.id, batchId, idempotencyKey: 'old-reminder', to: 'anne@example.com', subject: 'Reminder: Old name', body: 'old', kind: 'reminder', status: 'SENT' },
+    });
+    const mailer = createDevMailer([]);
+    const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
+    expect(mailer.sent.map((message) => message.to)).toEqual(['bo@example.com']);
+    expect(result).toMatchObject({ sent: 1, failed: 0, events: 2, errors: [] });
+  });
+
+  it('reports an edited reminder batch that still has unsent rows', async () => {
+    const event = await prisma.event.create({
+      data: { ...eventFixture(), name: 'Edited', eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30' },
+    });
+    await paid(event.id, 'anne@example.com', 'Ada');
+    await prisma.emailLog.create({
+      data: { eventId: event.id, batchId: `reminder:${event.id}:2026-09-12`, idempotencyKey: 'old-failed', to: 'anne@example.com', subject: 'Reminder: Old name', body: 'old', kind: 'reminder', status: 'FAILED' },
+    });
+    const result = await sendDueReminders({ prisma, mailer: createDevMailer([]) }, new Date('2026-09-10T22:30:00Z'));
+    expect(result.errors).toEqual([{ eventId: event.id, message: 'reminder_changed_with_1_unsent' }]);
+  });
+
+  it('counts an unexpected per-event error as failed and still sends other events', async () => {
+    const first = await prisma.event.create({
+      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30' },
+    });
+    const second = await prisma.event.create({
+      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:00' },
+    });
+    await paid(first.id, 'anne@example.com', 'Ada');
+    await paid(second.id, 'bo@example.com', 'Bea');
+    const createMany = vi.spyOn(prisma.emailLog, 'createMany').mockRejectedValueOnce(new Error('database blip'));
+    const mailer = createDevMailer([]);
+    try {
+      const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
+      expect(result).toMatchObject({ sent: 1, failed: 1, events: 2 });
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toBe('database blip');
+      expect(mailer.sent).toHaveLength(1);
+    } finally {
+      createMany.mockRestore();
+    }
+  });
+
+  it('stops retrying a failed reminder automatically after five attempts', async () => {
+    const event = await prisma.event.create({
+      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30' },
+    });
+    await paid(event.id, 'anne@example.com', 'Ada');
+    const sentTo: string[] = [];
+    const mailer = { send: async (message: { to: string }) => {
+      sentTo.push(message.to);
+      throw new GmailDeliveryError('rejected', 403);
+    } };
+    const start = new Date('2026-09-10T22:30:00Z').getTime();
+    for (let run = 0; run < 7; run += 1) {
+      await sendDueReminders({ prisma, mailer }, new Date(start + run * 60_000));
+    }
+    expect(sentTo).toHaveLength(5);
+    const row = await prisma.emailLog.findFirstOrThrow({ where: { eventId: event.id, kind: 'reminder' } });
+    expect(row).toMatchObject({ status: 'FAILED', attempts: 5 });
   });
 });

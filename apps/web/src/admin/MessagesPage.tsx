@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { EmailLogDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 
-type Client = ReturnType<typeof apiClient>;
 type DeliveryResult = { sent: number; failed: number; ambiguous: number; pending: number };
 
 function deliveryText(result: DeliveryResult): string {

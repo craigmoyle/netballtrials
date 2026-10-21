@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ReviewItemDTO } from '@netball-trials/types';
-import type { apiClient } from '../api/client';
-
-type Client = ReturnType<typeof apiClient>;
+import type { ApiClient as Client } from '../api/client';
 
 const REASONS: Record<string, string> = {
   age_out_of_range: 'Age is outside the event range',
+  payment_without_registration: 'Payment received after the registration expired or was withdrawn. Check Stripe and refund or reinstate.',
 };
 
 export function ReviewPage({ client, eventId }: { client: Client; eventId: string }) {
@@ -68,6 +67,7 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
         {items.map((item) => (
           <li key={item.id}>
             <span>{item.registration.playerName}</span> — {REASONS[item.reason] ?? item.reason}
+            {item.note ? <p>{item.note}</p> : null}
             <p>
               <label htmlFor={`note-${item.id}`}>Note</label>
               <input id={`note-${item.id}`} maxLength={2000} value={notes[item.id] ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Optional note" />
@@ -75,9 +75,11 @@ export function ReviewPage({ client, eventId }: { client: Client; eventId: strin
             <button type="button" disabled={busy} onClick={() => resolve(item)}>
               Mark reviewed
             </button>
-            <button type="button" disabled={busy} onClick={() => withdraw(item)}>
-              Withdraw
-            </button>
+            {item.reason === 'payment_without_registration' ? null : (
+              <button type="button" disabled={busy} onClick={() => withdraw(item)}>
+                Withdraw
+              </button>
+            )}
           </li>
         ))}
       </ul>
