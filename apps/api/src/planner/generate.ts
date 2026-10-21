@@ -66,44 +66,78 @@ function preferenceOrder(state: PlayerState, input: PlannerInput): Position[] {
   return order;
 }
 
-// Two players per position per court (one for each team). Assign outstanding
-// selected-rank quotas before using opted-in extra positions.
+// Hungarian assignment over the 14 position/team seats. Maximizing overdue quotas
+// first avoids the greedy dead ends that leave mixed-choice rosters short of games.
+function maximumWeightAssignment(weights: number[][], columnCount = weights.length): number[] {
+  const n = weights.length;
+  const rowPotential = Array(n + 1).fill(0);
+  const columnPotential = Array(columnCount + 1).fill(0);
+  const columnRow = Array(columnCount + 1).fill(0);
+  const previousColumn = Array(columnCount + 1).fill(0);
+  for (let row = 1; row <= n; row += 1) {
+    columnRow[0] = row;
+    let column = 0;
+    const distance = Array(columnCount + 1).fill(Number.POSITIVE_INFINITY);
+    const visited = Array(columnCount + 1).fill(false);
+    do {
+      visited[column] = true;
+      const activeRow = columnRow[column];
+      let delta = Number.POSITIVE_INFINITY;
+      let nextColumn = 0;
+      for (let candidate = 1; candidate <= columnCount; candidate += 1) {
+        if (visited[candidate]) continue;
+        const reduced = -weights[activeRow - 1][candidate - 1] - rowPotential[activeRow] - columnPotential[candidate];
+        if (reduced < distance[candidate]) {
+          distance[candidate] = reduced;
+          previousColumn[candidate] = column;
+        }
+        if (distance[candidate] < delta) {
+          delta = distance[candidate];
+          nextColumn = candidate;
+        }
+      }
+      for (let candidate = 0; candidate <= columnCount; candidate += 1) {
+        if (visited[candidate]) {
+          rowPotential[columnRow[candidate]] += delta;
+          columnPotential[candidate] -= delta;
+        } else distance[candidate] -= delta;
+      }
+      column = nextColumn;
+    } while (columnRow[column] !== 0);
+    do {
+      const prior = previousColumn[column];
+      columnRow[column] = columnRow[prior];
+      column = prior;
+    } while (column !== 0);
+  }
+  const assignment = Array(n).fill(-1);
+  for (let column = 1; column <= columnCount; column += 1) {
+    if (columnRow[column] !== 0) assignment[columnRow[column] - 1] = column - 1;
+  }
+  return assignment;
+}
+
 function assignCourt(players: PlayerState[], input: PlannerInput): Assigned[] | null {
-  const used = new Map<Position, number>(COURT_POSITIONS.map((position) => [position, 0]));
-  const assigned = new Map<PlayerState, Position>();
-  const owedPairs: { state: PlayerState; position: Position }[] = [];
-  for (const state of players) {
-    for (const position of owedPositions(state, input)) owedPairs.push({ state, position });
-  }
-  owedPairs.sort((a, b) => a.state.appearances - b.state.appearances);
-
-  for (const pair of owedPairs) {
-    if (assigned.has(pair.state)) continue;
-    if ((used.get(pair.position) ?? 0) < 2) {
-      used.set(pair.position, (used.get(pair.position) ?? 0) + 1);
-      assigned.set(pair.state, pair.position);
-    }
-  }
-
-  // Most-constrained players (fewest allowed positions) choose first.
-  const remaining = players
-    .filter((state) => !assigned.has(state))
-    .map((state) => ({ state, order: preferenceOrder(state, input) }))
-    .sort((a, b) => a.order.length - b.order.length || a.state.appearances - b.state.appearances);
-  for (const { state, order } of remaining) {
-    const position = order.find((candidate) => (used.get(candidate) ?? 0) < 2);
-    if (!position) return matchCourt(players, input);
-    used.set(position, (used.get(position) ?? 0) + 1);
-    assigned.set(state, position);
-  }
-
-  const teamCount = new Map<Position, number>(COURT_POSITIONS.map((position) => [position, 0]));
-  return players.map((state) => {
-    const position = assigned.get(state)!;
-    const index = teamCount.get(position) ?? 0;
-    teamCount.set(position, index + 1);
-    return { state, position, team: index === 0 ? 0 : 1 };
+  const seats = COURT_POSITIONS.flatMap((position) => [
+    { position, team: 0 as TeamIndex }, { position, team: 1 as TeamIndex },
+  ]);
+  const weights = players.map((state) => {
+    const owed = new Set(owedPositions(state, input));
+    return seats.map(({ position }) => {
+      if (!(state.allowedMask & (1 << COURT_POSITIONS.indexOf(position)))) return Number.NEGATIVE_INFINITY;
+      const rank = [state.player.rank1, state.player.rank2, state.player.rank3].indexOf(position);
+      const allowedCount = state.allowedMask.toString(2).replace(/0/g, '').length;
+      const constraintBonus = (7 - allowedCount) * 10_000;
+      return (owed.has(position) ? 1_000_000 + constraintBonus : 0) + (rank < 0 ? 0 : (3 - rank) * 100);
+    });
   });
+  // Forbidden edges use a large finite penalty so the assignment algorithm remains numeric.
+  for (const row of weights) for (let column = 0; column < row.length; column += 1) {
+    if (row[column] === Number.NEGATIVE_INFINITY) row[column] = -1_000_000_000;
+  }
+  const assignment = maximumWeightAssignment(weights);
+  if (assignment.some((column, row) => weights[row][column] < 0)) return matchCourt(players, input);
+  return players.map((state, row) => ({ state, ...seats[assignment[row]] }));
 }
 
 // Maximum bipartite matching of players to the court's 14 seats (two per position).
@@ -249,12 +283,119 @@ function preflightGaps(input: PlannerInput, rounds: number): PlannerGap[] | null
   return gaps.length > 0 ? gaps : null;
 }
 
+function globalAssignmentPlan(input: PlannerInput, seed: number, rounds: number, frozenSlots: PlanSlot[]): PlannerPlan | null {
+  const inactive = new Set(input.inactiveRegistrationIds ?? []);
+  const states: PlayerState[] = input.players.map((player) => ({
+    player,
+    allowedMask: COURT_POSITIONS.reduce((mask, position, index) =>
+      player.optInExtra || [player.rank1, player.rank2, player.rank3].includes(position) ? mask | (1 << index) : mask, 0),
+    appearances: 0,
+    courtsSeen: new Set<number>(),
+    positionGames: new Map<Position, number>(),
+  }));
+  const statesById = new Map(states.map((state) => [state.player.registrationId, state]));
+  const active = states.filter((state) => !inactive.has(state.player.registrationId));
+  const slots = [...frozenSlots];
+  for (const slot of frozenSlots) {
+    const state = statesById.get(slot.registrationId);
+    if (!state || slot.round > (input.frozenThroughRound ?? 0)) return null;
+    state.appearances += 1;
+    state.courtsSeen.add(slot.court);
+    state.positionGames.set(slot.position, (state.positionGames.get(slot.position) ?? 0) + 1);
+  }
+  const random = mulberry32(seed);
+  const seats = Array.from({ length: input.courts }, (_, index) => index + 1).flatMap((court) =>
+    COURT_POSITIONS.flatMap((position) => [0, 1].map((team) => ({ court, position, team: team as TeamIndex }))),
+  );
+
+  for (let round = (input.frozenThroughRound ?? 0) + 1; round <= rounds; round += 1) {
+    if (active.length < seats.length) return null;
+    const maxAppearances = Math.max(...active.map((state) => state.appearances));
+    const weights = seats.map(({ court, position }) => active.map((state) => {
+      if (!(state.allowedMask & (1 << COURT_POSITIONS.indexOf(position)))) return -1_000_000_000;
+      const rank = [state.player.rank1, state.player.rank2, state.player.rank3].indexOf(position);
+      const quota = owedPositions(state, input).includes(position);
+      const constraints = 7 - state.allowedMask.toString(2).replace(/0/g, '').length;
+      return (quota ? 1_000_000_000 : 0) +
+        (quota ? constraints * 10_000 : 0) +
+        (state.courtsSeen.has(court) ? 0 : 1_000_000) +
+        (maxAppearances - state.appearances) * 10_000 +
+        (rank < 0 ? 0 : (3 - rank) * 100) + random();
+    }));
+    const assignment = maximumWeightAssignment(weights, active.length);
+    if (assignment.length !== seats.length || assignment.some((playerIndex, seatIndex) => playerIndex < 0 || weights[seatIndex][playerIndex] < 0)) return null;
+    for (let index = 0; index < seats.length; index += 1) {
+      const seat = seats[index];
+      const state = active[assignment[index]];
+      slots.push({ round, court: seat.court, position: seat.position, team: seat.team, registrationId: state.player.registrationId });
+      state.appearances += 1;
+      state.courtsSeen.add(seat.court);
+      state.positionGames.set(seat.position, (state.positionGames.get(seat.position) ?? 0) + 1);
+    }
+  }
+  const plan = { rounds, slots };
+  return verifyPlan(input, plan).length === 0 ? plan : null;
+}
+
 function nextCourt(state: PlayerState, offset: number, courts: number): number {
   for (let step = 0; step < courts; step += 1) {
     const court = ((offset + step) % courts) + 1;
     if (!state.courtsSeen.has(court)) return court;
   }
   return ((offset + state.appearances) % courts) + 1;
+}
+
+function improvePositionQuotas(input: PlannerInput, plan: PlannerPlan): PlannerPlan {
+  const states = new Map(input.players.map((player) => [player.registrationId, {
+    player, allowedMask: 0, appearances: 0, courtsSeen: new Set<number>(), positionGames: new Map<Position, number>(),
+  } satisfies PlayerState]));
+  for (const player of input.players) {
+    states.get(player.registrationId)!.allowedMask = COURT_POSITIONS.reduce((mask, position, index) =>
+      player.optInExtra || [player.rank1, player.rank2, player.rank3].includes(position) ? mask | (1 << index) : mask, 0);
+  }
+  const groups = new Map<string, PlanSlot[]>();
+  for (const slot of plan.slots) {
+    states.get(slot.registrationId)?.positionGames.set(slot.position,
+      (states.get(slot.registrationId)?.positionGames.get(slot.position) ?? 0) + 1);
+    const key = `${slot.round}:${slot.court}`;
+    const group = groups.get(key) ?? [];
+    group.push(slot);
+    groups.set(key, group);
+  }
+
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (const [key, slots] of groups) {
+      if (Number(key.split(':')[0]) <= (input.frozenThroughRound ?? 0)) continue;
+      const currentStates = slots.map((slot) => states.get(slot.registrationId)!);
+      for (const slot of slots) {
+        const state = states.get(slot.registrationId)!;
+        const count = state.positionGames.get(slot.position) ?? 0;
+        if (count <= 1) state.positionGames.delete(slot.position);
+        else state.positionGames.set(slot.position, count - 1);
+      }
+      const score = (assignment: Assigned[]) => assignment.reduce((total, entry) =>
+        total + Number(owedPositions(entry.state, input).includes(entry.position)), 0);
+      const current = slots.map((slot) => ({ state: states.get(slot.registrationId)!, position: slot.position, team: slot.team }));
+      const next = assignCourt(currentStates, input);
+      if (next && score(next) > score(current)) {
+        const idsBySeat = new Map(next.map((entry) => [`${entry.position}:${entry.team}`, entry.state.player.registrationId]));
+        for (const slot of slots) {
+          slot.registrationId = idsBySeat.get(`${slot.position}:${slot.team}`)!;
+          const state = states.get(slot.registrationId)!;
+          state.positionGames.set(slot.position, (state.positionGames.get(slot.position) ?? 0) + 1);
+        }
+        improved = true;
+      } else {
+        for (const slot of slots) {
+          const state = states.get(slot.registrationId)!;
+          state.positionGames.set(slot.position, (state.positionGames.get(slot.position) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  return plan;
 }
 
 function buildPlan(
@@ -267,6 +408,10 @@ function buildPlan(
   input = { ...input, players: [...input.players].sort((a, b) => a.registrationId.localeCompare(b.registrationId)) };
   const preflight = preflightGaps(input, rounds);
   if (preflight) return { ok: false, gaps: preflight };
+  if (input.players.some((player) => player.rank2 || player.rank3 || player.optInExtra)) {
+    const globallyAssigned = globalAssignmentPlan(input, seed, rounds, frozenSlots);
+    if (globallyAssigned) return { ok: true, plan: globallyAssigned };
+  }
 
   const rand = mulberry32(seed);
   const inactive = new Set(input.inactiveRegistrationIds ?? []);
@@ -390,7 +535,7 @@ function buildPlan(
     }
   }
 
-  const plan: PlannerPlan = { rounds, slots };
+  const plan = improvePositionQuotas(input, { rounds, slots });
   const gaps = verifyPlan(input, plan);
   return gaps.length === 0
     ? { ok: true, plan }

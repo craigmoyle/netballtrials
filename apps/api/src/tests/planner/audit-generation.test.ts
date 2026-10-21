@@ -129,6 +129,27 @@ describe('multi-step bench repair', () => {
     }
   });
 
+  it('finds a feasible mixed-position plan for a typical 100-player, six-court event', () => {
+    let state = 1;
+    const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+    const input: PlannerInput = {
+      courts: 6, rounds: 8, playMinutes: 8, changeoverMinutes: 2, windowMinutes: 150,
+      rank1Min: 1, rank2Min: 1, rank3Min: 0,
+      players: Array.from({ length: 100 }, (_, index) => {
+        const first = Math.floor(random() * 7);
+        const second = (first + 1 + Math.floor(random() * 6)) % 7;
+        return {
+          registrationId: `p${String(index).padStart(3, '0')}`, name: `Player ${index}`, bibNumber: index + 1,
+          rank1: COURT_POSITIONS[first], rank2: random() < 0.6 ? COURT_POSITIONS[second] : null,
+          rank3: null, optInExtra: random() < 0.1,
+        };
+      }),
+    };
+    const result = generatePlan(input, 1);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (result.ok) expect(verifyPlan(input, result.plan)).toEqual([]);
+  });
+
   it('still rejects an actually impossible fixed-position roster', () => {
     const input = fixedInput();
     input.players[6].rank1 = 'GS'; // Seven GK players cannot fill eight GK places.

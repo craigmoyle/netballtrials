@@ -45,6 +45,6 @@ for (const mode of ['mixed-sync', 'mixed-worker']) {
   const start = performance.now();
   const result = mode === 'mixed-sync' ? generatePlan(mixed, 1) : await runGeneration({ input: mixed, seed: 1 });
   clearInterval(interval);
-  if (result.ok && verifyPlan(mixed, result.plan).length) throw new Error('Invalid benchmark result');
-  console.log(JSON.stringify({ mode, count: 100, courts: 6, ms: Math.round(performance.now() - start), ok: result.ok, eventLoopTicks: ticks }));
+  if (!result.ok || verifyPlan(mixed, result.plan).length) throw new Error(`Mixed benchmark did not produce a verified schedule: ${JSON.stringify(result)}`);
+  console.log(JSON.stringify({ mode, count: 100, courts: 6, ms: Math.round(performance.now() - start), ok: result.ok, rounds: result.plan.rounds, eventLoopTicks: ticks }));
 }
