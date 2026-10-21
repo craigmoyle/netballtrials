@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { sendDueReminders, eventStartInstant } from '../../messages/reminders';
@@ -46,6 +46,36 @@ describe('Melbourne event start and reminders', () => {
     const second = await sendDueReminders({ prisma, mailer }, new Date(now.getTime() + 60_000));
     expect(second.sent).toBe(0);
     expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'reminder' } })).toBe(2);
+  });
+
+  it('tops up an existing reminder with newly paid addresses exactly once across concurrent runs', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await paid(event.id, 'first@example.com', 'First');
+    const later = await paid(event.id, 'later@example.com', 'Later', { status: 'PENDING' });
+    const mailer = createDevMailer([]);
+    const now = new Date('2026-09-10T22:30:00Z');
+    expect((await sendDueReminders({ prisma, mailer }, now)).sent).toBe(1);
+    await prisma.registration.update({ where: { id: later.id }, data: { status: 'PAID' } });
+    await paid(event.id, 'LATER@example.com', 'Sibling');
+    const results = await Promise.all([1, 2].map(() => sendDueReminders({ prisma, mailer }, new Date(+now + 60_000))));
+    expect(results.reduce((sum, result) => sum + result.sent, 0)).toBe(1);
+    expect(results.every((result) => result.errors.length === 0)).toBe(true);
+    expect(mailer.sent.map((message) => message.to).sort()).toEqual(['first@example.com', 'later@example.com']);
+    expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'reminder' } })).toBe(2);
+    expect((await sendDueReminders({ prisma, mailer }, new Date(+now + 120_000))).sent).toBe(0);
+  });
+
+  it('does not top up a reminder with different content', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await paid(event.id, 'first@example.com', 'First');
+    const mailer = createDevMailer([]);
+    const now = new Date('2026-09-10T22:30:00Z');
+    await sendDueReminders({ prisma, mailer }, now);
+    await prisma.event.update({ where: { id: event.id }, data: { venue: 'Changed' } });
+    await paid(event.id, 'later@example.com', 'Later');
+    await sendDueReminders({ prisma, mailer }, new Date(+now + 60_000));
+    expect(mailer.sent).toHaveLength(1);
+    expect(await prisma.emailLog.count()).toBe(1);
   });
 
   it('uses event start time rather than first whistle for the due window', async () => {
@@ -169,17 +199,17 @@ describe('Melbourne event start and reminders', () => {
     });
     await paid(first.id, 'anne@example.com', 'Ada');
     await paid(second.id, 'bo@example.com', 'Bea');
-    const createMany = vi.spyOn(prisma.emailLog, 'createMany').mockRejectedValueOnce(new Error('database blip'));
+    let fail = true;
+    const extended = prisma.$extends({ query: { emailLog: { async createMany({ args, query }) {
+      if (fail) { fail = false; throw new Error('database blip'); }
+      return query(args);
+    } } } });
     const mailer = createDevMailer([]);
-    try {
-      const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
-      expect(result).toMatchObject({ sent: 1, failed: 1, events: 2 });
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toBe('database blip');
-      expect(mailer.sent).toHaveLength(1);
-    } finally {
-      createMany.mockRestore();
-    }
+    const result = await sendDueReminders({ prisma: extended as typeof prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
+    expect(result).toMatchObject({ sent: 1, failed: 1, events: 2 });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toBe('database blip');
+    expect(mailer.sent).toHaveLength(1);
   });
 
   it('stops retrying a failed reminder automatically after five attempts', async () => {

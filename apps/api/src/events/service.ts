@@ -112,8 +112,10 @@ export async function updateEvent(
       changeoverMinutes: existing.changeoverMinutes,
       minAge: existing.minAge,
       maxAge: existing.maxAge,
-      policyUrl: existing.policyUrl ?? DEFAULT_POLICY_URL,
       ...parsedPatch.data,
+      policyUrl: parsedPatch.data.policyUrl === null
+        ? DEFAULT_POLICY_URL
+        : parsedPatch.data.policyUrl ?? existing.policyUrl ?? DEFAULT_POLICY_URL,
     };
     const valid = assertValid(merged);
     const ageSettingsChanged = valid.competitionYear !== existing.competitionYear ||

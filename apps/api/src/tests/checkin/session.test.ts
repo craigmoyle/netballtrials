@@ -4,6 +4,7 @@ import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { eventFixture } from '../helpers/fixtures';
 import { hashPin } from '../../checkin/pin';
+import { setCheckInPin } from '../../checkin/service';
 
 let app: ReturnType<typeof createApp>;
 let eventId: string;
@@ -87,16 +88,26 @@ describe('check-in session', () => {
     const results = await Promise.all(Array.from({ length: 60 }, (_, i) => attempt('000000', `198.51.100.${i + 1}`)));
     expect(results.filter((res) => res.statusCode === 401)).toHaveLength(30);
     expect(results.filter((res) => res.statusCode === 429)).toHaveLength(30);
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+    expect((await prisma.requestRateLimitBucket.findUniqueOrThrow({
+      where: { key: `checkin-fail:${eventId}:${event.checkInPinVersion}` },
+    })).hits).toBe(30);
   });
 
   it('clears an event-wide lockout when the pin is rotated', async () => {
     for (let i = 0; i < 30; i++) await attempt('000000', `198.51.100.${i + 1}`);
     expect((await attempt('482193', '203.0.113.7')).statusCode).toBe(429);
-    await prisma.event.update({
-      where: { id: eventId },
-      data: { checkInPinHash: await hashPin('739104'), checkInPinVersion: { increment: 1 } },
-    });
+    const previous = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+    await setCheckInPin(prisma, eventId, '739104', new Date(BEFORE));
     expect((await attempt('739104', '203.0.113.8')).statusCode).toBe(200);
+    const current = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+    expect(current.checkInPinVersion).toBe(previous.checkInPinVersion + 1);
+    expect((await prisma.requestRateLimitBucket.findUniqueOrThrow({
+      where: { key: `checkin-fail:${eventId}:${previous.checkInPinVersion}` },
+    })).hits).toBe(30);
+    expect((await prisma.requestRateLimitBucket.findUniqueOrThrow({
+      where: { key: `checkin-fail:${eventId}:${current.checkInPinVersion}` },
+    })).hits).toBe(0);
   });
 
   it('shares a client bucket across IPv6 addresses in the same /64', async () => {

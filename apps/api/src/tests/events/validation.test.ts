@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventInputSchema } from '../../events/schemas';
+import { eventInputSchema, eventPatchSchema } from '../../events/schemas';
 
 const event = {
   name: '15/U', competitionYear: 2027, division: '15/U', section: 'Ladies',
@@ -16,6 +16,29 @@ describe('event input boundaries', () => {
   it('accepts only HTTP or HTTPS policy URLs', () => {
     expect(eventInputSchema.safeParse({ ...event, policyUrl: 'javascript:alert(1)' }).success).toBe(false);
     expect(eventInputSchema.safeParse({ ...event, policyUrl: 'https://example.test/policy.pdf' }).success).toBe(true);
+  });
+
+  it('keeps creation duration defaults out of partial updates', () => {
+    const { playMinutes: _play, changeoverMinutes: _changeover, ...withoutDurations } = event;
+    expect(eventInputSchema.parse(withoutDurations)).toMatchObject({ playMinutes: 8, changeoverMinutes: 2 });
+    expect(eventPatchSchema.parse({})).toEqual({});
+    expect(eventPatchSchema.parse({ venue: 'Waverley' })).toEqual({ venue: 'Waverley' });
+    expect(eventPatchSchema.parse({ playMinutes: 12, changeoverMinutes: 4 })).toEqual({ playMinutes: 12, changeoverMinutes: 4 });
+    expect(eventPatchSchema.safeParse({ playMinutes: 0 }).success).toBe(false);
+    expect(eventPatchSchema.safeParse({ changeoverMinutes: 11 }).success).toBe(false);
+  });
+
+  it('allows clearing a policy URL only on PATCH and still rejects unsafe URLs', () => {
+    expect(eventPatchSchema.parse({ policyUrl: null })).toEqual({ policyUrl: null });
+    expect(eventInputSchema.safeParse({ ...event, policyUrl: null }).success).toBe(false);
+    expect(eventInputSchema.safeParse(event).success).toBe(true);
+    for (const policyUrl of ['javascript:alert(1)', 'ftp://example.test/policy', '']) {
+      expect(eventPatchSchema.safeParse({ policyUrl }).success).toBe(false);
+      expect(eventInputSchema.safeParse({ ...event, policyUrl }).success).toBe(false);
+    }
+    for (const policyUrl of ['http://example.test/policy', 'https://example.test/policy.pdf']) {
+      expect(eventPatchSchema.parse({ policyUrl })).toEqual({ policyUrl });
+    }
   });
 
   it('uses policy age defaults when an administrator omits ages', () => {

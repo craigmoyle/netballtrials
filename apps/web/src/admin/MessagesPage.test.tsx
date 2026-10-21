@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { MessagesPage } from './MessagesPage';
 
@@ -40,6 +40,50 @@ describe('MessagesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
     expect(await screen.findByText(/3 distinct paid parent email addresses/i)).toBeInTheDocument();
     expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('loads slow initial history even after reviewing recipients and canceling', async () => {
+    let resolveHistory!: (entries: typeof sentDelivery[]) => void;
+    const history = new Promise<typeof sentDelivery[]>((resolve) => { resolveHistory = resolve; });
+    const client = {
+      listEmailLog: vi.fn(() => history),
+      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
+      sendMessage: vi.fn(),
+    };
+    renderPage(client);
+    fillDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'Review recipients' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await act(async () => { resolveHistory([{ ...sentDelivery, subject: 'Previous announcement' }]); });
+
+    expect(screen.getByText('Previous announcement — sent')).toBeInTheDocument();
+    expect(screen.queryByText('No messages sent for this event yet.')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Subject')).toHaveValue('Venue update');
+    expect(screen.getByLabelText('Message')).toHaveValue('Trials are at SNC.');
+    expect(client.listEmailLog).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not let slow initial history replace a newer batch reconciliation', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_1);
+    let resolveHistory!: (entries: typeof sentDelivery[]) => void;
+    const history = new Promise<typeof sentDelivery[]>((resolve) => { resolveHistory = resolve; });
+    const client = {
+      listEmailLog: vi.fn().mockReturnValueOnce(history).mockResolvedValueOnce([failedDelivery]),
+      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
+      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_1, sent: 0, failed: 1, ambiguous: 0, pending: 0 }),
+    };
+    renderPage(client);
+    fillDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'Review recipients' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Send to 1 recipient' }));
+    await screen.findByRole('button', { name: /retry failed deliveries/i });
+    await act(async () => { resolveHistory([{ ...sentDelivery, subject: 'Previous announcement' }]); });
+
+    expect(screen.queryByText('Previous announcement — sent')).not.toBeInTheDocument();
+    expect(screen.getByText(/Venue update — failed/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('0 sent, 1 failed');
+    expect(screen.getByLabelText('Subject')).toHaveValue('Venue update');
   });
 
   it('reports partial delivery, preserves the draft and retries only known failed recipients', async () => {
@@ -97,9 +141,45 @@ describe('MessagesPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('1 sent, 0 failed');
     expect(await screen.findByRole('alert')).toHaveTextContent(/delivery history could not be refreshed/i);
     expect(screen.getByLabelText('Subject')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'New draft B' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep these details' } });
     fireEvent.click(screen.getByRole('button', { name: /refresh delivery history/i }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(screen.getByText(/venue update — sent/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Subject')).toHaveValue('New draft B');
+    expect(screen.getByLabelText('Message')).toHaveValue('Keep these details');
+  });
+
+  it.each(['new batch', 'new event'])('ignores a delayed old history refresh after starting a %s', async (supersededBy) => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(BATCH_1).mockReturnValueOnce(BATCH_2);
+    let resolveHistory!: (entries: unknown[]) => void;
+    const client = {
+      listEmailLog: vi.fn().mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('offline'))
+        .mockImplementationOnce(() => new Promise(resolve => { resolveHistory = resolve; }))
+        .mockResolvedValue([{ ...failedDelivery, batchId: BATCH_2 }]),
+      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
+      sendMessage: vi.fn().mockResolvedValueOnce({ batchId: BATCH_1, sent: 1, failed: 0, ambiguous: 0, pending: 0 })
+        .mockResolvedValueOnce({ batchId: BATCH_2, sent: 0, failed: 1, ambiguous: 0, pending: 0 }),
+    };
+    const page = renderPage(client);
+    fillDraft();
+    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /refresh delivery history/i }));
+    if (supersededBy === 'new event') {
+      page.rerender(<MemoryRouter><MessagesPage client={client as any} eventId="event-2" /></MemoryRouter>);
+      await waitFor(() => expect(client.listEmailLog).toHaveBeenCalledWith('event-2'));
+    }
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'New batch B' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep B' } });
+    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
+    await screen.findByRole('button', { name: /retry failed deliveries/i });
+    await act(async () => resolveHistory([sentDelivery]));
+    expect(screen.getByLabelText('Subject')).toHaveValue('New batch B');
+    expect(screen.getByLabelText('Message')).toHaveValue('Keep B');
+    expect(screen.getByRole('button', { name: /retry failed deliveries/i })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('0 sent, 1 failed');
   });
 
   it('requires explicit confirmation before retrying an ambiguous delivery', async () => {

@@ -49,22 +49,10 @@ export async function createRegistrationCheckout(
     }
 
     return checkout;
-  } catch (error) {
-    deps.log?.error({ error: error instanceof Error ? error.message : 'unknown_error' }, 'checkout_create_failed');
-    // A registration that never got a Checkout session cannot be paid, but it
-    // still blocks the child from registering again until it expires. Expire
-    // it now so the parent can retry with a fresh registration. The fake
-    // provider's dev simulation binds its own token to the PENDING row instead.
-    if (registration.checkoutSessionId === null && deps.env.PAYMENT_PROVIDER !== 'fake') {
-      try {
-        await deps.prisma.registration.updateMany({
-          where: { id: registration.id, status: 'PENDING', checkoutSessionId: null },
-          data: { status: 'EXPIRED' },
-        });
-      } catch {
-        // Leave the normal expiry sweep to clean up.
-      }
-    }
+  } catch {
+    deps.log?.error({ code: 'checkout_outcome_unknown' }, 'checkout_create_failed');
+    // A lost response or failed local write can follow provider success. Keep
+    // the pending registration so retries reuse its original idempotency key.
     return null;
   }
 }
@@ -72,6 +60,7 @@ export async function createRegistrationCheckout(
 export async function sendCheckoutContinuation(
   deps: AppDeps,
   registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
+  now = new Date(),
 ): Promise<boolean> {
   const checkout = await createRegistrationCheckout(deps, registration);
   if (!checkout) return false;
@@ -90,7 +79,7 @@ export async function sendCheckoutContinuation(
         subject: 'Continue your Netball Trials registration',
         text: `Use this secure link to continue checkout for the Netball Trials registration: ${checkout.url}\n\nIf you did not request this, contact the club.`,
       },
-      new Date(),
+      now,
     );
     return delivery.sent === 1;
   } catch {

@@ -26,10 +26,7 @@ const eventFieldsSchema = z.object({
   changeoverMinutes: z.number().int().min(0).max(10).default(2),
   minAge: z.number().int().min(5).max(99).optional(),
   maxAge: z.number().int().min(5).max(99).optional(),
-  policyUrl: z.url().max(500).refine((value) => {
-    const protocol = new URL(value).protocol;
-    return protocol === 'http:' || protocol === 'https:';
-  }, 'must use HTTP or HTTPS').optional(),
+  policyUrl: z.url({ protocol: /^https?$/ }).max(500).optional(),
 }).strict();
 
 export const eventInputSchema = eventFieldsSchema.transform((input) => {
@@ -41,7 +38,11 @@ export const eventInputSchema = eventFieldsSchema.transform((input) => {
   };
 });
 
-export const eventPatchSchema = eventFieldsSchema.partial().strict();
+export const eventPatchSchema = eventFieldsSchema.partial().extend({
+  playMinutes: eventFieldsSchema.shape.playMinutes.unwrap().optional(),
+  changeoverMinutes: eventFieldsSchema.shape.changeoverMinutes.unwrap().optional(),
+  policyUrl: eventFieldsSchema.shape.policyUrl.nullable(),
+}).strict();
 export type EventInput = z.output<typeof eventInputSchema>;
 export type EventPatch = z.infer<typeof eventPatchSchema>;
 

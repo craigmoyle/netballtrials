@@ -48,6 +48,18 @@ describe('sendEventMessage delivery batches', () => {
     expect(new Set(rows.map((row) => row.idempotencyKey)).size).toBe(2);
   });
 
+  it('keeps an ordinary admin batch audience frozen when more parents pay', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await paid(event.id, 'first@example.com', 'First');
+    const mailer = createDevMailer([]);
+    const args: Parameters<typeof sendEventMessage> = [{ prisma, mailer }, event.id, { subject: 'Frozen', text: 'Original' }, new Date(), { batchId: 'frozen' }];
+    await sendEventMessage(...args);
+    await paid(event.id, 'later@example.com', 'Later');
+    expect((await sendEventMessage(...args)).sentThisRun).toBe(0);
+    expect(mailer.sent.map((message) => message.to)).toEqual(['first@example.com']);
+    expect(await prisma.emailLog.count()).toBe(1);
+  });
+
   it('retries only known failed recipients and never resends confirmed successes', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     await paid(event.id, 'ok@example.com', 'Ada');
@@ -68,6 +80,36 @@ describe('sendEventMessage delivery batches', () => {
     expect(sentTo.sort()).toEqual(['ok@example.com', 'retry@example.com', 'retry@example.com']);
     expect(await prisma.emailLog.count({ where: { batchId: 'batch-retry', status: 'SENT' } })).toBe(2);
     expect((await prisma.emailLog.findFirstOrThrow({ where: { batchId: 'batch-retry', to: 'retry@example.com' } })).attempts).toBe(2);
+  });
+
+  it('still retries a paid household when the batch representative withdraws but a sibling remains paid', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await paid(event.id, 'family@example.com', 'First');
+    await paid(event.id, 'family@example.com', 'Sibling');
+    const send = vi.fn().mockRejectedValueOnce(new GmailDeliveryError('rejected', 403)).mockResolvedValue(undefined);
+    await sendEventMessage({ prisma, mailer: { send } }, event.id, { subject: 'Update', text: 'Text' }, new Date(), { batchId: 'family' });
+    const row = await prisma.emailLog.findFirstOrThrow({ where: { batchId: 'family' } });
+    await prisma.registration.update({ where: { id: row.registrationId! }, data: { status: 'WITHDRAWN' } });
+    expect((await retryFailedDeliveries({ prisma, mailer: { send } }, event.id, row.batchId, [row.id], new Date())).sentThisRun).toBe(1);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds provider concurrency for larger batches and sends every recipient', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    for (let index = 0; index < 12; index++) await paid(event.id, `parent-${index}@example.com`, `Player${index}`);
+    let running = 0;
+    let peak = 0;
+    const send = vi.fn(async () => {
+      running++;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      running--;
+    });
+    const result = await sendEventMessage({ prisma, mailer: { send } }, event.id, { subject: 'Trial', text: 'Details' }, new Date());
+    expect(result.sentThisRun).toBe(12);
+    expect(send).toHaveBeenCalledTimes(12);
+    expect(peak).toBeLessThanOrEqual(5);
+    expect(running).toBe(0);
   });
 
   it('atomically claims a recipient when the same batch is dispatched concurrently', async () => {

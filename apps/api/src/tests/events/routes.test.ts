@@ -4,6 +4,7 @@ import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { signInAsNewAdmin } from '../helpers/auth';
 import { registrationFixture } from '../helpers/fixtures';
+import { DEFAULT_POLICY_URL } from '../../policy';
 
 const app = createApp();
 let cookie: string;
@@ -27,6 +28,39 @@ describe('event admin routes', () => {
     const listed = await app.inject({ method: 'GET', url: '/api/admin/events', cookies: { nt_session: cookie } });
     expect(listed.json()).toHaveLength(1);
   });
+  it('preserves non-default durations and an omitted policy URL on a venue-only PATCH', async () => {
+    const created = await app.inject({
+      method: 'POST', url: '/api/admin/events', cookies: { nt_session: cookie },
+      payload: { ...payload, playMinutes: 12, changeoverMinutes: 4, policyUrl: 'https://example.test/policy' },
+    });
+    expect(created.statusCode).toBe(201);
+    const eventId = created.json().id as string;
+    const patched = await app.inject({
+      method: 'PATCH', url: `/api/admin/events/${eventId}`, cookies: { nt_session: cookie },
+      payload: { venue: 'Waverley' },
+    });
+    expect(patched.statusCode).toBe(200);
+    const expected = { venue: 'Waverley', playMinutes: 12, changeoverMinutes: 4, policyUrl: 'https://example.test/policy' };
+    expect(patched.json()).toMatchObject(expected);
+    expect(await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).toMatchObject(expected);
+  });
+
+  it('resets an explicitly cleared policy URL to the default', async () => {
+    const created = await app.inject({
+      method: 'POST', url: '/api/admin/events', cookies: { nt_session: cookie },
+      payload: { ...payload, policyUrl: 'https://example.test/policy' },
+    });
+    expect(created.statusCode).toBe(201);
+    const eventId = created.json().id as string;
+    const patched = await app.inject({
+      method: 'PATCH', url: `/api/admin/events/${eventId}`, cookies: { nt_session: cookie },
+      payload: { policyUrl: null },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().policyUrl).toBe(DEFAULT_POLICY_URL);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).policyUrl).toBe(DEFAULT_POLICY_URL);
+  });
+
   it('deletes an empty event regardless of status and returns 404 after deletion', async () => {
     const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
     expect(created.statusCode).toBe(201);

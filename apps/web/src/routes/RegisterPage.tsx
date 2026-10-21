@@ -4,6 +4,7 @@ import { melbourneDateKey, POSITIONS, type EventDTO, type MemberAssociationDTO, 
 import type { ApiClient as Client } from '../api/client';
 import { formatFee } from '../formatFee';
 import { formatTrialDate } from '../formatTrialDate';
+import { useUnsavedSignOut } from '../useUnsavedSignOut';
 
 const FIELD_LABELS: Record<string, string> = {
   playerFirstName: 'Player first name',
@@ -127,6 +128,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     ? { form: EMPTY, restored: false, storageError: false }
     : loadRegistrationDraft(eventId));
   const [form, setForm] = useState(initialDraft.form);
+  const lastStoredForm = useRef(initialDraft.form);
   const [draftRestored, setDraftRestored] = useState(initialDraft.restored);
   const [draftStorageError, setDraftStorageError] = useState(initialDraft.storageError);
   const [activeSection, setActiveSection] = useState<RegistrationSectionId>('player-details');
@@ -137,6 +139,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const hasUnsavedDetails = (Object.keys(EMPTY) as (keyof typeof EMPTY)[])
     .some((key) => form[key] !== EMPTY[key]);
   const shouldWarnBeforeLeaving = hasUnsavedDetails && !submitted && !simulationCompleted;
+  useUnsavedSignOut(adminAssisted && shouldWarnBeforeLeaving, 'Day-of registration details are only held while this page is open. Leave and lose them?');
   const blocker = useBlocker(({ currentLocation, nextLocation }) => shouldWarnBeforeLeaving &&
     (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
 
@@ -198,6 +201,8 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       setDraftStorageError(!removeRegistrationDraft(eventId));
       return;
     }
+    if (lastStoredForm.current === form) return;
+    lastStoredForm.current = form;
     try {
       window.sessionStorage.setItem(registrationDraftKey(eventId), JSON.stringify({
         version: 1,
@@ -264,7 +269,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
 
   function set<K extends keyof typeof EMPTY>(key: K, value: (typeof EMPTY)[K]) {
     setDraftRestored(false);
-    setForm((previous) => ({ ...previous, [key]: value }));
+    setForm((previous) => previous[key] === value ? previous : { ...previous, [key]: value });
   }
 
   function clearSavedDraft() {

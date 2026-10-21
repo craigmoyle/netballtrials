@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { eventFixture } from '../helpers/fixtures';
+import { eventFixture, registrationFixture } from '../helpers/fixtures';
+import { updateEvent } from '../../events/service';
 import { ensureReviewItems, listReviewQueue, resolveReviewItem } from '../../review/service';
 import { seedPaidFlagged } from '../helpers/review';
 
@@ -70,6 +71,45 @@ describe('review queue', () => {
     await prisma.registration.update({ where: { id: registration.id }, data: { status: 'WITHDRAWN' } });
     expect(await listReviewQueue(prisma, event.id)).toHaveLength(0);
     expect(await listReviewQueue(prisma, event.id, true)).toHaveLength(1);
+  });
+
+  it('hides stale age reviews after a range update without hiding payment items or losing history', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const registration = await seedPaidFlagged(event.id);
+    const resolvedRegistration = await prisma.registration.create({
+      data: registrationFixture(event.id, {
+        status: 'PAID', ageFlagged: true, playerFirstName: 'Bea', playerNameNormalized: 'bea lovelace',
+      }),
+    });
+    await ensureReviewItems(prisma, event.id);
+    const ageItem = await prisma.reviewItem.findFirstOrThrow({ where: { registrationId: registration.id } });
+    const resolvedItem = await prisma.reviewItem.findFirstOrThrow({ where: { registrationId: resolvedRegistration.id } });
+    await resolveReviewItem(prisma, event.id, resolvedItem.id, { resolvedByUserId: 'u1', note: 'Approved' }, new Date());
+    const withdrawn = await prisma.registration.create({ data: registrationFixture(event.id, { status: 'WITHDRAWN' }) });
+    const paymentItems = await Promise.all([registration.id, withdrawn.id].map((registrationId) => prisma.reviewItem.create({
+      data: { eventId: event.id, registrationId, reason: 'payment_without_registration', note: 'Payment needs review' },
+    })));
+    const otherItem = await prisma.reviewItem.create({
+      data: { eventId: event.id, registrationId: registration.id, reason: 'other' },
+    });
+    expect(await listReviewQueue(prisma, event.id)).toHaveLength(4);
+
+    await updateEvent(prisma, event.id, { maxAge: 16 });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).ageFlagged).toBe(false);
+    expect(await ensureReviewItems(prisma, event.id)).toBe(0);
+    const queue = await listReviewQueue(prisma, event.id);
+    expect(queue.map((item) => item.id).sort()).toEqual([...paymentItems.map((item) => item.id), otherItem.id].sort());
+    const history = await listReviewQueue(prisma, event.id, true);
+    expect(history).toHaveLength(5);
+    expect(history).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: ageItem.id, resolvedAt: null, registration: expect.objectContaining({ ageFlagged: false }) }),
+      expect.objectContaining({ id: resolvedItem.id, resolvedByUserId: 'u1', note: 'Approved' }),
+    ]));
+
+    await updateEvent(prisma, event.id, { maxAge: 15 });
+    expect(await ensureReviewItems(prisma, event.id)).toBe(0);
+    expect((await listReviewQueue(prisma, event.id)).map((item) => item.id)).toContain(ageItem.id);
+    expect((await listReviewQueue(prisma, event.id)).map((item) => item.id)).not.toContain(resolvedItem.id);
   });
 
   it('keeps the original item note when an admin resolves it', async () => {

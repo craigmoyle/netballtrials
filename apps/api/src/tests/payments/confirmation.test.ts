@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../../db';
 import { confirmPayment } from '../../payments/webhook';
+import { withdrawRegistration } from '../../registrations/service';
 import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
@@ -86,6 +87,65 @@ describe('confirmPayment', () => {
     expect(after.status).toBe('PAID');
     expect(after.qrToken).toHaveLength(43);
     expect(await prisma.processedStripeEvent.count({ where: { stripeEventId: event.stripeEventId } })).toBe(1);
+  });
+
+  it('rechecks a real withdrawal that commits between the initial read and event lock', async () => {
+    const registration = await pending();
+    let withdrawn = false;
+    const racing = prisma.$extends({ query: { registration: { async findUnique({ args, query }) {
+      const snapshot = await query(args);
+      if (!withdrawn && args.where.id === registration.id) {
+        withdrawn = true;
+        await withdrawRegistration(prisma, registration.eventId, registration.id, now);
+      }
+      return snapshot;
+    } } } });
+    expect((await confirmPayment(racing as typeof prisma, completed(registration.id), now))?.outcome).toBe('orphaned');
+    expect((await confirmPayment(prisma, completed(registration.id), now))?.outcome).toBe('orphaned');
+    expect(await prisma.reviewItem.count()).toBe(1);
+    expect(await prisma.emailLog.count()).toBe(0);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({ status: 'WITHDRAWN', qrToken: null });
+  });
+
+  it('rolls payment and the processed event back if the confirmation outbox cannot be written', async () => {
+    const registration = await pending();
+    const failing = prisma.$extends({ query: { emailLog: { async createMany() { throw new Error('outbox unavailable'); } } } });
+    await expect(confirmPayment(failing as typeof prisma, completed(registration.id), now)).rejects.toThrow('outbox unavailable');
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({ status: 'PENDING', qrToken: null });
+    expect(await prisma.processedStripeEvent.count()).toBe(0);
+    expect(await prisma.emailLog.count()).toBe(0);
+    expect((await confirmPayment(prisma, completed(registration.id), now))?.outcome).toBe('paid');
+    expect(await prisma.emailLog.count()).toBe(1);
+  });
+
+  it.each(['WITHDRAWN', 'EXPIRED'] as const)('records an orphan when %s wins after the pending read, including replay', async (status) => {
+    const registration = await pending();
+    let intervened = false;
+    const racing = prisma.$extends({ query: { registration: { async updateMany({ args, query }) {
+      if (args.data.status === 'PAID' && !intervened) {
+        intervened = true;
+        await prisma.registration.update({ where: { id: registration.id }, data: { status } });
+      }
+      return query(args);
+    } } } });
+    const event = completed(registration.id);
+    expect((await confirmPayment(racing as typeof prisma, event, now))?.outcome).toBe('orphaned');
+    expect((await confirmPayment(prisma, event, now))?.outcome).toBe('orphaned');
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({ status, qrToken: null });
+    expect(await prisma.reviewItem.count({ where: { registrationId: registration.id, reason: 'payment_without_registration' } })).toBe(1);
+    expect(await prisma.emailLog.count()).toBe(0);
+    expect(await prisma.processedStripeEvent.findUniqueOrThrow({ where: { stripeEventId: event.stripeEventId } })).toMatchObject({ outcome: 'ORPHANED' });
+  });
+
+  it('classifies competing settled event IDs as paid/already paid and preserves both replay outcomes', async () => {
+    const registration = await pending();
+    const events = ['evt_first', 'evt_second'].map((stripeEventId) => completed(registration.id, { stripeEventId }));
+    const outcomes = await Promise.all(events.map((event) => confirmPayment(prisma, event, now)));
+    expect(outcomes.map((result) => result?.outcome).sort()).toEqual(['already_paid', 'paid']);
+    for (const event of events) expect((await confirmPayment(prisma, event, now))?.outcome).toBe('already_paid');
+    expect(await prisma.emailLog.count()).toBe(1);
+    expect(await prisma.reviewItem.count()).toBe(0);
+    expect(await prisma.processedStripeEvent.count()).toBe(2);
   });
 
   it('never revives a withdrawn registration on a signed payment replay', async () => {

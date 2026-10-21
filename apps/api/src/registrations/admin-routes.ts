@@ -26,14 +26,15 @@ function sendReceivedOrRetry(reply: FastifyReply, sent: boolean) {
 export function registerAdminRegistrationRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/admin/events/:id/day-of-registration', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const now = nowFrom(req);
     try {
       const registration = await createAdminPendingRegistration(
         deps.prisma,
         id,
         req.body as RegistrationInput,
-        nowFrom(req),
+        now,
       );
-      return sendReceivedOrRetry(reply, await sendCheckoutContinuation(deps, registration));
+      return sendReceivedOrRetry(reply, await sendCheckoutContinuation(deps, registration, now));
     } catch (error) {
       if (error instanceof RegistrationValidationError) {
         return reply.code(400).send({ error: 'validation_failed', fields: error.fields });
@@ -42,7 +43,7 @@ export function registerAdminRegistrationRoutes(app: FastifyInstance, deps: AppD
         if (error.reason === 'closed') return reply.code(409).send({ error: 'event_unavailable' });
         if (error.existing?.status === 'PAID') return reply.code(409).send({ error: 'already_registered' });
         if (error.existing?.status === 'PENDING') {
-          return sendReceivedOrRetry(reply, await sendCheckoutContinuation(deps, error.existing));
+          return sendReceivedOrRetry(reply, await sendCheckoutContinuation(deps, error.existing, now));
         }
         return reply.code(409).send({ error: 'registration_conflict' });
       }

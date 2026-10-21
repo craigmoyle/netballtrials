@@ -116,7 +116,7 @@ export function apiClient(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    updateEvent: (id: string, patch: Partial<EventInput>) =>
+    updateEvent: (id: string, patch: Omit<Partial<EventInput>, 'policyUrl'> & { policyUrl?: string | null }) =>
       request<EventDTO>(baseUrl, `/api/admin/events/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -222,12 +222,12 @@ export function apiClient(baseUrl: string) {
     saveManualRound: (eventId: string, round: number, input: ManualRoundInputDTO) => manualRoundAction(baseUrl, eventId, round, input),
     generatePlan: (eventId: string) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
-    publishPlan: (eventId: string) =>
-      planAction(baseUrl, `/api/admin/events/${eventId}/plan/publish`, { method: 'POST' }),
-    regeneratePlan: (eventId: string, fromRound: number, removedRegistrationIds?: string[]) =>
+    publishPlan: (eventId: string, planId: string) =>
+      planAction(baseUrl, `/api/admin/events/${eventId}/plan/publish`, { method: 'POST', body: JSON.stringify({ planId }) }),
+    regeneratePlan: (eventId: string, fromRound: number, sourcePlanId: string, removedRegistrationIds?: string[]) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/regenerate`, {
         method: 'POST',
-        body: JSON.stringify({ fromRound, ...(removedRegistrationIds ? { removedRegistrationIds } : {}) }),
+        body: JSON.stringify({ fromRound, sourcePlanId, ...(removedRegistrationIds ? { removedRegistrationIds } : {}) }),
       }),
     saveManualSuffix: (eventId: string, input: ManualSuffixInputDTO) =>
       manualPlanAction(baseUrl, `/api/admin/events/${eventId}/plan/suffix/manual`, input),

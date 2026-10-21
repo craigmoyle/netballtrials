@@ -12,8 +12,10 @@ type Fixtures = {
   adminEmail: string;
 };
 
-const API_ORIGIN = 'http://localhost:3000';
-const CONTROL_ORIGIN = 'http://localhost:3001';
+const WEB_PORT = process.env.E2E_WEB_PORT ?? '5173';
+const API_PORT = process.env.E2E_API_PORT ?? '3000';
+const API_ORIGIN = `http://localhost:${API_PORT}`;
+const CONTROL_ORIGIN = `http://localhost:${process.env.E2E_CONTROL_PORT ?? '3001'}`;
 let fixtures: Fixtures;
 
 async function signIn(page: Page, request: APIRequestContext): Promise<void> {
@@ -149,7 +151,7 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   page.on('request', (requestEvent) => {
     const url = new URL(requestEvent.url());
     if (url.pathname === '/api/auth/me') authCalls.push(requestEvent.url());
-    if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && !(['localhost', '127.0.0.1'].includes(url.hostname) && ['5173', '3000'].includes(url.port))) nonLocalRequests.push(requestEvent.url());
+    if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && !(['localhost', '127.0.0.1'].includes(url.hostname) && [WEB_PORT, API_PORT].includes(url.port))) nonLocalRequests.push(requestEvent.url());
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/register/${fixtures.mainEventId}`);

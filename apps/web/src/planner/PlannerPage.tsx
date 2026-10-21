@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { EventDTO, PlannerGapDTO, PlannerPreviewDTO, RoundPlanDTO } from '@netball-trials/types';
-import type { ApiClient as Client } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 
 type PlanAction = { ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] };
 
 export function PlannerPage({ client, eventId }: { client: Client; eventId: string }) {
+  return <EventPlanner key={eventId} client={client} eventId={eventId} />;
+}
+
+function EventPlanner({ client, eventId }: { client: Client; eventId: string }) {
+  const mounted = useRef(false);
   const [plan, setPlan] = useState<RoundPlanDTO | null>(null);
   const [publishedPlan, setPublishedPlan] = useState<RoundPlanDTO | null>(null);
   const [event, setEvent] = useState<EventDTO | null>(null);
@@ -17,6 +22,11 @@ export function PlannerPage({ client, eventId }: { client: Client; eventId: stri
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -57,37 +67,48 @@ export function PlannerPage({ client, eventId }: { client: Client; eventId: stri
     setActionError(null);
     setGaps([]);
     try {
-      applyAction(await client.generatePlan(eventId));
+      const result = await client.generatePlan(eventId);
+      if (mounted.current) applyAction(result);
     } catch {
-      setActionError('Could not generate a draft. Event settings and the last valid plan are unchanged.');
+      if (mounted.current) setActionError('Could not generate a draft. Event settings and the last valid plan are unchanged.');
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
   async function onPublish() {
+    if (!plan || plan.status !== 'DRAFT' || busy) return;
     setBusy(true);
     setActionError(null);
     setGaps([]);
     try {
-      applyAction(await client.publishPlan(eventId));
-    } catch {
-      setActionError('Could not publish this revision. The last published plan is unchanged.');
+      const result = await client.publishPlan(eventId, plan.id);
+      if (mounted.current) applyAction(result);
+    } catch (error) {
+      if (!mounted.current) return;
+      setActionError(error instanceof ApiError && error.status === 409
+        ? 'Another Admin changed the plan. Reload and review the newer revision before publishing.'
+        : 'Could not publish this revision. The last published plan is unchanged.');
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
   async function onRegenerate() {
+    if (!publishedPlan || busy) return;
     setBusy(true);
     setActionError(null);
     setGaps([]);
     try {
-      applyAction(await client.regeneratePlan(eventId, fromRound));
-    } catch {
-      setActionError('Could not regenerate from this round. The published plan is unchanged.');
+      const result = await client.regeneratePlan(eventId, fromRound, publishedPlan.id);
+      if (mounted.current) applyAction(result);
+    } catch (error) {
+      if (!mounted.current) return;
+      setActionError(error instanceof ApiError && error.status === 409
+        ? 'Another Admin published a newer revision. Reload and review it before regenerating.'
+        : 'Could not regenerate from this round. The published plan is unchanged.');
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 

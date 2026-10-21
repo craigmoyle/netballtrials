@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, Link, RouterProvider, useParams } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type PlanRevisionSummaryDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO } from '@netball-trials/types';
 import { ApiError } from '../api/client';
@@ -261,6 +261,33 @@ describe('FullGameListPage', () => {
     expect(screen.queryByText('Revision 2 is now active.')).not.toBeInTheDocument();
   });
 
+  it.each(['success', 'failure'])('ignores a delayed history %s after switching A to B and back to A', async (outcome) => {
+    let resolveHistory!: (value: RoundPlanDTO) => void;
+    let rejectHistory!: (reason: Error) => void;
+    const history = new Promise<RoundPlanDTO>((resolve, reject) => { resolveHistory = resolve; rejectHistory = reject; });
+    const client = makeClient({ getPlanRevision: vi.fn(() => history) });
+    const router = renderPageWithRouter(client);
+    fireEvent.click(await screen.findByRole('button', { name: 'Revision history' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View revision 1' }));
+    expect(client.getPlanRevision).toHaveBeenCalledWith('event-1', 'plan-0');
+
+    await act(async () => { await router.navigate('/admin/events/event-2/games'); });
+    await screen.findByText('Active revision 2');
+    await act(async () => { await router.navigate('/admin/events/event-1/games'); });
+    await screen.findByText('Active revision 2');
+    makeMove();
+
+    await act(async () => {
+      if (outcome === 'success') resolveHistory(makePlan({ id: 'plan-0', revision: 1 }));
+      else rejectHistory(new Error('offline'));
+    });
+
+    expect(screen.queryByText(/read-only/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save round 1' })).toBeEnabled();
+    expect(within(screen.getByRole('table', { name: 'Round 1, Court 1, Team A' })).getByRole('row', { name: /GS Player 3/ })).toBeInTheDocument();
+  });
+
   it('groups rounds, courts, Team A/B and positions, showing color names and player Numbers', async () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
@@ -380,7 +407,7 @@ describe('FullGameListPage', () => {
     fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
     fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
 
-    await waitFor(() => expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 2, ['player-0']));
+    await waitFor(() => expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 2, currentPlan.id, ['player-0']));
     expect(await screen.findByText('Draft revision 3 is ready for review.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review draft in Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
     expect(screen.getByText('Active revision 2')).toBeInTheDocument();
@@ -554,10 +581,80 @@ describe('FullGameListPage', () => {
     fireEvent.click(screen.getByLabelText('Remove Player 1 from round 2 onward'));
     fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
 
-    await waitFor(() => expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 2, ['player-0']));
+    await waitFor(() => expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 2, currentPlan.id, ['player-0']));
     expect(await screen.findByText('Draft revision 3 is ready for review.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review draft in Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
     expect(screen.getByText('Active revision 2')).toBeInTheDocument();
+  });
+
+  it('requires explicit refresh when another Admin changes the early-leaver source revision', async () => {
+    const client = renderPage(makeClient({ regeneratePlan: vi.fn().mockRejectedValue(new ApiError(409, 'stale_plan')) }));
+    await screen.findByText('Active revision 2');
+    openRosterChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 1 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/newer revision/i);
+    expect(client.regeneratePlan).toHaveBeenCalledWith('event-1', 1, plan.id, ['player-0']);
+    expect(client.regeneratePlan).toHaveBeenCalledTimes(1);
+    expect(client.getPublishedPlan).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Rebuild fixtures from round' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Discard local changes and refresh' })).toBeInTheDocument();
+  });
+
+  it('recognizes the API stale-source gap without clearing early-leaver selections or the active plan', async () => {
+    const newer = makePlan({ id: 'plan-2', revision: 3 });
+    const message = 'The source plan is not the active published revision.';
+    const client = renderPage(makeClient({
+      getPublishedPlan: vi.fn().mockResolvedValueOnce(plan).mockResolvedValueOnce(newer),
+      regeneratePlan: vi.fn().mockResolvedValue({ ok: false, gaps: [{ code: 'no_solution', message }] }),
+    }));
+    await screen.findByText('Active revision 2');
+    openRosterChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 1 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByText('Active revision 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove Player 1 from round 1 onward')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Rebuild fixtures from round' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Manual replacements' })).toBeDisabled();
+    expect(client.getPublishedPlan).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
+    expect(client.regeneratePlan).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Discard local changes and refresh' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Remove future assignments from round'), { target: { value: '2' } });
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByRole('button', { name: 'Discard local changes and refresh' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Revision history' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View revision 1' }));
+    expect(screen.getByRole('button', { name: 'Discard local changes and refresh' })).toBeDisabled();
+    await screen.findByText('Viewing revision 1 — read-only');
+    expect(screen.getByRole('button', { name: 'Discard local changes and refresh' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Return to active revision' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard local changes and refresh' }));
+    expect(await screen.findByText('Active revision 3')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps ordinary rebuild gaps retryable and preserves the early-leaver selection', async () => {
+    renderPage(makeClient({ regeneratePlan: vi.fn().mockResolvedValue({
+      ok: false, gaps: [{ code: 'no_solution', message: 'No complete suffix could be found.' }],
+    }) }));
+    await screen.findByText('Active revision 2');
+    openRosterChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove early leaver' }));
+    fireEvent.click(screen.getByLabelText('Remove Player 1 from round 1 onward'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild fixtures from round' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No complete suffix could be found.');
+    expect(screen.getByLabelText('Remove Player 1 from round 1 onward')).toBeChecked();
+    expect(screen.getByText('Active revision 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rebuild fixtures from round' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Discard local changes and refresh' })).not.toBeInTheDocument();
   });
 
   it('explains when a removed future slot has no eligible replacement', async () => {

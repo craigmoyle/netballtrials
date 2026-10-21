@@ -1,7 +1,8 @@
 import { Prisma, type PrismaClient, type RoundPlan } from '@prisma/client';
 import { computeMinimumRounds, totalTimeMinutes } from './minimum';
-import { generatePlan, generatePlanFromPrefix } from './generate';
+import { runGeneration } from './worker';
 import { verifyPlan } from './verify';
+import { frozenExceptions, slotKey } from './frozen-exceptions';
 import type { PlannerGap, PlannerInput, PlannerPlayer, PlannerPlan, PlanSlot } from './types';
 
 type Database = PrismaClient | Prisma.TransactionClient;
@@ -164,7 +165,7 @@ async function saveDraftRevision(
   built: BuiltInput,
   plan: PlannerPlan,
   seed: number,
-  options: { sourcePlanId?: string; frozenThroughRound?: number; players?: PlannerPlayer[]; inactiveRegistrationIds?: string[] } = {},
+  options: { sourcePlanId?: string; frozenThroughRound?: number; players?: PlannerPlayer[]; inactiveRegistrationIds?: string[]; warnings?: PlannerGap[] } = {},
 ): Promise<RoundPlan> {
   if (!(await lockEvent(tx, built.event.id))) throw new Error('event not found');
   const revision = await nextRevision(tx, built.event.id);
@@ -180,6 +181,7 @@ async function saveDraftRevision(
       revision,
       sourcePlanId: options.sourcePlanId ?? null,
       frozenThroughRound: input.frozenThroughRound ?? 0,
+      validationWarnings: (options.warnings ?? []) as unknown as Prisma.InputJsonValue,
       seed,
       status: 'DRAFT',
       rounds: plan.rounds,
@@ -264,11 +266,29 @@ export async function generateDraftPlan(
 ): Promise<GenerateResult> {
   const built = await buildInput(prisma, eventId);
   if (!built) throw new Error('event not found');
-  const result = generatePlan(built.input, seed);
+  const source = built.event.publishedPlanId
+    ? await prisma.roundPlan.findUnique({ where: { id: built.event.publishedPlanId }, include: { players: true } })
+    : null;
+  if (source?.frozenThroughRound) {
+    return failure('Played rounds are frozen. Regenerate the remaining rounds from the active published revision.');
+  }
+  const inactivePlayers = source ? inputFromSnapshot(source).players.filter((player) =>
+    source.players.some((snapshot) => snapshot.registrationId === player.registrationId && !snapshot.active)) : [];
+  const inactiveRegistrationIds = inactivePlayers.map((player) => player.registrationId);
+  const players = [...built.input.players.filter((player) => !inactiveRegistrationIds.includes(player.registrationId)), ...inactivePlayers];
+  const input = { ...built.input, players, inactiveRegistrationIds };
+  input.rounds = computeMinimumRounds(input);
+  const result = await runGeneration({ input, seed });
   if (!result.ok) return { ok: false, gaps: result.gaps };
 
-  const plan = await prisma.$transaction((tx) => saveDraftRevision(tx, built, result.plan, seed));
-  return { ok: true, plan };
+  const plan = await prisma.$transaction(async (tx) => {
+    if (!(await lockEvent(tx, eventId))) return null;
+    const current = await buildInput(tx, eventId);
+    if (!current || current.event.publishedPlanId !== built.event.publishedPlanId ||
+      !sameEvent(built, current) || !sameRoster(built.input, current.input)) return null;
+    return saveDraftRevision(tx, built, result.plan, seed, { sourcePlanId: source?.id, players, inactiveRegistrationIds });
+  });
+  return plan ? { ok: true, plan } : { ok: false, gaps: [stalePlanGap()] };
 }
 
 export async function publishPlan(
@@ -291,21 +311,33 @@ export async function publishPlan(
     if (candidate.id === publishedPlanId) return { ok: true, plan: candidate };
     if (candidate.status !== 'DRAFT') return failure('Only a draft revision can be published.');
     const newerPublished = await tx.roundPlan.count({ where: { eventId, status: 'PUBLISHED', revision: { gt: candidate.revision } } });
-    if ((candidate.sourcePlanId && candidate.sourcePlanId !== publishedPlanId) || newerPublished > 0) {
+    if (candidate.sourcePlanId !== publishedPlanId || newerPublished > 0) {
       return failure('A newer revision has been published since this draft was created. Review the current plan and regenerate if needed.');
     }
     if (!settingsMatch(candidate, built.event) || !rosterMatches(candidate.players, built.input.players)) {
       return { ok: false, gaps: [stalePlanGap()] };
     }
-    const gaps = verifyPlan(inputFromSnapshot(candidate), {
+    const source = publishedPlanId ? await tx.roundPlan.findUnique({ where: { id: publishedPlanId }, include }) : null;
+    const candidateSlots = candidate.slots.map((slot) => ({ ...slot, team: slot.team as PlanSlot['team'] }));
+    if (source) {
+      const sourcePrefix = new Set(source.slots.filter((slot) => slot.round <= candidate.frozenThroughRound).map(slotKey));
+      const candidatePrefix = candidateSlots.filter((slot) => slot.round <= candidate.frozenThroughRound);
+      if (candidate.frozenThroughRound < source.frozenThroughRound || candidate.frozenThroughRound > source.rounds ||
+        candidatePrefix.length !== sourcePrefix.size || candidatePrefix.some((slot) => !sourcePrefix.has(slotKey(slot))) ||
+        source.players.some((player) => !player.active && !candidate.players.some((next) => next.registrationId === player.registrationId && !next.active))) {
+        return failure('The draft changes frozen rounds or reactivates an inactive player. Regenerate the remaining rounds from the active published revision.');
+      }
+    }
+    const exceptions = source ? frozenExceptions(source, candidateSlots, candidate.frozenThroughRound) : { slots: [], warnings: [] };
+    const gaps = verifyPlan({ ...inputFromSnapshot(candidate), approvedFrozenSlots: exceptions.slots }, {
       rounds: candidate.rounds,
-      slots: candidate.slots.map((slot) => ({ ...slot, team: slot.team === 0 ? 0 : 1 })),
+      slots: candidateSlots,
     });
     if (gaps.length) return { ok: false, gaps };
 
     const plan = await tx.roundPlan.update({
       where: { id: candidate.id },
-      data: { status: 'PUBLISHED', publishedAt: new Date() },
+      data: { status: 'PUBLISHED', publishedAt: new Date(), validationWarnings: exceptions.warnings as unknown as Prisma.InputJsonValue },
     });
     await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: plan.id } });
     return { ok: true, plan };
@@ -390,11 +422,13 @@ export async function regenerateFromRound(
     round: slot.round,
     court: slot.court,
     position: slot.position,
-    team: slot.team === 0 ? 0 : 1,
+    team: slot.team as PlanSlot['team'],
     registrationId: slot.registrationId,
   }));
+  const exceptions = frozenExceptions(source, frozenSlots, fromRound - 1);
+  input.approvedFrozenSlots = exceptions.slots;
   const seed = Math.floor(now.getTime() / 1000) % 1_000_000;
-  const result = generatePlanFromPrefix(input, seed, frozenSlots, fromRound, source.rounds);
+  const result = await runGeneration({ input, seed, frozenSlots, fromRound, minimumTotalRounds: source.rounds });
   if (!result.ok) return { ok: false, gaps: result.gaps };
 
   const plan = await prisma.$transaction(async (tx) => {
@@ -409,7 +443,7 @@ export async function regenerateFromRound(
       built,
       result.plan,
       seed,
-      { sourcePlanId: source.id, frozenThroughRound: fromRound - 1, players, inactiveRegistrationIds },
+      { sourcePlanId: source.id, frozenThroughRound: fromRound - 1, players, inactiveRegistrationIds, warnings: exceptions.warnings },
     );
   });
   if (!plan) return { ok: false, gaps: [stalePlanGap()] };

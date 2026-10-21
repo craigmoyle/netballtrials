@@ -59,7 +59,13 @@ export async function listReviewQueue(
         // by definition, so they must stay visible until resolved.
         OR: [
           { reason: 'payment_without_registration' },
-          { registration: { is: { status: 'PAID' } } },
+          {
+            registration: { is: { status: 'PAID' } },
+            OR: [
+              { reason: { not: 'age_out_of_range' } },
+              { registration: { is: { ageFlagged: true } } },
+            ],
+          },
         ],
       }),
     },

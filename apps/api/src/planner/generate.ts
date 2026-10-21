@@ -1,5 +1,6 @@
 import { computeMinimumRounds, totalTimeMinutes } from './minimum';
 import { verifyPlan } from './verify';
+import { slotKey } from './frozen-exceptions';
 import { extraPositionSpread, repeatOpponentPairs, restSpread } from './fairness';
 import { COURT_POSITIONS } from './types';
 import type {
@@ -25,6 +26,7 @@ function mulberry32(seed: number): () => number {
 
 interface PlayerState {
   player: PlannerPlayer;
+  allowedMask: number;
   appearances: number;
   courtsSeen: Set<number>;
   positionGames: Map<Position, number>;
@@ -129,8 +131,14 @@ function matchSeats(players: PlayerState[], input: PlannerInput): Map<string, Pl
   return owners;
 }
 
-function courtShortfall(players: PlayerState[], input: PlannerInput): number {
-  return players.length - matchSeats(players, input).size;
+function courtShortfall(players: PlayerState[], input: PlannerInput, cache: Map<string, number>): number {
+  // Matching cardinality depends only on allowed positions, not quotas or player identity.
+  const key = players.map((state) => state.allowedMask).sort((a, b) => a - b).join(',');
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+  const shortfall = players.length - matchSeats(players, input).size;
+  cache.set(key, shortfall);
+  return shortfall;
 }
 
 function matchCourt(players: PlayerState[], input: PlannerInput): Assigned[] | null {
@@ -145,9 +153,9 @@ function matchCourt(players: PlayerState[], input: PlannerInput): Assigned[] | n
 
 // Fixed-position players can bunch on one court while another lacks them. Swap players
 // between courts while that lowers the number of seats no one can legally take.
-function rebalanceCourts(byCourt: Map<number, PlayerState[]>, input: PlannerInput): void {
+function rebalanceCourts(byCourt: Map<number, PlayerState[]>, input: PlannerInput, cache: Map<string, number>): void {
   const courts = [...byCourt.keys()];
-  const shortfall = new Map(courts.map((court) => [court, courtShortfall(byCourt.get(court)!, input)]));
+  const shortfall = new Map(courts.map((court) => [court, courtShortfall(byCourt.get(court)!, input, cache)]));
   for (let pass = 0; pass < 14 * courts.length; pass += 1) {
     const court = courts.find((candidate) => shortfall.get(candidate)! > 0);
     if (court === undefined) return;
@@ -162,8 +170,8 @@ function rebalanceCourts(byCourt: Map<number, PlayerState[]>, input: PlannerInpu
           const trial = [...players];
           const otherTrial = [...others];
           [trial[i], otherTrial[j]] = [others[j], players[i]];
-          const a = courtShortfall(trial, input);
-          const b = courtShortfall(otherTrial, input);
+          const a = courtShortfall(trial, input, cache);
+          const b = courtShortfall(otherTrial, input, cache);
           const gain = before - a - b;
           // Prefer swaps that also send both players to courts they have not seen.
           const seen = Number(others[j].courtsSeen.has(court)) + Number(players[i].courtsSeen.has(other));
@@ -254,7 +262,8 @@ function buildPlan(
   seed: number,
   rounds: number,
   frozenSlots: PlanSlot[],
-): PlannerResult {
+  shortfallCache: Map<string, number>,
+): PlannerResult & { terminal?: boolean } {
   input = { ...input, players: [...input.players].sort((a, b) => a.registrationId.localeCompare(b.registrationId)) };
   const preflight = preflightGaps(input, rounds);
   if (preflight) return { ok: false, gaps: preflight };
@@ -263,6 +272,8 @@ function buildPlan(
   const inactive = new Set(input.inactiveRegistrationIds ?? []);
   const states: PlayerState[] = input.players.map((player) => ({
     player,
+    allowedMask: COURT_POSITIONS.reduce((mask, position, index) =>
+      player.optInExtra || [player.rank1, player.rank2, player.rank3].includes(position) ? mask | (1 << index) : mask, 0),
     appearances: 0,
     courtsSeen: new Set<number>(),
     positionGames: new Map<Position, number>(),
@@ -319,12 +330,13 @@ function buildPlan(
         return { ok: false, gaps: [{ code: 'no_solution', message: `could not fill court ${court} in round ${round}` }] };
       }
     }
-    rebalanceCourts(byCourt, input);
+    rebalanceCourts(byCourt, input, shortfallCache);
 
     for (let court = 1; court <= input.courts; court += 1) {
       let courtPlayers = byCourt.get(court)!;
       let assigned = assignCourt(courtPlayers, input);
       if (!assigned) {
+        let shortfall = courtShortfall(courtPlayers, input, shortfallCache);
         const replaceOrder = courtPlayers
           .map((state, index) => ({ state, index }))
           .sort((a, b) =>
@@ -333,33 +345,39 @@ function buildPlan(
             owedPositions(a.state, input).length - owedPositions(b.state, input).length ||
             b.state.appearances - a.state.appearances || a.index - b.index,
           );
-        for (const { index } of replaceOrder) {
-          if (assigned) break;
-          const alternatives = [...unselected].sort((a, b) =>
-            Number(nextCourt(a, offsets.get(a.player.registrationId)!, input.courts) !== court) -
-              Number(nextCourt(b, offsets.get(b.player.registrationId)!, input.courts) !== court) ||
-            Number(a.courtsSeen.has(court)) - Number(b.courtsSeen.has(court)) || compare(a, b),
-          );
-          for (const alternative of alternatives) {
-            const alternateIndex = unselected.indexOf(alternative);
-            if (alternateIndex < 0) continue;
-            const trial = [...courtPlayers];
-            trial[index] = alternative;
-            const trialAssignment = assignCourt(trial, input);
-            if (!trialAssignment) continue;
-            unselected.splice(alternateIndex, 1);
-            unselected.push(courtPlayers[index]);
-            courtPlayers = trial;
-            byCourt.set(court, trial);
-            assigned = trialAssignment;
-            break;
+        while (!assigned) {
+          const before = shortfall;
+          for (const { index } of replaceOrder) {
+            if (assigned) break;
+            const alternatives = [...unselected].sort((a, b) =>
+              Number(nextCourt(a, offsets.get(a.player.registrationId)!, input.courts) !== court) -
+                Number(nextCourt(b, offsets.get(b.player.registrationId)!, input.courts) !== court) ||
+              Number(a.courtsSeen.has(court)) - Number(b.courtsSeen.has(court)) || compare(a, b),
+            );
+            for (const alternative of alternatives) {
+              const alternateIndex = unselected.indexOf(alternative);
+              if (alternateIndex < 0) continue;
+              const trial = [...courtPlayers];
+              trial[index] = alternative;
+              const nextShortfall = courtShortfall(trial, input, shortfallCache);
+              if (nextShortfall >= shortfall) continue;
+              shortfall = nextShortfall;
+              unselected.splice(alternateIndex, 1);
+              unselected.push(courtPlayers[index]);
+              courtPlayers = trial;
+              byCourt.set(court, trial);
+              assigned = shortfall === 0 ? assignCourt(trial, input) : null;
+              break;
+            }
           }
+          if (shortfall === before) break;
         }
       }
 
       if (!assigned) {
         return {
           ok: false,
+          terminal: true,
           gaps: [{ code: 'no_solution', message: `could not fill court ${court} in round ${round} with legal positions` }],
         };
       }
@@ -422,21 +440,14 @@ export function generatePlan(input: PlannerInput, seed: number): PlannerResult {
   const minimumRounds = Math.max(computeMinimumRounds(input), input.rounds);
   const maxRounds = maxRoundsWithinWindow(input);
   if (input.players.filter((player) => !(input.inactiveRegistrationIds ?? []).includes(player.registrationId)).length < input.courts * 14) {
-    return buildPlan(input, seed, minimumRounds, []);
+    return buildPlan(input, seed, minimumRounds, [], new Map());
   }
   if (minimumRounds > maxRounds) {
     const needed = totalTimeMinutes(minimumRounds, input.playMinutes, input.changeoverMinutes);
     return { ok: false, gaps: [{ code: 'time_window', message: `${needed} minutes needed but the window is ${input.windowMinutes}`, detail: { needed, window: input.windowMinutes } }] };
   }
 
-  let lastCandidates: PlannerResult[] = [];
-  for (let rounds = minimumRounds; rounds <= maxRounds; rounds += 1) {
-    const candidates = [seed, seed + 1, seed + 2].map((candidateSeed) => buildPlan(input, candidateSeed, rounds, []));
-    const best = chooseBest(candidates, input);
-    if (best) return best;
-    lastCandidates = candidates;
-  }
-  return failureFrom(lastCandidates);
+  return searchPlans(input, seed, minimumRounds, maxRounds, []);
 }
 
 export function generatePlanFromPrefix(
@@ -456,12 +467,60 @@ export function generatePlanFromPrefix(
     return { ok: false, gaps: [{ code: 'time_window', message: `${needed} minutes needed but the window is ${input.windowMinutes}`, detail: { needed, window: input.windowMinutes } }] };
   }
   input = { ...input, frozenThroughRound: fromRound - 1 };
+  return searchPlans(input, seed, base, max, frozenSlots);
+}
+
+// Fixed-position rosters need no seat matching: rotate each position's queue by one
+// court per round, with overflow seats resting. Verification still decides feasibility.
+function fixedPositionRotation(input: PlannerInput, rounds: number, frozenSlots: PlanSlot[]): PlannerPlan | null {
+  if (input.players.some((player) => player.optInExtra || player.rank2 || player.rank3)) return null;
+  const inactive = new Set(input.inactiveRegistrationIds ?? []);
+  const players = input.players.filter((player) => !inactive.has(player.registrationId))
+    .sort((a, b) => a.registrationId.localeCompare(b.registrationId));
+  const slots: PlanSlot[] = [];
+  for (const [positionIndex, position] of COURT_POSITIONS.entries()) {
+    const queue = players.filter((player) => player.rank1 === position);
+    for (let round = 1; round <= rounds; round++) {
+      // A shared zero bit then the three position bits mix opponents without changing courts.
+      const teamFlip = (positionIndex >> (3 - ((round - 1) % 4))) & 1;
+      queue.forEach((player, index) => {
+        const seat = (index + 2 * (round - 1)) % queue.length;
+        if (seat < input.courts * 2) slots.push({
+          round, court: Math.floor(seat / 2) + 1, position,
+          team: ((seat % 2) ^ teamFlip) as TeamIndex, registrationId: player.registrationId,
+        });
+      });
+    }
+  }
+  const frozenThroughRound = input.frozenThroughRound ?? 0;
+  const prefix = slots.filter((slot) => slot.round <= frozenThroughRound);
+  const frozenKeys = new Set(frozenSlots.map(slotKey));
+  if (prefix.length !== frozenSlots.length || prefix.some((slot) => !frozenKeys.has(slotKey(slot)))) return null;
+  const plan = { rounds, slots: [...frozenSlots, ...slots.filter((slot) => slot.round > frozenThroughRound)] };
+  return verifyPlan(input, plan).length === 0 ? plan : null;
+}
+
+function searchPlans(input: PlannerInput, seed: number, minimum: number, maximum: number, frozenSlots: PlanSlot[]): PlannerResult {
+  const impossible = preflightGaps(input, maximum);
+  if (impossible) return { ok: false, gaps: impossible };
+  const shortfallCache = new Map<string, number>();
+  const terminalFailures = new Map<number, PlannerResult>();
   let lastCandidates: PlannerResult[] = [];
-  for (let rounds = base; rounds <= max; rounds += 1) {
-    const candidates = [seed, seed + 1, seed + 2].map((candidateSeed) => buildPlan(input, candidateSeed, rounds, frozenSlots));
+  for (let rounds = minimum; rounds <= maximum; rounds += 1) {
+    const rotation = fixedPositionRotation(input, rounds, frozenSlots);
+    if (rotation) return { ok: true, plan: rotation };
+    const candidates = [seed, seed + 1, seed + 2].map((candidateSeed) => {
+      const cached = terminalFailures.get(candidateSeed);
+      if (cached) return cached;
+      const result = buildPlan(input, candidateSeed, rounds, frozenSlots, shortfallCache);
+      // A court-fill failure has the same prefix for every total-round count.
+      if (result.terminal) terminalFailures.set(candidateSeed, result);
+      return result;
+    });
     const best = chooseBest(candidates, input);
     if (best) return best;
     lastCandidates = candidates;
+    if (terminalFailures.size === 3) break;
   }
   return failureFrom(lastCandidates);
 }

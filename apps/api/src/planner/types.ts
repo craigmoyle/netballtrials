@@ -28,6 +28,7 @@ export interface PlannerInput {
   players: PlannerPlayer[];
   inactiveRegistrationIds?: string[];
   frozenThroughRound?: number;
+  approvedFrozenSlots?: PlanSlot[];
 }
 
 export interface PlanSlot {

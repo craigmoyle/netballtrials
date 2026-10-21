@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { CheckInSummary } from '@netball-trials/types';
-import { ApiError, type ApiClient as Client } from '../api/client';
+import type { ApiClient as Client } from '../api/client';
 import { CHECK_IN_UPDATED_EVENT } from './refresh';
 import { ClubLogoLink } from '../SiteNavigation';
-
-const SESSION_ENDED_STATUSES = new Set([401, 403, 404, 409]);
+import { checkInSessionEnded } from './session';
 
 export function CheckInLayout({ client }: { client: Client }) {
   const navigate = useNavigate();
@@ -20,11 +19,15 @@ export function CheckInLayout({ client }: { client: Client }) {
       const current = () => active && requestId === latestRequest.current;
       client
         .checkInSummary()
-        .then((loaded) => { if (current()) setSummary(loaded); })
+        .then((loaded) => {
+          if (!current()) return;
+          if (loaded.closed) navigate('/check-in', { replace: true });
+          else setSummary(loaded);
+        })
         .catch((error) => {
           // Only a rejected check-in session ends the volunteer's session; transient
           // failures keep the last summary on screen.
-          if (current() && error instanceof ApiError && SESSION_ENDED_STATUSES.has(error.status)) {
+          if (current() && checkInSessionEnded(error, true)) {
             navigate('/check-in', { replace: true });
           }
         });

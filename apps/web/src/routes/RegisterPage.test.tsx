@@ -136,6 +136,31 @@ describe('RegisterPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/draft restored from this tab/i);
   });
 
+  it.each([false, true])('expires from the last edit, not reload or metadata (edit again: %s)', async (editAgain) => {
+    const t0 = 1_800_000_000_000;
+    const now = vi.spyOn(Date, 'now').mockReturnValue(t0);
+    const api = client(vi.fn());
+    let page = render(<RegisterPage client={api} eventId="e1" />);
+    fireEvent.change(await screen.findByLabelText(/player first name/i), { target: { value: 'Ada' } });
+    expect(JSON.parse(sessionStorage.getItem(publicDraftKey)!).savedAt).toBe(t0);
+    page.unmount();
+    now.mockReturnValue(t0 + 50 * 60_000);
+    page = render(<RegisterPage client={api} eventId="e1" />);
+    expect(await screen.findByLabelText(/player first name/i)).toHaveValue('Ada');
+    expect(JSON.parse(sessionStorage.getItem(publicDraftKey)!).savedAt).toBe(t0);
+    if (editAgain) {
+      now.mockReturnValue(t0 + 55 * 60_000);
+      fireEvent.change(screen.getByLabelText(/player last name/i), { target: { value: 'Lovelace' } });
+      expect(JSON.parse(sessionStorage.getItem(publicDraftKey)!).savedAt).toBe(t0 + 55 * 60_000);
+    }
+    page.unmount();
+    now.mockReturnValue(t0 + 100 * 60_000);
+    render(<RegisterPage client={api} eventId="e1" />);
+    expect(await screen.findByLabelText(/player first name/i)).toHaveValue(editAgain ? 'Ada' : '');
+    if (editAgain) expect(JSON.parse(sessionStorage.getItem(publicDraftKey)!).savedAt).toBe(t0 + 55 * 60_000);
+    else expect(sessionStorage.getItem(publicDraftKey)).toBeNull();
+  });
+
   it('clears a saved draft and its fields when the parent requests it', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);

@@ -200,6 +200,51 @@ describe('EventFormPage', () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['save', 'unmount', 'success'], ['delete', 'unmount', 'success'],
+    ['save', 'unmount', 'failure'], ['delete', 'unmount', 'failure'],
+    ['save', 'event change', 'success'], ['delete', 'event change', 'success'],
+    ['save', 'event change', 'failure'], ['delete', 'event change', 'failure'],
+  ])('ignores an old %s after %s (%s)', async (action, transition, outcome) => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
+    let resolveAction!: () => void;
+    let rejectAction!: (reason: Error) => void;
+    const pending = new Promise<void>((resolve, reject) => { resolveAction = resolve; rejectAction = reject; });
+    const client = editEventClient({
+      getEvent: vi.fn().mockImplementation((id) => Promise.resolve({ ...savedEvent, id, name: id === 'e1' ? savedEvent.name : 'Second event' })),
+      [action === 'save' ? 'updateEvent' : 'deleteEvent']: vi.fn(() => pending),
+    });
+    const router = renderEditRoute(client);
+    fireEvent.change(await screen.findByLabelText('Venue'), { target: { value: 'First event edits' } });
+    fireEvent.click(screen.getByRole('button', { name: action === 'save' ? 'Save event' : 'Delete event' }));
+    expect(action === 'save' ? client.updateEvent : client.deleteEvent).toHaveBeenCalledTimes(1);
+
+    if (transition === 'unmount') {
+      fireEvent.click(screen.getByRole('link', { name: 'Back to events' }));
+      await screen.findByRole('heading', { name: 'Events list' });
+    }
+    await act(async () => { await router.navigate('/admin/events/e2'); });
+    const venue = await screen.findByLabelText('Venue');
+    expect(venue).toBeEnabled();
+    fireEvent.change(venue, { target: { value: 'Second event edits' } });
+    const promptCount = confirm.mock.calls.length;
+
+    await act(async () => {
+      if (outcome === 'success') resolveAction();
+      else rejectAction(new ApiError(400, 'validation_failed', ['venue']));
+    });
+
+    expect(router.state.location.pathname).toBe('/admin/events/e2');
+    expect(screen.getByLabelText('Event name')).toHaveValue('Second event');
+    expect(screen.getByLabelText('Venue')).toHaveValue('Second event edits');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(promptCount);
+    const beforeUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
   it('preserves a dirty event edit and route when an update fails', async () => {
     const updateEvent = vi.fn().mockRejectedValue(new Error('offline'));
     renderEditRoute(editEventClient({ updateEvent }));
@@ -264,6 +309,30 @@ describe('EventFormPage', () => {
 
     expect(deleteEvent).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/e1');
+  });
+
+  it('sends null to reset a cleared policy URL and displays the returned default on reopening', async () => {
+    const defaultUrl = 'https://chisholmnetball.com/selection-policy/';
+    const client = editEventClient({ getEvent: vi.fn().mockResolvedValueOnce({ ...savedEvent, policyUrl: 'https://example.com/custom' })
+      .mockResolvedValue({ ...savedEvent, policyUrl: defaultUrl }), updateEvent: vi.fn().mockResolvedValue({ ...savedEvent, policyUrl: defaultUrl }) });
+    const router = renderEditRoute(client);
+    fireEvent.change(await screen.findByLabelText('Selection policy URL'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    await screen.findByRole('heading', { name: 'Events list' });
+    expect(client.updateEvent).toHaveBeenCalledWith('e1', expect.objectContaining({ policyUrl: null }));
+    await act(async () => { await router.navigate('/admin/events/e1'); });
+    expect(await screen.findByLabelText('Selection policy URL')).toHaveValue(defaultUrl);
+    fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    await screen.findByRole('heading', { name: 'Events list' });
+    expect(client.updateEvent).toHaveBeenLastCalledWith('e1', expect.objectContaining({ policyUrl: defaultUrl }));
+  });
+
+  it('omits a blank optional policy URL when creating an event', async () => {
+    const createEvent = vi.fn().mockResolvedValue(savedEvent);
+    renderForm({ createEvent });
+    fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    await screen.findByRole('heading', { name: 'Events list' });
+    expect(createEvent.mock.calls[0][0]).not.toHaveProperty('policyUrl');
   });
 
   it('sets policy age defaults when the division is selected', () => {

@@ -36,6 +36,8 @@ Run the browser suite while the Compose stack is up to reuse its services:
 npm run test:e2e
 ```
 
+To test without resetting an already-running stack, create a separate disposable database ending in `_test`, set `E2E_DATABASE_URL` to it, and choose unused `E2E_WEB_PORT`, `E2E_API_PORT` and `E2E_CONTROL_PORT` values. Set `CI=1` to require fresh servers rather than reusing listeners. Playwright stops those servers when the run finishes.
+
 With the Compose API/web services stopped, Playwright starts its own API/web servers and uses `E2E_DATABASE_URL` (default `postgresql://postgres:postgres@localhost:5432/netballtrials_test`). If only the Rancher database service is running on port 55432, set `E2E_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/netballtrials_test`. The Rancher PostgreSQL service uses its own named volume, separate from any host PostgreSQL or other Compose project. It contains both `netballtrials` for host-run development and `netballtrials_test` for E2E. Stop the stack while retaining these databases with `docker --context rancher-desktop compose down`; add `--volumes` only when you want to erase both local databases.
 
 Provider-integration testing is deferred. The future Stripe test profile will use Stripe test mode and Stripe CLI; the Gmail test profile will use an API-compatible OAuth/send mock, not SMTP or Mailpit.
@@ -47,6 +49,27 @@ Provide environment variables through the deployment's secret/configuration syst
 Apply database migrations with `cd apps/api && npx prisma migrate deploy`. Build/typecheck with `npm run build -w @netball-trials/api` and start with `npm run start -w @netball-trials/api`. The production runtime includes `tsx`; the build command currently performs a typecheck rather than emitting JavaScript. Set `PORT` as needed. Route the configured web origin to the web app and `/api` to the API, or configure the web build's `VITE_API_URL` with the matching API origin and CORS/cookie settings.
 
 Local development uses an in-memory mailer and never delivers messages. Preview reminders safely with `npm run send-reminders -- --dry-run`; live reminder runs refuse non-production mode. Production uses the Gmail API with OAuth; SMTP is not used. After OAuth credentials are provisioned, create the first admin once with `npm run admin:bootstrap -- admin@example.com`; subsequent admins are invited from the authenticated staff workflow. Schedule `npm run send-reminders` at least every 15 minutes during the 24-hour window and `npm run retention` daily, using the selected host's scheduler. The 12-calendar-month application retention job does not expire database backups; configure and verify backup expiry separately with the hosting provider.
+
+### Mail and retention recovery
+
+Monitor scheduler exit codes and stderr. Retention exits **1** when an expired event has unresolved `SENDING` deliveries or interrupted claims (`AMBIGUOUS` with `delivery_interrupted_after_claim`). It reports event IDs, delivery IDs and attempt numbers, without recipient details. Other events can still be cleaned; a zero anonymised count does not mean retention is complete. Claims remain blocking indefinitely until the worker finishes or an operator resolves them. A stale lease or elapsed time is **not** evidence that a worker has stopped.
+
+For an abandoned claim:
+
+1. Identify the original API/reminder worker, stop it, and prevent it from resuming or being restarted with that in-flight send. Check all relevant instances/jobs. If you cannot establish that the original worker is stopped, do not acknowledge or resolve the claim; wait or investigate. Database fencing cannot cancel a provider request or erase a live worker's memory.
+2. Inspect the delivery ID and current attempt number from the retention report (or the `EmailLog` record) and verify that `DATABASE_URL` targets the intended database. Check provider evidence separately: use `verified-sent` only when that exact delivery was confirmed sent; use `unknown` if the outcome cannot be established. Neither age nor absence of a provider record proves non-delivery.
+3. With the deployment's database configuration loaded, run this operator-only command from the repository root, substituting the inspected ID and attempt number:
+
+   ```sh
+   npm run mail:reconcile -w @netball-trials/api -- \
+     --delivery-id '<delivery-id>' --expected-attempt 2 \
+     --outcome unknown --acknowledge-worker-stopped
+   ```
+
+   For independently verified delivery, replace `unknown` with `verified-sent`. The acknowledgement is mandatory. This CLI makes no Gmail calls and sends no email; there is no public recovery endpoint. It transactionally resolves only the exact unresolved claim. A changed/completed claim or different attempt exits nonzero without modifying it; inspect again rather than blindly increasing the expected attempt. The original worker's late completion cannot overwrite the resolution. `sentAt` for `verified-sent` records reconciliation time, not a reconstructed provider timestamp.
+4. Rerun `npm run retention -w @netball-trials/api` and check its exit code. `unknown` becomes ordinary `AMBIGUOUS`, never an automatic resend, and no longer blocks cleanup. Before the retention cutoff, a separate explicit ambiguous retry is possible but may duplicate a message; assess that risk first. Do not retry expired data or backdate the job clock to bypass retention.
+
+If event details change after a reminder batch is created, its original content stays immutable. Reminder errors report unsent rows and newly paid households omitted from that batch (one registration ID per distinct address), even if every original delivery was sent. Send an updated message manually to the affected households using the current details; do not replay the old venue/time or silently resend the entire batch.
 
 ## Checks
 

@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, type EmailDeliveryState, type PrismaClient } from '@prisma/client';
 import { GmailDeliveryError } from '../mail/gmail-mailer';
 import type { EmailMessage, EmailProvider } from '../mail/provider';
+import { INTERRUPTED_SEND, lockMailEvent, mailRegistrationEligibility } from '../mail/lifecycle';
+import { isPastRetentionCutoff } from '../retention/service';
 
 export type DeliverySummary = {
   batchId: string;
@@ -100,63 +102,76 @@ async function prepareBatch(
   message: OutboundContent,
   kind: string,
   batchId: string,
+  now: Date,
   senderUserId?: string,
   onlyRecipient?: Recipient,
 ): Promise<DeliveryRow[]> {
   const payload = storePayload(message);
-  const existing = await prisma.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
-  if (existing.length > 0) {
-    const awaitingConfirmationContent = kind === 'confirmation' && existing.every((row) =>
-      row.eventId === eventId && row.kind === kind && row.status === 'PENDING' &&
-      row.messagePayload === null && row.subject === 'Registration confirmation' && row.body === '',
-    );
-    if (awaitingConfirmationContent) {
-      await prisma.emailLog.updateMany({
-        where: { batchId, eventId, kind, status: 'PENDING', messagePayload: { equals: Prisma.DbNull } },
-        data: { subject: message.subject, body: message.text, messagePayload: payload as Prisma.InputJsonObject },
+  return prisma.$transaction(async (tx) => {
+    const event = await lockMailEvent(tx, eventId);
+    if (!event || isPastRetentionCutoff(event.eventDate, now)) return [];
+
+    if (onlyRecipient) {
+      const registration = onlyRecipient.registrationId && await tx.registration.findFirst({
+        where: { id: onlyRecipient.registrationId, eventId, ...mailRegistrationEligibility(kind, now) },
       });
-      return prisma.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
+      if (!registration || !registration.parentEmail.trim()) return [];
     }
-    if (existing.some((row) => row.eventId !== eventId || row.subject !== message.subject || row.body !== message.text || row.kind !== kind || JSON.stringify(row.messagePayload ?? {}) !== JSON.stringify(payload))) {
-      throw new EmailBatchConflictError();
+    const existing = await tx.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
+    if (existing.length > 0) {
+      const awaitingConfirmationContent = kind === 'confirmation' && existing.every((row) =>
+        row.eventId === eventId && row.kind === kind && row.status === 'PENDING' &&
+        row.messagePayload === null && row.subject === 'Registration confirmation' && row.body === '',
+      );
+      if (awaitingConfirmationContent) {
+        await tx.emailLog.updateMany({
+          where: { batchId, eventId, kind, status: 'PENDING', messagePayload: { equals: Prisma.DbNull } },
+          data: { subject: message.subject, body: message.text, messagePayload: payload as Prisma.InputJsonObject },
+        });
+        return tx.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
+      }
+      if (existing.some((row) => row.eventId !== eventId || row.subject !== message.subject || row.body !== message.text || row.kind !== kind || JSON.stringify(row.messagePayload ?? {}) !== JSON.stringify(payload))) {
+        throw new EmailBatchConflictError();
+      }
+      // Only reminders gain newly paid recipients; admin audiences stay frozen.
+      if (kind !== 'reminder' || onlyRecipient) return existing;
     }
-    return existing;
-  }
 
-  let recipients: Recipient[];
-  if (onlyRecipient) {
-    recipients = [{ email: onlyRecipient.email.trim().toLowerCase(), registrationId: onlyRecipient.registrationId }];
-  } else {
-    const registrations = await prisma.registration.findMany({
-      where: { eventId, status: 'PAID' },
-      select: { id: true, parentEmail: true },
-      orderBy: [{ parentEmail: 'asc' }, { id: 'asc' }],
+    let recipients: Recipient[];
+    if (onlyRecipient) {
+      recipients = [{ email: onlyRecipient.email.trim().toLowerCase(), registrationId: onlyRecipient.registrationId }];
+    } else {
+      const registrations = await tx.registration.findMany({
+        where: { eventId, ...mailRegistrationEligibility(kind, now) },
+        select: { id: true, parentEmail: true },
+        orderBy: [{ parentEmail: 'asc' }, { id: 'asc' }],
+      });
+      const unique = new Map<string, string>();
+      for (const registration of registrations) {
+        const email = registration.parentEmail.trim().toLowerCase();
+        if (email && !unique.has(email)) unique.set(email, registration.id);
+      }
+      recipients = [...unique].map(([email, registrationId]) => ({ email, registrationId }));
+    }
+
+    await tx.emailLog.createMany({
+      skipDuplicates: true,
+      data: recipients.map(({ email, registrationId }) => ({
+        eventId,
+        registrationId,
+        senderUserId: senderUserId ?? null,
+        batchId,
+        idempotencyKey: deliveryIdempotencyKey(batchId, email),
+        to: email,
+        subject: message.subject,
+        body: message.text,
+        messagePayload: payload as Prisma.InputJsonObject,
+        kind,
+        status: 'PENDING',
+      })),
     });
-    const unique = new Map<string, string>();
-    for (const registration of registrations) {
-      const email = registration.parentEmail.trim().toLowerCase();
-      if (!unique.has(email)) unique.set(email, registration.id);
-    }
-    recipients = [...unique].map(([email, registrationId]) => ({ email, registrationId }));
-  }
-
-  await prisma.emailLog.createMany({
-    skipDuplicates: true,
-    data: recipients.map(({ email, registrationId }) => ({
-      eventId,
-      registrationId,
-      senderUserId: senderUserId ?? null,
-      batchId,
-      idempotencyKey: deliveryIdempotencyKey(batchId, email),
-      to: email,
-      subject: message.subject,
-      body: message.text,
-      messagePayload: payload as Prisma.InputJsonObject,
-      kind,
-      status: 'PENDING',
-    })),
+    return tx.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
   });
-  return prisma.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
 }
 
 async function dispatchOne(
@@ -169,22 +184,51 @@ async function dispatchOne(
   const retryable: EmailDeliveryState[] = allowAmbiguous
     ? ['PENDING', 'FAILED', 'AMBIGUOUS']
     : ['PENDING', 'FAILED'];
-  const claim = await deps.prisma.emailLog.updateMany({
-    where: {
-      id: row.id,
-      status: { in: retryable },
-      ...(maxAttempts !== undefined ? { attempts: { lt: maxAttempts } } : {}),
-    },
-    data: { status: 'SENDING', attempts: { increment: 1 }, lastAttemptAt: now, failedAt: null, error: null },
+  const claimed = await deps.prisma.$transaction(async (tx) => {
+    const event = await lockMailEvent(tx, row.eventId);
+    if (!event || isPastRetentionCutoff(event.eventDate, now)) return null;
+    const current = await tx.emailLog.findFirst({
+      where: {
+        id: row.id,
+        eventId: row.eventId,
+        status: { in: retryable },
+        ...(maxAttempts !== undefined ? { attempts: { lt: maxAttempts } } : {}),
+      },
+    });
+    if (!current || !current.to || current.error === INTERRUPTED_SEND) return null;
+    const eligible = await tx.registration.findFirst({
+      where: {
+        eventId: current.eventId,
+        ...mailRegistrationEligibility(current.kind, now),
+        OR: [
+          { id: current.registrationId ?? '' },
+          // A batch represents a household, not just the first paid sibling.
+          ...(['message', 'reminder'].includes(current.kind)
+            ? [{ parentEmail: { equals: current.to, mode: 'insensitive' as const } }]
+            : []),
+        ],
+      },
+      select: { id: true },
+    });
+    if (!eligible) return null;
+    const claim = await tx.emailLog.updateMany({
+      where: { id: current.id, status: { in: retryable } },
+      data: { status: 'SENDING', attempts: { increment: 1 }, lastAttemptAt: now, failedAt: null, error: null },
+    });
+    return claim.count === 1 ? current : null;
   });
-  if (claim.count !== 1) return 'SKIPPED';
+  if (!claimed) return 'SKIPPED';
+  const completion: Prisma.EmailLogWhereInput = {
+    id: claimed.id, attempts: claimed.attempts + 1, lastAttemptAt: now,
+    OR: [{ status: 'SENDING' }, { status: 'AMBIGUOUS', error: INTERRUPTED_SEND }],
+  };
 
   try {
-    await deps.mailer.send(restoreMessage(row));
+    await deps.mailer.send(restoreMessage(claimed));
   } catch (error) {
     const outcome = safeError(error);
     await deps.prisma.emailLog.updateMany({
-      where: { id: row.id, status: 'SENDING' },
+      where: completion,
       data: { status: outcome.status, failedAt: now, error: outcome.message },
     });
     return outcome.status;
@@ -192,12 +236,12 @@ async function dispatchOne(
 
   try {
     const markedSent = await deps.prisma.emailLog.updateMany({
-      where: { id: row.id, status: 'SENDING' },
+      where: completion,
       data: { status: 'SENT', sentAt: now, failedAt: null, error: null },
     });
     if (markedSent.count !== 1) {
       await deps.prisma.emailLog.updateMany({
-        where: { id: row.id, status: 'SENDING' },
+        where: completion,
         data: { status: 'AMBIGUOUS', failedAt: now, error: 'provider_accepted_log_update_failed' },
       });
       return 'AMBIGUOUS';
@@ -206,7 +250,7 @@ async function dispatchOne(
   } catch {
     try {
       await deps.prisma.emailLog.updateMany({
-        where: { id: row.id, status: 'SENDING' },
+        where: completion,
         data: { status: 'AMBIGUOUS', failedAt: now, error: 'provider_accepted_log_update_failed' },
       });
     } catch {
@@ -219,7 +263,7 @@ async function dispatchOne(
 export async function reconcileStaleDeliveries(prisma: PrismaClient, now: Date): Promise<number> {
   const result = await prisma.emailLog.updateMany({
     where: { status: 'SENDING', lastAttemptAt: { lt: new Date(now.getTime() - 10 * 60_000) } },
-    data: { status: 'AMBIGUOUS', failedAt: now, error: 'delivery_interrupted_after_claim' },
+    data: { status: 'AMBIGUOUS', failedAt: now, error: INTERRUPTED_SEND },
   });
   return result.count;
 }
@@ -227,7 +271,7 @@ export async function reconcileStaleDeliveries(prisma: PrismaClient, now: Date):
 async function expireSendingLease(prisma: PrismaClient, batchId: string, now: Date): Promise<void> {
   await prisma.emailLog.updateMany({
     where: { batchId, status: 'SENDING', lastAttemptAt: { lt: new Date(now.getTime() - 10 * 60_000) } },
-    data: { status: 'AMBIGUOUS', failedAt: now, error: 'delivery_interrupted_after_claim' },
+    data: { status: 'AMBIGUOUS', failedAt: now, error: INTERRUPTED_SEND },
   });
 }
 
@@ -253,7 +297,12 @@ async function dispatchBatch(
   allowAmbiguous = false,
   maxAttempts?: number,
 ): Promise<Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>> {
-  return Promise.all(rows.map((row) => dispatchOne(deps, row, now, allowAmbiguous, maxAttempts)));
+  // Bound both provider requests and transactions waiting on the per-event lock.
+  const outcomes: Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> = [];
+  for (let start = 0; start < rows.length; start += 5) {
+    outcomes.push(...await Promise.all(rows.slice(start, start + 5).map((row) => dispatchOne(deps, row, now, allowAmbiguous, maxAttempts))));
+  }
+  return outcomes;
 }
 
 function runCounts(results: Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>) {
@@ -275,7 +324,7 @@ async function sendBatch(
 ): Promise<DeliverySummary> {
   const batchId = options.batchId ?? randomUUID();
   await expireSendingLease(deps.prisma, batchId, now);
-  const rows = await prepareBatch(deps.prisma, eventId, message, kind, batchId, options.senderUserId, recipient);
+  const rows = await prepareBatch(deps.prisma, eventId, message, kind, batchId, now, options.senderUserId, recipient);
   const outcomes = await dispatchBatch(deps, rows, now, false, options.maxAttempts);
   return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
 }

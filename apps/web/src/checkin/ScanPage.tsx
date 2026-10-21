@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { CheckInResult } from '@netball-trials/types';
 import type { ApiClient as Client } from '../api/client';
 import { announceResult, resultLabel } from './feedback';
 import { notifyCheckInUpdated } from './refresh';
+import { checkInSessionEnded } from './session';
 
 function announce(result: CheckInResult, contexts: Set<AudioContext>) {
   announceResult(result, {
@@ -36,6 +37,7 @@ function announce(result: CheckInResult, contexts: Set<AudioContext>) {
 }
 
 export function ScanPage({ client }: { client: Client }) {
+  const navigate = useNavigate();
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -63,15 +65,17 @@ export function ScanPage({ client }: { client: Client }) {
       setUndoableId(scanned.registrationId && scanned.result !== 'refused' ? scanned.registrationId : null);
       if (scanned.result === 'checked_in') notifyCheckInUpdated();
       announce(scanned, audioContexts.current);
-    } catch {
-      if (isActive()) setError('Scan failed. Check the connection, then retry this code or use manual lookup.');
+    } catch (error) {
+      if (!isActive()) return;
+      if (checkInSessionEnded(error)) navigate('/check-in', { replace: true });
+      else setError('Scan failed. Check the connection, then retry this code or use manual lookup.');
     } finally {
       if (isActive()) {
         busyRef.current = false;
         setBusy(false);
       }
     }
-  }, [client]);
+  }, [client, navigate]);
 
   useEffect(() => {
     let stopped = false;
@@ -130,7 +134,8 @@ export function ScanPage({ client }: { client: Client }) {
   }
 
   async function undo() {
-    if (!undoableId || busyRef.current) return;
+    const isActive = sessionIsActive.current;
+    if (!undoableId || busyRef.current || !isActive?.()) return;
     // Block camera decodes until the undo settles.
     busyRef.current = true;
     setBusy(true);
@@ -138,16 +143,21 @@ export function ScanPage({ client }: { client: Client }) {
     setMessage(null);
     try {
       await client.undoCheckIn(undoableId);
+      if (!isActive()) return;
       setUndoableId(null);
       setResult(null);
       setCanRescanLastToken(true);
       setMessage('Check-in undone. The player may now be checked in again.');
       notifyCheckInUpdated();
-    } catch {
-      setError('Could not undo the check-in. Refresh and try again.');
+    } catch (error) {
+      if (!isActive()) return;
+      if (checkInSessionEnded(error)) navigate('/check-in', { replace: true });
+      else setError('Could not undo the check-in. Refresh and try again.');
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      if (isActive()) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   }
 

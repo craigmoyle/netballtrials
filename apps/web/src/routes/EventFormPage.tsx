@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
 import { defaultAgeRange } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
+import { useUnsavedSignOut } from '../useUnsavedSignOut';
 
 type FormState = Record<string, string>;
 
@@ -59,6 +60,11 @@ const FIELDS = FIELD_GROUPS.flatMap((group) => group.fields);
 
 export function EventFormPage({ client }: { client: Client }) {
   const { id } = useParams();
+  return <EventForm key={id ?? 'new'} client={client} id={id} />;
+}
+
+function EventForm({ client, id }: { client: Client; id: string | undefined }) {
+  const mounted = useRef(false);
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
@@ -84,6 +90,12 @@ export function EventFormPage({ client }: { client: Client }) {
     return navigationBlocked.current;
   }, []);
   const blocker = useBlocker(shouldBlockNavigation);
+  useUnsavedSignOut(navigationBlocked.current, 'You have unsaved event changes. Leave without saving?');
+
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     if (blocker.state !== 'blocked') {
@@ -98,32 +110,14 @@ export function EventFormPage({ client }: { client: Client }) {
   }, [blocker]);
 
   useEffect(() => {
-    const confirmSignOut = (event: MouseEvent) => {
-      if (!navigationBlocked.current || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const guardedButton = target.closest<HTMLButtonElement>('button[data-confirm-unsaved-navigation]');
-      if (!guardedButton) return;
-      if (!window.confirm('You have unsaved event changes. Leave without saving?')) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-      } else {
-        allowedDestination.current = '/admin/login';
-      }
-    };
     const confirmUnload = (event: BeforeUnloadEvent) => {
       if (!navigationBlocked.current) return;
       event.preventDefault();
       event.returnValue = '';
     };
 
-    document.addEventListener('click', confirmSignOut, true);
     window.addEventListener('beforeunload', confirmUnload);
-    return () => {
-      document.removeEventListener('click', confirmSignOut, true);
-      window.removeEventListener('beforeunload', confirmUnload);
-    };
+    return () => window.removeEventListener('beforeunload', confirmUnload);
   }, []);
 
   useEffect(() => {
@@ -171,6 +165,7 @@ export function EventFormPage({ client }: { client: Client }) {
   }, [fieldErrors]);
 
   function updateField(name: string, value: string) {
+    if (busy) return;
     setForm((previous) => {
       const next = { ...previous, [name]: value };
       if (!id && name === 'division') {
@@ -184,6 +179,7 @@ export function EventFormPage({ client }: { client: Client }) {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     const missingNumbers = FIELDS
       .filter((field) => field.type === 'number' && (form[field.name] ?? '').trim() === '')
       .map((field) => field.name);
@@ -198,7 +194,10 @@ export function EventFormPage({ client }: { client: Client }) {
 
     const payload: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(form)) {
-      if (key === 'policyUrl' && value === '') continue;
+      if (key === 'policyUrl' && value.trim() === '') {
+        if (id) payload[key] = null;
+        continue;
+      }
       if (key === 'registrationFeeCents') payload[key] = Math.round(Number(value) * 100);
       else payload[key] = NUMERIC.has(key) ? Number(value) : value;
     }
@@ -206,11 +205,13 @@ export function EventFormPage({ client }: { client: Client }) {
     try {
       if (id) await client.updateEvent(id, payload as never);
       else await client.createEvent(payload as never);
+      if (!mounted.current) return;
       savedForm.current = form;
       navigationBlocked.current = false;
       allowedDestination.current = '/admin/events';
       navigate('/admin/events');
     } catch (err) {
+      if (!mounted.current) return;
       if (err instanceof ApiError) {
         setFieldErrors(err.fields ?? []);
         setError(err.status === 400 ? 'Please fix the highlighted fields.' : 'Could not save the event. Your changes are still here. Try again.');
@@ -218,7 +219,7 @@ export function EventFormPage({ client }: { client: Client }) {
         setError('Could not save the event. Your changes are still here. Try again.');
       }
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -235,17 +236,19 @@ export function EventFormPage({ client }: { client: Client }) {
     setFieldErrors([]);
     try {
       await client.deleteEvent(id);
+      if (!mounted.current) return;
       navigationBlocked.current = false;
       allowedDestination.current = '/admin/events';
       navigate('/admin/events');
     } catch (reason) {
+      if (!mounted.current) return;
       if (reason instanceof ApiError && reason.status === 409 && reason.message === 'event_has_registrations') {
         setError('This event cannot be deleted because registration records exist. No event data was changed.');
       } else {
         setError('Could not delete this event. No event data was changed; try again.');
       }
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -269,7 +272,7 @@ export function EventFormPage({ client }: { client: Client }) {
       {error ? <p role="alert">{error}</p> : null}
       <form onSubmit={onSubmit} noValidate>
         {FIELD_GROUPS.map((group) => (
-          <fieldset className="form-group" key={group.legend}>
+          <fieldset className="form-group" key={group.legend} disabled={busy}>
             <legend>{group.legend}</legend>
             {group.fields.map((field) => {
               const invalid = fieldErrors.includes(field.name);
@@ -286,9 +289,10 @@ export function EventFormPage({ client }: { client: Client }) {
                     value={form[field.name] ?? ''}
                     onChange={(changeEvent) => updateField(field.name, changeEvent.target.value)}
                     aria-invalid={invalid || undefined}
-                    aria-describedby={invalid ? `${field.name}-error` : undefined}
+                    aria-describedby={[invalid ? `${field.name}-error` : '', field.name === 'policyUrl' ? 'policyUrl-hint' : ''].filter(Boolean).join(' ') || undefined}
                   />
                   {field.name === 'division' ? <datalist id="trial-divisions"><option value="15/U" /><option value="17/U" /><option value="Open" /><option value="All Abilities" /></datalist> : null}
+                  {field.name === 'policyUrl' ? <span id="policyUrl-hint">Leave blank to use the club’s default selection policy.</span> : null}
                   {invalid ? <span id={`${field.name}-error`}>{field.label} is not valid.</span> : null}
                 </p>
               );

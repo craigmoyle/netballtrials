@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { generateToken, hashToken } from '../auth/tokens';
 import { ensureReviewItems } from '../review/service';
-import { consumeRateLimit, resetRateLimit } from '../security/rate-limit';
+import { consumeRateLimit, reserveRateLimit, resetRateLimit } from '../security/rate-limit';
 import { localDateTimeToUtc } from '../time/melbourne';
 import { hashPin, isPinInput, verifyPin } from './pin';
 
@@ -104,18 +104,17 @@ export async function openCheckInSession(
   if (!isPinInput(input.pin)) throw new PinInvalidError();
 
   // Event-wide cap on wrong PINs so rotating client addresses cannot brute-force the PIN.
-  // Record the attempt before the slow scrypt check so concurrent guesses cannot all pass
-  // a stale read, then give it back for a correct PIN. Keyed by PIN version so rotating
-  // the PIN clears a lockout.
+  // Reserve before scrypt so concurrent guesses cannot bypass the cap; denied attempts
+  // consume no capacity. Keyed by PIN version so rotating the PIN clears a lockout.
   const failureKey = `checkin-fail:${input.eventId}:${event.checkInPinVersion}`;
-  if (!(await consumeRateLimit(deps.prisma, failureKey, now, PIN_EVENT_FAILURE_LIMIT, PIN_WINDOW_MS))) {
-    throw new PinLockedError();
-  }
+  const windowStartedAt = await reserveRateLimit(deps.prisma, failureKey, now, PIN_EVENT_FAILURE_LIMIT, PIN_WINDOW_MS);
+  if (!windowStartedAt) throw new PinLockedError();
   if (!(await verifyPin(input.pin, event.checkInPinHash))) {
     throw new PinInvalidError();
   }
+  // A slow verification must not refund a failure counted in a newer window.
   await deps.prisma.requestRateLimitBucket.updateMany({
-    where: { key: failureKey, hits: { gt: 0 } },
+    where: { key: failureKey, windowStartedAt, hits: { gt: 0 } },
     data: { hits: { decrement: 1 } },
   });
   await resetRateLimit(deps.prisma, key);

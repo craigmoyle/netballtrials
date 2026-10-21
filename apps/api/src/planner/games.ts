@@ -228,7 +228,7 @@ function manualWarnings(
   snapshots: PlanPlayerSnapshot[],
 ): PlannerGap[] {
   const activePlayers = snapshots.filter((player) => player.active);
-  const byId = new Map(activePlayers.map((player) => [player.registrationId, player]));
+  const byId = new Map(snapshots.map((player) => [player.registrationId, player]));
   const appearances = new Map<string, number>();
   const courts = new Map<string, Set<number>>();
   const positions = new Map<string, number>();
@@ -245,7 +245,7 @@ function manualWarnings(
     positions.set(key, (positions.get(key) ?? 0) + 1);
     const selected = [player.rank1Position, player.rank2Position, player.rank3Position].filter(Boolean);
     if (!player.optInExtraPositions && !selected.includes(slot.position)) {
-      warnings.push(positionWarning(`${player.playerName} is not opted in to ${slot.position}.`, { registrationId: player.registrationId, position: slot.position }));
+      warnings.push(positionWarning(`${player.playerName} is not opted in to ${slot.position}.`, { ...slot }));
     }
   }
 

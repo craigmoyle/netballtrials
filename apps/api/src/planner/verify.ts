@@ -1,4 +1,5 @@
 import { totalTimeMinutes } from './minimum';
+import { slotKey } from './frozen-exceptions';
 import { COURT_POSITIONS } from './types';
 import type { PlannerGap, PlannerInput, PlannerPlan, PlannerPlayer } from './types';
 
@@ -8,6 +9,7 @@ function noSolution(message: string, detail?: Record<string, unknown>): PlannerG
 
 export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[] {
   const gaps: PlannerGap[] = [];
+  const approved = new Set((input.approvedFrozenSlots ?? []).map(slotKey));
   const playersById = new Map<string, PlannerPlayer>(input.players.map((player) => [player.registrationId, player]));
   const inactive = new Set(input.inactiveRegistrationIds ?? []);
   const activePlayers = input.players.filter((player) => !inactive.has(player.registrationId));
@@ -83,7 +85,8 @@ export function verifyPlan(input: PlannerInput, plan: PlannerPlan): PlannerGap[]
     positionCounts.set(positionKey, (positionCounts.get(positionKey) ?? 0) + 1);
 
     const selected = [player.rank1, player.rank2, player.rank3].filter(Boolean);
-    if (!inactive.has(player.registrationId) && !player.optInExtra && !selected.includes(slot.position)) {
+    const approvedHistoricalSlot = slot.round <= (input.frozenThroughRound ?? 0) && approved.has(slotKey(slot));
+    if (!approvedHistoricalSlot && !player.optInExtra && !selected.includes(slot.position)) {
       gaps.push(noSolution(`${player.name} is not opted in but is assigned ${slot.position}`));
     }
   }

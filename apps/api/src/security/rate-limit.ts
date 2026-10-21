@@ -36,6 +36,35 @@ export async function resetRateLimit(prisma: PrismaClient, key: string): Promise
   await prisma.requestRateLimitBucket.deleteMany({ where: { key } });
 }
 
+/** Reserve capacity before verification; denied attempts leave the bucket unchanged. */
+export async function reserveRateLimit(
+  prisma: PrismaClient,
+  key: string,
+  now: Date,
+  max: number,
+  windowMs: number,
+): Promise<Date | null> {
+  const expiredBefore = new Date(now.getTime() - windowMs);
+  const rows = await prisma.$queryRaw<{ windowStartedAt: Date }[]>(Prisma.sql`
+    INSERT INTO "RequestRateLimitBucket" ("key", "windowStartedAt", "hits", "updatedAt")
+    VALUES (${key}, ${now}, 1, ${now})
+    ON CONFLICT ("key") DO UPDATE SET
+      "hits" = CASE
+        WHEN "RequestRateLimitBucket"."windowStartedAt" <= ${expiredBefore} THEN 1
+        ELSE "RequestRateLimitBucket"."hits" + 1
+      END,
+      "windowStartedAt" = CASE
+        WHEN "RequestRateLimitBucket"."windowStartedAt" <= ${expiredBefore} THEN ${now}
+        ELSE "RequestRateLimitBucket"."windowStartedAt"
+      END,
+      "updatedAt" = ${now}
+    WHERE "RequestRateLimitBucket"."windowStartedAt" <= ${expiredBefore}
+      OR "RequestRateLimitBucket"."hits" < ${max}
+    RETURNING "windowStartedAt"
+  `);
+  return rows[0]?.windowStartedAt ?? null;
+}
+
 export async function consumeRateLimit(
   prisma: PrismaClient,
   key: string,

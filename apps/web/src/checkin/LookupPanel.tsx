@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { CheckInResult, LookupResult } from '@netball-trials/types';
 import type { ApiClient as Client } from '../api/client';
 import { resultLabel } from './feedback';
 import { notifyCheckInUpdated } from './refresh';
+import { checkInSessionEnded } from './session';
 
 export function LookupPanel({ client }: { client: Client }) {
+  const navigate = useNavigate();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LookupResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -32,8 +40,9 @@ export function LookupPanel({ client }: { client: Client }) {
           setResults(rows);
           setSearching(false);
         })
-        .catch(() => {
+        .catch((error) => {
           if (!active) return;
+          if (checkInSessionEnded(error)) { navigate('/check-in', { replace: true }); return; }
           setError('Could not search registrations. Retry the lookup.');
           setSearching(false);
         });
@@ -42,7 +51,7 @@ export function LookupPanel({ client }: { client: Client }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [client, query, retry]);
+  }, [client, query, retry, navigate]);
 
   async function checkIn(id: string) {
     setBusy(true);
@@ -51,16 +60,19 @@ export function LookupPanel({ client }: { client: Client }) {
     setUndoableId(null);
     try {
       const checked = await client.manualCheckIn(id);
+      if (!mounted.current) return;
       setResult(checked);
       setUndoableId(checked.result === 'refused' ? null : checked.registrationId ?? id);
       setResults((rows) => rows.map((row) => row.id === id && checked.result !== 'refused'
         ? { ...row, checkedIn: true, bibNumber: checked.bibNumber ?? row.bibNumber }
         : row));
       if (checked.result === 'checked_in') notifyCheckInUpdated();
-    } catch {
-      setError('Could not check in this player. The roster is unchanged; try again.');
+    } catch (error) {
+      if (!mounted.current) return;
+      if (checkInSessionEnded(error)) navigate('/check-in', { replace: true });
+      else setError('Could not check in this player. The roster is unchanged; try again.');
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -70,14 +82,17 @@ export function LookupPanel({ client }: { client: Client }) {
     setError(null);
     try {
       await client.undoCheckIn(undoableId);
+      if (!mounted.current) return;
       setResults((rows) => rows.map((row) => row.id === undoableId ? { ...row, checkedIn: false, bibNumber: null } : row));
       setUndoableId(null);
       setResult(null);
       notifyCheckInUpdated();
-    } catch {
-      setError('Could not undo this check-in. The attendance record is unchanged; try again.');
+    } catch (error) {
+      if (!mounted.current) return;
+      if (checkInSessionEnded(error)) navigate('/check-in', { replace: true });
+      else setError('Could not undo this check-in. The attendance record is unchanged; try again.');
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 

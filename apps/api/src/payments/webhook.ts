@@ -4,6 +4,8 @@ import type { AppDeps } from '../app';
 import { generateToken } from '../auth/tokens';
 import { sendConfirmation } from '../registrations/confirmation';
 import { deliveryIdempotencyKey } from '../messages/service';
+import { lockMailEvent } from '../mail/lifecycle';
+import { isPastRetentionCutoff } from '../retention/service';
 import type { WebhookEvent } from './provider';
 
 export type PaymentOutcome = 'paid' | 'already_paid' | 'expired' | 'failed' | 'orphaned' | 'ignored';
@@ -16,7 +18,7 @@ export type PaymentConfirmationResult = {
 };
 
 function storedOutcome(outcome: string | undefined): PaymentOutcome {
-  return outcome === 'PAID' ? 'already_paid' :
+  return outcome === 'PAID' || outcome === 'ALREADY_PAID' ? 'already_paid' :
     outcome === 'EXPIRED' ? 'expired' :
       outcome === 'FAILED' ? 'failed' :
         outcome === 'ORPHANED' ? 'orphaned' : 'ignored';
@@ -57,9 +59,12 @@ export async function confirmPayment(
         return { registrationId: event.registrationId, outcome: storedOutcome(existing?.outcome) };
       }
 
-      const registration = await tx.registration.findUnique({
+      let registration = await tx.registration.findUnique({
         where: { id: event.registrationId },
       });
+      const mailEvent = registration ? await lockMailEvent(tx, registration.eventId) : null;
+      // Retention/withdrawal may have won while we waited for the Event lock.
+      if (registration) registration = await tx.registration.findUnique({ where: { id: registration.id } });
 
       let outcome: PaymentOutcome = 'ignored';
       if (
@@ -90,7 +95,7 @@ export async function confirmPayment(
             });
             if (claimedRegistration.count === 1) {
               const batchId = `confirmation:${registration.id}`;
-              await tx.emailLog.createMany({
+              if (mailEvent && !isPastRetentionCutoff(mailEvent.eventDate, now)) await tx.emailLog.createMany({
                 skipDuplicates: true,
                 data: [{
                   eventId: registration.eventId,
@@ -105,6 +110,15 @@ export async function confirmPayment(
                 }],
               });
               outcome = 'paid';
+            } else {
+              const current = await tx.registration.findUnique({ where: { id: registration.id } });
+              if (current?.checkoutSessionId === event.sessionId && !current.anonymizedAt) {
+                if (current.status === 'PAID') outcome = 'already_paid';
+                else if (current.status !== 'PENDING') {
+                  await flagOrphanedPayment(tx, current, event, `the registration was ${current.status.toLowerCase()}`);
+                  outcome = 'orphaned';
+                }
+              }
             }
           } else if (isSettled) {
             // Paid, but not the amount or currency this registration expects.

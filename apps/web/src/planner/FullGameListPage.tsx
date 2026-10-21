@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
+import { useUnsavedSignOut } from '../useUnsavedSignOut';
 
 type ViewMode = 'team' | 'position' | 'statistics' | 'reference';
 type DisplayPlayer = { playerName: string; bibNumber: number | null };
@@ -26,9 +27,12 @@ function sortedSlots(slots: PlanSlotInputDTO[]): PlanSlotInputDTO[] {
 }
 
 export function FullGameListPage({ client, eventId }: { client: Client; eventId: string }) {
-  const eventIdRef = useRef(eventId);
+  return <EventGameList key={eventId} client={client} eventId={eventId} />;
+}
+
+function EventGameList({ client, eventId }: { client: Client; eventId: string }) {
+  const mounted = useRef(false);
   const promptedLocation = useRef<string | null>(null);
-  eventIdRef.current = eventId;
   const [event, setEvent] = useState<EventDTO | null>(null);
   const [plan, setPlan] = useState<RoundPlanDTO | null>(null);
   const [roster, setRoster] = useState<GamePlayerDTO[]>([]);
@@ -57,6 +61,11 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -134,8 +143,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
 
   const renderedSlots = useMemo(() => {
     const baseSlots = (displayedPlan?.slots ?? []).map(planSlot);
+    if (suffixEditing) return [...baseSlots.filter((slot) => slot.round < suffixFromRound), ...editedSuffixSlots];
     return editing ? [...baseSlots.filter((slot) => slot.round !== selectedRound), ...editedSlots] : baseSlots;
-  }, [displayedPlan, editing, selectedRound, editedSlots]);
+  }, [displayedPlan, editing, selectedRound, editedSlots, suffixEditing, suffixFromRound, editedSuffixSlots]);
   const renderedSlotByKey = useMemo(() => new Map(renderedSlots.map((slot) => [slotKey(slot), slot])), [renderedSlots]);
   const displayedSlotByKey = useMemo(
     () => new Map((displayedPlan?.slots ?? []).map((slot) => [slotKey(planSlot(slot)), slot])),
@@ -155,6 +165,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   const suffixDirty = suffixEditing && editedSuffixSlots.some((slot) => plan?.slots.find((original) => slotKey(planSlot(original)) === slotKey(slot))?.registrationId !== slot.registrationId);
   const dirtyAny = dirty || suffixDirty;
   const blocker = useBlocker(dirtyAny);
+  useUnsavedSignOut(dirtyAny, 'You have unsaved game schedule changes. Leave and discard them?');
   const earlyLeaverSet = new Set(earlyLeaverIds);
 
   useEffect(() => {
@@ -181,7 +192,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   const earlyLeaverCandidates = plan?.players.filter((player) => player.active && rosterById.has(player.registrationId) &&
     plan.slots.some((slot) => slot.round >= suffixFromRound && slot.registrationId === player.registrationId)) ?? [];
   const lateArrivalPlayers = plan ? roster.filter((player) => !snapshotById.has(player.registrationId)) : [];
-  const suffixReplacementSlots = editedSuffixSlots.filter((slot) => !slot.registrationId);
+  const affectedSuffixKeys = new Set(plan?.slots.filter((slot) => slot.round >= suffixFromRound && earlyLeaverSet.has(slot.registrationId)).map(slotKey));
+  const suffixReplacementSlots = editedSuffixSlots.filter((slot) => affectedSuffixKeys.has(slotKey(slot)));
+  const missingSuffixReplacements = editedSuffixSlots.some((slot) => !slot.registrationId);
 
   function beginEdit(round: number) {
     if (!plan || stalePlan || suffixEditing) return;
@@ -222,7 +235,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     setEarlyLeaverIds([]);
     setSuffixEditing(false);
     setEditedSuffixSlots([]);
-    setActionError(null);
+    if (!stalePlan) setActionError(null);
     setDraftMessage(null);
   }
 
@@ -245,7 +258,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
   }
 
   function replaceSuffixSlot(key: string, registrationId: string) {
-    if (!suffixEditing || stalePlan) return;
+    if (!suffixEditing || stalePlan || busy) return;
+    const target = editedSuffixSlots.find((slot) => slotKey(slot) === key);
+    if (!target || (registrationId && !suffixReplacementOptions(target).some((player) => player.registrationId === registrationId))) return;
     setEditedSuffixSlots((current) => current.map((slot) => slotKey(slot) === key ? { ...slot, registrationId } : slot));
     setWarnings([]);
     setActionError(null);
@@ -348,10 +363,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       slots: sortedSlots(editedSlots),
       overrideWarnings,
     };
-    const submittedEventId = eventId;
     try {
-      const result = await client.saveManualRound(submittedEventId, selectedRound, input);
-      if (eventIdRef.current !== submittedEventId) return;
+      const result = await client.saveManualRound(eventId, selectedRound, input);
+      if (!mounted.current) return;
       if (!result.ok) {
         if (result.reason === 'warnings_required') setWarnings(result.warnings);
         else setActionError(result.errors.map((error) => error.message).join(' ') || 'The round has a hard validation error.');
@@ -359,7 +373,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       }
       activateRevision(result.plan);
     } catch (error) {
-      if (eventIdRef.current !== submittedEventId) return;
+      if (!mounted.current) return;
       if (error instanceof ApiError && error.status === 409 && error.message === 'stale_plan') {
         setStalePlan(true);
         setActionError('Another Admin published a newer revision. Your local changes are not saved.');
@@ -367,12 +381,12 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
         setActionError('Could not save this round. Your local changes are still here; retry or cancel.');
       }
     } finally {
-      if (eventIdRef.current === submittedEventId) setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
   async function saveSuffix(overrideWarnings = false) {
-    if (!plan || !suffixEditing || suffixReplacementSlots.length > 0 || !suffixDirty || stalePlan) return;
+    if (!plan || !suffixEditing || missingSuffixReplacements || !suffixDirty || stalePlan || busy) return;
     setBusy(true);
     setWarnings([]);
     setActionError(null);
@@ -384,10 +398,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       removedRegistrationIds: earlyLeaverIds,
       overrideWarnings,
     };
-    const submittedEventId = eventId;
     try {
-      const result = await client.saveManualSuffix(submittedEventId, input);
-      if (eventIdRef.current !== submittedEventId) return;
+      const result = await client.saveManualSuffix(eventId, input);
+      if (!mounted.current) return;
       if (!result.ok) {
         if (result.reason === 'warnings_required') setWarnings(result.warnings);
         else setActionError(result.errors.map((error) => error.message).join(' ') || 'The suffix has a hard validation error.');
@@ -395,7 +408,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
       }
       activateRevision(result.plan);
     } catch (error) {
-      if (eventIdRef.current !== submittedEventId) return;
+      if (!mounted.current) return;
       if (error instanceof ApiError && error.status === 409 && error.message === 'stale_plan') {
         setStalePlan(true);
         setActionError('Another Admin published a newer revision. Your local changes are not saved.');
@@ -403,7 +416,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
         setActionError('Could not save the suffix. Your local changes are still here; retry or cancel.');
       }
     } finally {
-      if (eventIdRef.current === submittedEventId) setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -413,46 +426,50 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
     setActionError(null);
     setSavedMessage(null);
     setDraftMessage(null);
-    const submittedEventId = eventId;
     try {
-      const result = await client.regeneratePlan(submittedEventId, suffixFromRound, earlyLeaverIds);
-      if (eventIdRef.current !== submittedEventId) return;
+      const result = await client.regeneratePlan(eventId, suffixFromRound, plan.id, earlyLeaverIds);
+      if (!mounted.current) return;
       if (!result.ok) {
+        // Regeneration uses a generic no_solution gap, not a dedicated stale-source code.
+        if (result.gaps.some((gap) => gap.message === 'The source plan is not the active published revision.')) setStalePlan(true);
         setActionError(result.gaps.map((gap) => gap.message).join(' ') || 'The suffix could not be rebuilt. The active schedule is unchanged.');
         return;
       }
       setDraftMessage(`Draft revision ${result.plan.revision} is ready for review.`);
       setEarlyLeaverPanelOpen(false);
       setEarlyLeaverIds([]);
-    } catch {
-      if (eventIdRef.current === submittedEventId) setActionError('Could not rebuild the fixtures. The active schedule is unchanged.');
+    } catch (error) {
+      if (!mounted.current) return;
+      if (error instanceof ApiError && error.status === 409 && error.message === 'stale_plan') {
+        setStalePlan(true);
+        setActionError('Another Admin published a newer revision. The fixtures were not rebuilt.');
+      } else setActionError('Could not rebuild the fixtures. The active schedule is unchanged.');
     } finally {
-      if (eventIdRef.current === submittedEventId) setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
   async function openRevision(revision: PlanRevisionSummaryDTO) {
-    const requestedEventId = eventId;
     setBusy(true);
-    setActionError(null);
+    if (!stalePlan) setActionError(null);
     try {
-      const revisionPlan = await client.getPlanRevision(requestedEventId, revision.id);
-      if (eventIdRef.current !== requestedEventId) return;
+      const revisionPlan = await client.getPlanRevision(eventId, revision.id);
+      if (!mounted.current) return;
       setHistoryPlan(revisionPlan);
       setEditing(false);
       setEditedSlots([]);
       setSelectedRound(1);
       setViewMode('team');
     } catch {
-      if (eventIdRef.current === requestedEventId) setActionError('Could not load that revision. The active schedule is unchanged.');
+      if (mounted.current) setActionError('Could not load that revision. The active schedule is unchanged.');
     } finally {
-      if (eventIdRef.current === requestedEventId) setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
   function returnToActive() {
     setHistoryPlan(null);
-    setActionError(null);
+    if (!stalePlan) setActionError(null);
     setSelectedRound(1);
   }
 
@@ -484,7 +501,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
           <tbody>
             {POSITIONS.map((position) => {
               const slot = renderedSlotByKey.get(slotKey({ round, court, position, team }));
-              if (!slot) return <tr key={position}><th scope="row">{position}</th><td>Unfilled</td><td>—</td></tr>;
+              if (!slot?.registrationId) return <tr key={position}><th scope="row">{position}</th><td>Unfilled</td><td>—</td></tr>;
               const fullSlot = displayedSlotByKey.get(slotKey(slot));
               const player = playerDetails(slot.registrationId, fullSlot);
               const movable = editing && !stalePlan && rosterById.has(slot.registrationId);
@@ -549,7 +566,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                       {[0, 1].map((team) => {
                         const slot = renderedSlotByKey.get(slotKey({ round, court, position, team }));
                         const fullSlot = slot && displayedSlotByKey.get(slotKey(slot));
-                        const player = slot ? playerDetails(slot.registrationId, fullSlot) : null;
+                        const player = slot?.registrationId ? playerDetails(slot.registrationId, fullSlot) : null;
                         return <td key={team}>{player ? <><span>{player.playerName}</span><span className="game-player-number">Number {player.bibNumber ?? '—'}</span></> : 'Unfilled'}</td>;
                       })}
                     </tr>
@@ -673,7 +690,7 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
           {actionError ? (
             <div role="alert" className="game-action-error">
               <p>{actionError}</p>
-              {stalePlan ? <button type="button" onClick={discardAndRefresh}>Discard local changes and refresh</button> : null}
+              {stalePlan ? <button type="button" disabled={busy} onClick={discardAndRefresh}>Discard local changes and refresh</button> : null}
             </div>
           ) : null}
 
@@ -786,9 +803,9 @@ export function FullGameListPage({ client, eventId }: { client: Client; eventId:
                           </p>
                         );
                       })}
-                      {suffixReplacementSlots.length === 0 ? <p>Every selected future assignment has a replacement.</p> : null}
+                      {!missingSuffixReplacements ? <p>Every selected future assignment has a replacement.</p> : null}
                       <div className="game-edit-actions">
-                        <button type="button" onClick={() => void saveSuffix(false)} disabled={busy || suffixReplacementSlots.length > 0 || !suffixDirty || stalePlan}>{busy ? 'Saving...' : 'Save manual suffix'}</button>
+                        <button type="button" onClick={() => void saveSuffix(false)} disabled={busy || missingSuffixReplacements || !suffixDirty || stalePlan}>{busy ? 'Saving...' : 'Save manual suffix'}</button>
                         <button type="button" className="button-secondary" disabled={busy} onClick={cancelSuffixEdit}>Cancel suffix changes</button>
                       </div>
                       {warnings.length > 0 ? (

@@ -26,6 +26,23 @@ async function paidRegistration(eventId: string, email: string, sessionId: strin
 }
 
 describe('retryPendingConfirmations', () => {
+  it('retries the persisted message byte-for-byte after live event and parent details change', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const registration = await paidRegistration(event.id, 'original@example.com', 'cs_immutable');
+    const rejected = createDevMailer([]);
+    const mailer = { send: async (message: Parameters<typeof rejected.send>[0]) => {
+      await rejected.send(message);
+      throw new GmailDeliveryError('rejected', 403);
+    } };
+    await sendConfirmation({ prisma, mailer }, registration, event, `${WEB_ORIGIN}/ticket/${registration.qrToken}`);
+    await prisma.emailLog.updateMany({ data: { createdAt: old } });
+    await prisma.registration.update({ where: { id: registration.id }, data: { playerFirstName: 'Corrected', parentEmail: 'changed@example.com' } });
+    await prisma.event.update({ where: { id: event.id }, data: { name: 'Edited', venue: 'Elsewhere' } });
+    const retry = createDevMailer([]);
+    expect(await retryPendingConfirmations({ prisma, mailer: retry, webOrigin: 'https://changed.example' }, now)).toMatchObject({ sent: 1, errors: 0 });
+    expect(retry.sent).toEqual(rejected.sent);
+  });
+
   it('sends stale placeholder and failed confirmations but leaves fresh, capped and unpaid rows alone', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
     const placeholder = await paidRegistration(event.id, 'placeholder@example.com', 'cs_placeholder');

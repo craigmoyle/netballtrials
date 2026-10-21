@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import type { EventDTO, RoundPlanDTO } from '@netball-trials/types';
+import type { EventDTO, PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
 import { PlannerPage } from './PlannerPage';
+import { ApiError } from '../api/client';
 
 afterEach(cleanup);
 
@@ -69,6 +70,98 @@ describe('PlannerPage', () => {
     expect(await screen.findByRole('link', { name: /print selector sheets/i })).toHaveAttribute('href', '/admin/events/e1/sheets');
     expect(screen.getByText('Published revision 2 · 2 rounds')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /regenerate suffix/i })).toBeInTheDocument();
+    expect(client.publishPlan).toHaveBeenCalledWith('e1', 'plan-1');
+  });
+
+  it.each(['publish', 'regenerate'])('does not silently %s a newer revision created by another Admin', async (action) => {
+    const draft = { ...plan(), id: 'displayed-draft', revision: 3 };
+    const published = { ...plan('PUBLISHED'), id: 'displayed-published' };
+    const client = {
+      getEvent: vi.fn().mockResolvedValue(event), getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValue(draft), getPublishedPlan: vi.fn().mockResolvedValue(published),
+      publishPlan: vi.fn().mockRejectedValue(new ApiError(409, 'stale_plan')),
+      regeneratePlan: vi.fn().mockRejectedValue(new ApiError(409, 'stale_plan')),
+    };
+    renderPlanner(client);
+    await screen.findByText('Draft revision 3 · 2 rounds');
+    fireEvent.click(screen.getByRole('button', { name: action === 'publish' ? 'Publish revision' : 'Regenerate suffix' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/newer revision/i);
+    if (action === 'publish') expect(client.publishPlan).toHaveBeenCalledWith('e1', 'displayed-draft');
+    else expect(client.regeneratePlan).toHaveBeenCalledWith('e1', 1, 'displayed-published');
+    expect(screen.getByText('Draft revision 3 · 2 rounds')).toBeInTheDocument();
+    expect(client.getPlan).toHaveBeenCalledTimes(1);
+    expect(client.getPublishedPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['publish', 'regenerate'])('preserves the displayed revisions when %s returns the API stale-source gap', async (action) => {
+    const published = { ...plan('PUBLISHED'), id: 'published-1' };
+    const gap = { code: 'no_solution', message: action === 'publish'
+      ? 'A newer revision has been published since this draft was created. Review the current plan and regenerate if needed.'
+      : 'The source plan is not the active published revision.' };
+    const client = {
+      getEvent: vi.fn().mockResolvedValue(event), getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValue(plan()), getPublishedPlan: vi.fn().mockResolvedValue(published),
+      publishPlan: vi.fn().mockResolvedValue({ ok: false, gaps: [gap] }),
+      regeneratePlan: vi.fn().mockResolvedValue({ ok: false, gaps: [gap] }),
+    };
+    renderPlanner(client);
+    await screen.findByText('Draft revision 2 · 2 rounds');
+    fireEvent.click(screen.getByRole('button', { name: action === 'publish' ? 'Publish revision' : 'Regenerate suffix' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(gap.message);
+    expect(screen.getByText('Draft revision 2 · 2 rounds')).toBeInTheDocument();
+    expect(screen.getByText('Active published revision 2 · 2 rounds')).toBeInTheDocument();
+    if (action === 'publish') expect(client.publishPlan).toHaveBeenCalledWith('e1', 'plan-1');
+    else expect(client.regeneratePlan).toHaveBeenCalledWith('e1', 1, 'published-1');
+    expect(client.getPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['generate', 'success'], ['publish', 'success'], ['regenerate', 'success'],
+    ['generate', 'gaps'], ['publish', 'gaps'], ['regenerate', 'gaps'],
+    ['generate', 'failure'], ['publish', 'failure'], ['regenerate', 'failure'],
+  ])('ignores a delayed %s %s after a direct event change, including its busy cleanup', async (action, outcome) => {
+    type Result = { ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] };
+    let resolveOld!: (result: Result) => void;
+    let rejectOld!: (reason: Error) => void;
+    let resolveNew!: (result: Result) => void;
+    const oldAction = new Promise<Result>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    const newAction = new Promise<Result>((resolve) => { resolveNew = resolve; });
+    const request = vi.fn().mockReturnValueOnce(oldAction).mockReturnValueOnce(newAction);
+    const draft = { ...plan(), id: 'draft-1' };
+    const nextDraft = { ...draft, id: 'draft-2', eventId: 'e2', revision: 4 };
+    const client = {
+      getEvent: vi.fn().mockImplementation((id) => Promise.resolve({ ...event, id, name: id === 'e1' ? 'Trials' : 'Next trials' })),
+      getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValueOnce(draft).mockResolvedValueOnce(nextDraft),
+      getPublishedPlan: vi.fn().mockResolvedValue(plan('PUBLISHED')),
+      generatePlan: request, publishPlan: request, regeneratePlan: request,
+    };
+    const page = renderPlanner(client);
+    await screen.findByText('Draft revision 2 · 2 rounds');
+    const label = action === 'generate' ? 'Generate draft' : action === 'publish' ? 'Publish revision' : 'Regenerate suffix';
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(request).toHaveBeenCalledTimes(1);
+
+    page.rerender(<MemoryRouter><PlannerPage client={client as any} eventId="e2" /></MemoryRouter>);
+    await screen.findByText('Draft revision 4 · 2 rounds');
+    expect(screen.getByRole('button', { name: label })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(request).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      if (outcome === 'failure') rejectOld(new ApiError(409, 'stale_plan'));
+      else if (outcome === 'gaps') resolveOld({ ok: false, gaps: [{ code: 'no_solution', message: 'Old event gap' }] });
+      else resolveOld({ ok: true, plan: { ...plan(action === 'publish' ? 'PUBLISHED' : 'DRAFT'), revision: 99 } });
+    });
+
+    expect(screen.getByText('Draft revision 4 · 2 rounds')).toBeInTheDocument();
+    expect(screen.queryByText(/revision 99/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Working...' }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+
+    await act(async () => { resolveNew({ ok: true, plan: { ...nextDraft, revision: 5 } }); });
+    expect(screen.getByText('Draft revision 5 · 2 rounds')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: label })).toBeEnabled();
   });
 
   it('renders API load and publish failures without losing the settings summary', async () => {

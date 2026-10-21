@@ -157,14 +157,39 @@ describe('apiClient', () => {
     const suffix = { sourcePlanId: 'plan-1', fromRound: 3, removedRegistrationIds: ['player-7'], overrideWarnings: false,
       slots: [{ round: 3, court: 1, position: 'GS', team: 0, registrationId: 'player-8' }] };
 
-    await expect(client.regeneratePlan('event-1', 3, ['player-7'])).resolves.toEqual({ ok: true, plan });
-    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ fromRound: 3, removedRegistrationIds: ['player-7'] });
+    await expect(client.regeneratePlan('event-1', 3, 'plan-1', ['player-7'])).resolves.toEqual({ ok: true, plan });
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ fromRound: 3, sourcePlanId: 'plan-1', removedRegistrationIds: ['player-7'] });
     await expect(client.saveManualSuffix('event-1', suffix)).resolves.toEqual({ ok: true, plan });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://api.test/api/admin/events/event-1/plan/regenerate',
       'http://api.test/api/admin/events/event-1/plan/suffix/manual',
     ]);
     expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual(suffix);
+  });
+
+  it('publishes only the displayed draft and preserves revision conflicts', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"stale_plan"}', { status: 409 }));
+    await expect((apiClient('http://api.test') as any).publishPlan('event-1', 'draft-2')).rejects.toMatchObject({ status: 409, message: 'stale_plan' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ planId: 'draft-2' });
+  });
+
+  it('sends the displayed revisions and exposes API stale-source gaps without implicit retries', async () => {
+    const gap = { code: 'no_solution', message: 'The source plan is not the active published revision.' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ error: 'infeasible', gaps: [gap] }), { status: 422 }));
+    const client = apiClient('http://api.test');
+    await expect(client.regeneratePlan('event-1', 2, 'published-1')).resolves.toEqual({ ok: false, gaps: [gap] });
+    await expect(client.publishPlan('event-1', 'draft-2')).resolves.toEqual({ ok: false, gaps: [gap] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ fromRound: 2, sourcePlanId: 'published-1' });
+    expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual({ planId: 'draft-2' });
+  });
+
+  it('sends an explicit policy reset and preserves the server default URL', async () => {
+    const policyUrl = 'https://chisholmnetball.com/selection-policy/';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 'e1', policyUrl }), { status: 200 }));
+    await expect(apiClient('http://api.test').updateEvent('e1', { policyUrl: null })).resolves.toMatchObject({ policyUrl });
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ policyUrl: null });
   });
 
   it('fetches the public upcoming-trial list', async () => {

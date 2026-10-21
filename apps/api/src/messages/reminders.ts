@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
+import { mailRegistrationEligibility } from '../mail/lifecycle';
 import { localDateTimeToUtc } from '../time/melbourne';
 import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage } from './service';
 
@@ -69,13 +70,29 @@ export async function sendDueReminders(
       failed += result.failedThisRun;
       ambiguous += result.ambiguousThisRun;
     } catch (error) {
-      // The batch already exists with different content because event details were
-      // edited after the first run. That is fine once every row went out; otherwise
-      // the unsent rows can no longer be retried automatically, so report them.
+      // Content stays immutable; report both unsent rows and households that top-up could not add.
       if (error instanceof EmailBatchConflictError) {
         const batchId = `reminder:${event.id}:${event.eventDate.toISOString().slice(0, 10)}`;
-        const unsent = await deps.prisma.emailLog.count({ where: { batchId, status: { in: ['PENDING', 'FAILED', 'AMBIGUOUS'] } } });
+        const existing = await deps.prisma.emailLog.findMany({ where: { eventId: event.id, batchId }, select: { to: true, status: true } });
+        const unsent = existing.filter((row) => ['PENDING', 'FAILED', 'AMBIGUOUS'].includes(row.status)).length;
         if (unsent > 0) errors.push({ eventId: event.id, message: `reminder_changed_with_${unsent}_unsent` });
+        const registrations = await deps.prisma.registration.findMany({
+          where: { eventId: event.id, ...mailRegistrationEligibility('reminder', now) },
+          select: { id: true, parentEmail: true },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        });
+        const represented = new Set(existing.map((row) => row.to.trim().toLowerCase()));
+        const omitted: string[] = [];
+        for (const registration of registrations) {
+          const email = registration.parentEmail.trim().toLowerCase();
+          if (!email || represented.has(email)) continue;
+          represented.add(email);
+          omitted.push(registration.id);
+        }
+        if (omitted.length > 0) errors.push({
+          eventId: event.id,
+          message: `reminder_changed_with_${omitted.length}_omitted: Send an updated message manually to the paid households for registrations ${omitted.join(', ')}. The existing reminder was not changed or resent.`,
+        });
         continue;
       }
       failed += 1;
