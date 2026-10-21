@@ -12,7 +12,7 @@ afterEach(() => {
 const savedEvent = {
   id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
   eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+  gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
   rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
   minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'DRAFT',
 };

@@ -156,6 +156,7 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/register/${fixtures.mainEventId}`);
   await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
+  await expect(page.getByText(/arrival time 08:30 · start time 09:00/i)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expect(page.getByRole('option', { name: 'MENA' })).toBeAttached();
   await expectAccessible(page);
@@ -190,6 +191,8 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   // This pre-seeded ticket fixture exercises the ticket page only; the fake Checkout remains pending.
   await page.goto(`/ticket/${fixtures.ticketToken}`);
   await expect(page.getByRole('heading', { name: 'Ada Ticket' })).toBeVisible();
+  await expect(page.getByText('Arrival time 08:30')).toBeVisible();
+  await expect(page.getByText('Start time 09:00')).toBeVisible();
   await expect(page.getByRole('img', { name: /check-in qr code for ada ticket/i })).toBeVisible();
   await expect(page.getByText(/parent1@example\.test/i)).toHaveCount(0);
   await expectAccessible(page);
@@ -237,6 +240,9 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
 
   await page.getByRole('link', { name: 'Events', exact: true }).click();
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
+  await expect(page.getByLabel('Arrival time')).toHaveValue('08:30');
+  await expect(page.getByLabel('Start time')).toHaveValue('09:00');
+  await expect(page.getByLabel('Finish time')).toHaveValue('12:00');
   await openEventTool(page, 'Roster and export');
   await expect(page.getByRole('heading', { name: 'Event roster' })).toBeVisible();
   await expect(page.getByText(/Player1 Trial/)).toBeVisible();
@@ -356,6 +362,7 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Plan rounds');
+  await expect(page.getByText(/playing window 09:00–12:00/i)).toBeVisible();
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await expect(page.getByRole('button', { name: 'Publish revision' })).toBeVisible();
   await page.getByRole('button', { name: 'Publish revision' }).click();

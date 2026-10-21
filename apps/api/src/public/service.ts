@@ -11,7 +11,7 @@ export type PublicEvent = {
   section: string;
   eventDate: string;
   venue: string;
-  firstWhistle: string;
+  gameStartTime: string;
   startTime: string;
   competitionYear: number;
   registrationFeeCents: number;
@@ -26,7 +26,7 @@ export type PublicEvent = {
 export type PublicTicket = {
   playerName: string;
   qrCode: string;
-  event: { name: string; eventDate: string; venue: string; startTime: string; firstWhistle: string };
+  event: { name: string; eventDate: string; venue: string; startTime: string; gameStartTime: string };
   bibNumber: number | null;
 };
 
@@ -37,7 +37,7 @@ export async function listPublicEvents(prisma: PrismaClient): Promise<PublicTria
     orderBy: [{ eventDate: 'asc' }, { name: 'asc' }],
     select: {
       id: true, name: true, division: true, section: true, eventDate: true, venue: true,
-      startTime: true, firstWhistle: true, registrationFeeCents: true, status: true,
+      startTime: true, gameStartTime: true, registrationFeeCents: true, status: true,
     },
   });
   return events.map((event) => ({
@@ -69,7 +69,7 @@ export async function getTicket(
       eventDate: registration.event.eventDate.toISOString(),
       venue: registration.event.venue,
       startTime: registration.event.startTime,
-      firstWhistle: registration.event.firstWhistle,
+      gameStartTime: registration.event.gameStartTime,
     },
     bibNumber: registration.checkedInAt ? registration.bibNumber : null,
   };
@@ -106,7 +106,7 @@ export async function getPublicEvent(
     section: event.section,
     eventDate: event.eventDate.toISOString(),
     venue: event.venue,
-    firstWhistle: event.firstWhistle,
+    gameStartTime: event.gameStartTime,
     startTime: event.startTime,
     competitionYear: event.competitionYear,
     registrationFeeCents: event.registrationFeeCents,

@@ -4,7 +4,7 @@ import { eventInputSchema, eventPatchSchema } from '../../events/schemas';
 const event = {
   name: '15/U', competitionYear: 2027, division: '15/U', section: 'Ladies',
   eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 4,
+  gameStartTime: '09:00', registrationFeeCents: 3500, courts: 4,
   rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2,
 };
 
@@ -16,6 +16,12 @@ describe('event input boundaries', () => {
   it('accepts only HTTP or HTTPS policy URLs', () => {
     expect(eventInputSchema.safeParse({ ...event, policyUrl: 'javascript:alert(1)' }).success).toBe(false);
     expect(eventInputSchema.safeParse({ ...event, policyUrl: 'https://example.test/policy.pdf' }).success).toBe(true);
+  });
+
+  it('uses gameStartTime and rejects removed whistle fields', () => {
+    expect(eventInputSchema.safeParse(event).success).toBe(true);
+    expect(eventInputSchema.safeParse({ ...event, firstWhistle: '09:00' }).success).toBe(false);
+    expect(eventInputSchema.safeParse({ ...event, lastWhistle: '11:30' }).success).toBe(false);
   });
 
   it('keeps creation duration defaults out of partial updates', () => {

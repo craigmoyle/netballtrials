@@ -24,7 +24,7 @@ function CurrentPath() {
 const savedEvent = {
   id: 'e1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
   eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+  gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
   rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
   minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
 };
@@ -87,6 +87,10 @@ describe('EventFormPage', () => {
 
     expect(await screen.findByText('15/U Ladies · 12 September 2027')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Event details' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Arrival time')).toHaveValue('08:30');
+    expect(screen.getByLabelText('Start time')).toHaveValue('09:00');
+    expect(screen.getByLabelText('Finish time')).toHaveValue('12:00');
+    expect(screen.queryByLabelText(/whistle/i)).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Trial format' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Selection settings' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Event controls' })).not.toBeInTheDocument();
@@ -354,7 +358,9 @@ describe('EventFormPage', () => {
     await waitFor(() => expect(document.activeElement).toBe(summary));
     expect(screen.getByLabelText('Event date')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Registration fee (AUD)')).toHaveAttribute('aria-invalid', 'true');
-    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ registrationFeeCents: 3500 }));
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
+      startTime: '08:30', gameStartTime: '09:00', endTime: '12:00', registrationFeeCents: 3500,
+    }));
     expect(screen.getByLabelText('Event name')).toHaveValue('15/U Ladies');
   });
   it('treats an empty fee as missing instead of saving a free event', async () => {

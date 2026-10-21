@@ -405,7 +405,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   return (
     <section className="public-page registration-page">
       <h1>{event.name}</h1>
-      <p>{formatTrialDate(event.eventDate)} at {event.venue} · arrival {event.startTime} · first whistle {event.firstWhistle}</p>
+      <p>{formatTrialDate(event.eventDate)} at {event.venue} · arrival time {event.startTime} · start time {event.gameStartTime}</p>
       <p>Registration fee: {fee}</p>
       <section className="registration-eligibility-summary" aria-labelledby="registration-eligibility-heading">
         <div className="registration-eligibility-heading">

@@ -25,7 +25,7 @@ describe('anonymizeExpiredRegistrations', () => {
       },
     });
     const plan = await prisma.roundPlan.create({
-      data: { eventId: old.id, revision: 1, seed: 1, status: 'PUBLISHED', rounds: 1, courts: 1, playMinutes: 8, changeoverMinutes: 2, windowMinutes: 8, rank1Min: 0, rank2Min: 0, rank3Min: 0, eventName: old.name, eventDate: old.eventDate, venue: old.venue, firstWhistle: old.firstWhistle },
+      data: { eventId: old.id, revision: 1, seed: 1, status: 'PUBLISHED', rounds: 1, courts: 1, playMinutes: 8, changeoverMinutes: 2, windowMinutes: 8, rank1Min: 0, rank2Min: 0, rank3Min: 0, eventName: old.name, eventDate: old.eventDate, venue: old.venue, gameStartTime: old.gameStartTime },
     });
     await prisma.roundPlanPlayer.create({ data: { planId: plan.id, registrationId: reg.id, playerName: 'Ada Lovelace', bibNumber: 7, rank1Position: 'GS', optInExtraPositions: false } });
     const historicIds = Array.from({ length: 13 }, (_, index) => `historic-${index}`);

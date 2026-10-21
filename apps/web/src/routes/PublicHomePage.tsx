@@ -51,8 +51,8 @@ export function PublicHomePage({ client }: { client: Client }) {
                       <dl className="public-trial-details">
                         <div><dt>Date</dt><dd>{formatTrialDate(trial.eventDate)}</dd></div>
                         <div><dt>Venue</dt><dd>{trial.venue}</dd></div>
-                        <div><dt>Arrival</dt><dd>{trial.startTime}</dd></div>
-                        <div><dt>First whistle</dt><dd>{trial.firstWhistle}</dd></div>
+                        <div><dt>Arrival time</dt><dd>{trial.startTime}</dd></div>
+                        <div><dt>Start time</dt><dd>{trial.gameStartTime}</dd></div>
                         <div><dt>Registration fee</dt><dd>{formatFee(trial.registrationFeeCents, trial.currency)}</dd></div>
                       </dl>
                     </div>

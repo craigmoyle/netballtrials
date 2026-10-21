@@ -9,7 +9,7 @@ type FormState = Record<string, string>;
 
 const EMPTY: FormState = {
   name: '', competitionYear: String(new Date().getFullYear() + 1), division: '', section: 'Ladies',
-  eventDate: '', venue: '', startTime: '08:30', endTime: '12:00', firstWhistle: '09:00', lastWhistle: '11:30',
+  eventDate: '', venue: '', startTime: '08:30', endTime: '12:00', gameStartTime: '09:00',
   registrationFeeCents: '0', courts: '1', rank1Min: '2', rank2Min: '1', rank3Min: '1',
   playMinutes: '8', changeoverMinutes: '2', minAge: '5', maxAge: '99', policyUrl: '',
 };
@@ -30,9 +30,8 @@ const FIELD_GROUPS: { legend: string; fields: { name: string; label: string; typ
       { name: 'eventDate', label: 'Event date', type: 'date' },
       { name: 'venue', label: 'Venue', type: 'text' },
       { name: 'startTime', label: 'Arrival time', type: 'time' },
+      { name: 'gameStartTime', label: 'Start time', type: 'time' },
       { name: 'endTime', label: 'Finish time', type: 'time' },
-      { name: 'firstWhistle', label: 'First whistle', type: 'time' },
-      { name: 'lastWhistle', label: 'Last whistle', type: 'time' },
       { name: 'registrationFeeCents', label: 'Registration fee (AUD)', type: 'number' },
     ],
   },
@@ -138,9 +137,8 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
           eventDate: event.eventDate.slice(0, 10),
           venue: event.venue,
           startTime: event.startTime,
+          gameStartTime: event.gameStartTime,
           endTime: event.endTime,
-          firstWhistle: event.firstWhistle,
-          lastWhistle: event.lastWhistle,
           registrationFeeCents: (event.registrationFeeCents / 100).toFixed(2),
           courts: String(event.courts),
           rank1Min: String(event.rank1Min),

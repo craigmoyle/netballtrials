@@ -14,8 +14,8 @@ function toMinutes(value: string): number {
   return hours * 60 + minutes;
 }
 
-function eventWindowMinutes(event: { firstWhistle: string; lastWhistle: string }): number {
-  return Math.max(1, toMinutes(event.lastWhistle) - toMinutes(event.firstWhistle));
+function eventWindowMinutes(event: { gameStartTime: string; endTime: string }): number {
+  return Math.max(1, toMinutes(event.endTime) - toMinutes(event.gameStartTime));
 }
 
 export async function lockEvent(tx: Prisma.TransactionClient, eventId: string): Promise<boolean> {
@@ -27,9 +27,9 @@ export async function lockEvent(tx: Prisma.TransactionClient, eventId: string): 
 export function settingsMatch(snapshot: RoundPlan, event: Prisma.EventGetPayload<{}>): boolean {
   return snapshot.eventId === event.id && snapshot.eventName === event.name &&
     snapshot.eventDate.toISOString().slice(0, 10) === event.eventDate.toISOString().slice(0, 10) &&
-    snapshot.venue === event.venue && snapshot.firstWhistle === event.firstWhistle &&
+    snapshot.venue === event.venue && snapshot.gameStartTime === event.gameStartTime &&
     snapshot.courts === event.courts && snapshot.playMinutes === event.playMinutes &&
-    snapshot.changeoverMinutes === event.changeoverMinutes && snapshot.windowMinutes === eventWindowMinutes(event) &&
+    snapshot.changeoverMinutes === event.changeoverMinutes && snapshot.windowMinutes <= eventWindowMinutes(event) &&
     snapshot.rank1Min === event.rank1Min && snapshot.rank2Min === event.rank2Min && snapshot.rank3Min === event.rank3Min;
 }
 
@@ -195,7 +195,7 @@ async function saveDraftRevision(
       eventName: built.event.name,
       eventDate: built.event.eventDate,
       venue: built.event.venue,
-      firstWhistle: built.event.firstWhistle,
+      gameStartTime: built.event.gameStartTime,
     },
   });
   await tx.roundPlanPlayer.createMany({
@@ -253,7 +253,7 @@ function sameRoster(a: PlannerInput, b: PlannerInput): boolean {
 function sameEvent(a: BuiltInput, b: BuiltInput): boolean {
   return a.event.id === b.event.id && a.event.name === b.event.name &&
     a.event.eventDate.getTime() === b.event.eventDate.getTime() && a.event.venue === b.event.venue &&
-    a.event.firstWhistle === b.event.firstWhistle && a.event.lastWhistle === b.event.lastWhistle &&
+    a.event.gameStartTime === b.event.gameStartTime && a.event.endTime === b.event.endTime &&
     a.event.courts === b.event.courts && a.event.playMinutes === b.event.playMinutes &&
     a.event.changeoverMinutes === b.event.changeoverMinutes && a.event.rank1Min === b.event.rank1Min &&
     a.event.rank2Min === b.event.rank2Min && a.event.rank3Min === b.event.rank3Min;

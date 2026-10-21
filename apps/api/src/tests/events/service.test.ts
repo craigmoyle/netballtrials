@@ -7,7 +7,7 @@ import { createEvent, listEvents, updateEvent } from '../../events/service';
 const base = {
   name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
   eventDate: '2026-09-12', venue: 'State Netball Centre', startTime: '08:30', endTime: '12:00',
-  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 5,
+  gameStartTime: '09:00', registrationFeeCents: 3500, courts: 5,
   rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2, minAge: 12, maxAge: 15,
 };
 
@@ -17,11 +17,16 @@ describe('validateWindow', () => {
   it('accepts ordered times', () => {
     expect(validateWindow(base)).toEqual([]);
   });
-  it('names the field when the whistles are reversed', () => {
-    expect(validateWindow({ ...base, lastWhistle: '08:45' })).toContain('lastWhistle');
+  it('requires game start to be no earlier than arrival', () => {
+    expect(validateWindow({ ...base, gameStartTime: '08:00' })).toContain('gameStartTime');
+    expect(validateWindow({ ...base, gameStartTime: '08:30' })).toEqual([]);
   });
-  it('names the field when the first whistle precedes arrival', () => {
-    expect(validateWindow({ ...base, firstWhistle: '08:00' })).toContain('firstWhistle');
+  it('requires finish not to be earlier than game start', () => {
+    expect(validateWindow({ ...base, endTime: '08:45' })).toContain('endTime');
+  });
+  it('allows finish to equal game start but rejects an earlier finish', () => {
+    expect(validateWindow({ ...base, endTime: '09:00' })).toEqual([]);
+    expect(validateWindow({ ...base, endTime: '08:59' })).toContain('endTime');
   });
 });
 

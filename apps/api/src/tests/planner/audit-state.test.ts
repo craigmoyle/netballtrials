@@ -54,13 +54,13 @@ it('blocks root generation and legacy root publication after publishing an early
   expect(slots(active.slots.filter((slot) => slot.round === 1))).toEqual(slots(plan.slots.filter((slot) => slot.round === 1)));
 });
 
-it.each(['11:30', '09:18'])('refreshes a non-frozen published plan using the active roster minimum (last whistle %s)', async (lastWhistle) => {
+it.each(['12:00', '09:18'])('refreshes a non-frozen published plan using the active roster minimum (finish %s)', async (endTime) => {
   const { event, plan } = await published();
   const leaver = plan.players.find((player) => player.bibNumber === 29)!.registrationId;
   const suffix = await regenerateFromRound(prisma, event.id, 1, now, plan.id, [leaver]);
   if (!suffix.ok) throw new Error(JSON.stringify(suffix));
   expect((await publishPlan(prisma, event.id, suffix.plan.id)).ok).toBe(true);
-  await prisma.event.update({ where: { id: event.id }, data: { lastWhistle } });
+  await prisma.event.update({ where: { id: event.id }, data: { endTime } });
   const refreshed = await generateDraftPlan(prisma, event.id, 1);
   expect(refreshed.ok, JSON.stringify(refreshed)).toBe(true);
   if (!refreshed.ok) return;

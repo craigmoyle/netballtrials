@@ -33,7 +33,7 @@ function render(element: ReactElement) {
 function publicEvent() {
   return {
     id: 'e1', name: '15/U Ladies', competitionYear: 2027, eventDate: '2026-09-12T00:00:00.000Z',
-    venue: 'SNC', startTime: '08:30', firstWhistle: '09:00', registrationFeeCents: 3500, currency: 'aud',
+    venue: 'SNC', startTime: '08:30', gameStartTime: '09:00', registrationFeeCents: 3500, currency: 'aud',
     policyUrl: 'https://chisholmnetball.com/selection-policy/', minAge: 12, maxAge: 15,
     division: '15/U', section: 'Ladies', courts: 5, status: 'OPEN',
   };
@@ -56,7 +56,7 @@ function client(register: ReturnType<typeof vi.fn>, extra: Record<string, unknow
 }
 
 function adminEvent() {
-  return { ...publicEvent(), status: 'CLOSED', endTime: '12:00', lastWhistle: '11:30', rank1Min: 2, rank2Min: 1, rank3Min: 1 };
+  return { ...publicEvent(), status: 'CLOSED', endTime: '12:00', rank1Min: 2, rank2Min: 1, rank3Min: 1 };
 }
 
 async function fillRegistrationForm() {
@@ -77,6 +77,7 @@ describe('RegisterPage', () => {
     const register = vi.fn().mockResolvedValue({ status: 'received' });
     const api = client(register);
     render(<RegisterPage client={api} eventId="e1" />);
+    expect(await screen.findByText(/arrival time 08:30 · start time 09:00/i)).toBeInTheDocument();
     await fillRegistrationForm();
     expect(screen.getByRole('button', { name: 'Submit registration' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));

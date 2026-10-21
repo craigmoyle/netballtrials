@@ -63,8 +63,7 @@ model Event {
   venue                String
   startTime            String
   endTime              String
-  firstWhistle         String
-  lastWhistle          String
+  gameStartTime        String
   registrationFeeCents Int
   courts               Int
   rank1Min             Int
@@ -253,7 +252,7 @@ model RoundPlan {
   eventName         String            @default("")
   eventDate         DateTime          @default(dbgenerated("'1900-01-01'::date")) @db.Date
   venue             String            @default("")
-  firstWhistle      String            @default("00:00")
+  gameStartTime     String            @default("00:00")
   createdAt         DateTime          @default(now())
   publishedAt       DateTime?
   validationWarnings Json              @default("[]")

@@ -81,7 +81,7 @@ function serializePlan(plan: RoundPlan & { slots: RoundSlot[]; players: RoundPla
     eventName: plan.eventName,
     eventDate: plan.eventDate.toISOString(),
     venue: plan.venue,
-    firstWhistle: plan.firstWhistle,
+    gameStartTime: plan.gameStartTime,
     courts: plan.courts,
     windowMinutes: plan.windowMinutes,
     rank1Min: plan.rank1Min,

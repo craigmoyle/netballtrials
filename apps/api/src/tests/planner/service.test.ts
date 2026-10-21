@@ -14,8 +14,8 @@ async function inputForEvent(eventId: string, rounds: number) {
     where: { eventId, status: 'PAID', checkedInAt: { not: null } },
     orderBy: { bibNumber: 'asc' },
   });
-  const [startHour, startMinute] = event.firstWhistle.split(':').map(Number);
-  const [endHour, endMinute] = event.lastWhistle.split(':').map(Number);
+  const [startHour, startMinute] = event.gameStartTime.split(':').map(Number);
+  const [endHour, endMinute] = event.endTime.split(':').map(Number);
   return {
     courts: event.courts,
     rounds,
@@ -118,9 +118,33 @@ describe('plan service', () => {
     if (first.ok && second.ok) expect(second.plan.publishedAt).toEqual(first.plan.publishedAt);
   });
 
+  it('keeps a legacy shorter whistle window valid after adopting finish time as the playing-window end', async () => {
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    const draft = await generateDraftPlan(prisma, event.id, 1);
+    if (!draft.ok) throw new Error(JSON.stringify(draft));
+    expect((await publishPlan(prisma, event.id, draft.plan.id)).ok).toBe(true);
+    // Existing deployments stored first-to-last-whistle (150m); the new end time
+    // expands the window to 180m while preserving the same game start.
+    await prisma.roundPlan.update({ where: { id: draft.plan.id }, data: { windowMinutes: 150 } });
+    const result = await regenerateFromRound(prisma, event.id, 2, new Date(), draft.plan.id);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+  });
+
+  it('accepts an existing plan window that is shorter than the new start-to-finish window', async () => {
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    const draft = await generateDraftPlan(prisma, event.id, 1);
+    if (!draft.ok) throw new Error('setup failed');
+    const published = await publishPlan(prisma, event.id, draft.plan.id);
+    if (!published.ok) throw new Error('publish setup failed');
+    // The legacy whistle interval was 150 minutes; the new start-to-finish interval is 180.
+    await prisma.roundPlan.update({ where: { id: published.plan.id }, data: { windowMinutes: 150 } });
+    const refreshed = await regenerateFromRound(prisma, event.id, 2, new Date(), published.plan.id);
+    expect(refreshed.ok, JSON.stringify(refreshed)).toBe(true);
+  });
+
   it('rejects a late arrival that cannot fit the frozen prefix and leaves the published revision unchanged', async () => {
     const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
-    await prisma.event.update({ where: { id: event.id }, data: { lastWhistle: '09:28' } });
+    await prisma.event.update({ where: { id: event.id }, data: { endTime: '09:28' } });
     const first = await generateDraftPlan(prisma, event.id, 1);
     if (!first.ok) throw new Error('setup failed');
     const published = await publishPlan(prisma, event.id, first.plan.id);

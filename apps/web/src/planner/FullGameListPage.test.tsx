@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, Link, RouterProvider, useParams } from 'react-router-dom';
-import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type PlanRevisionSummaryDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO } from '@netball-trials/types';
+import { POSITIONS, type EventCourtColorDTO, type GamePlayerDTO, type PlanRevisionSummaryDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO } from '@netball-trials/types';
 import { ApiError } from '../api/client';
 import { FullGameListPage } from './FullGameListPage';
 
@@ -15,10 +15,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const event: EventDTO = {
+const event = {
   id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
   eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-  firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 2,
+  gameStartTime: '09:00', registrationFeeCents: 3500, courts: 2,
   rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
   minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
 };
@@ -57,7 +57,7 @@ function makePlan(overrides: Partial<RoundPlanDTO> = {}): RoundPlanDTO {
     id: 'plan-1', eventId: event.id, status: 'PUBLISHED', revision: 1, sourcePlanId: null, frozenThroughRound: 0,
     seed: 1, rounds: 2, courts: 2, playMinutes: 8, changeoverMinutes: 2, windowMinutes: 150,
     rank1Min: 1, rank2Min: 0, rank3Min: 0, eventName: event.name, eventDate: event.eventDate,
-    venue: event.venue, firstWhistle: event.firstWhistle, createdAt: '2027-08-01T00:00:00.000Z',
+    venue: event.venue, gameStartTime: event.gameStartTime, createdAt: '2027-08-01T00:00:00.000Z',
     publishedAt: '2027-08-01T00:00:00.000Z', slots, players, validationWarnings: [], ...overrides,
   };
 }
@@ -167,8 +167,8 @@ function openRosterChanges() {
 
 describe('FullGameListPage', () => {
   it('keeps the page heading stable while the published schedule loads', async () => {
-    let resolveEvent!: (loadedEvent: EventDTO) => void;
-    const pendingEvent = new Promise<EventDTO>((resolve) => { resolveEvent = resolve; });
+    let resolveEvent!: (loadedEvent: typeof event) => void;
+    const pendingEvent = new Promise<typeof event>((resolve) => { resolveEvent = resolve; });
     const client = makeClient({ getEvent: vi.fn(() => pendingEvent), getPublishedPlan: vi.fn().mockResolvedValue(null), getPlanRevisions: vi.fn().mockResolvedValue([]) });
     renderPage(client);
     const heading = screen.getByRole('heading', { name: 'Full Game List' });
@@ -220,11 +220,11 @@ describe('FullGameListPage', () => {
   });
 
   it('clears the previous event context while a different event loads', async () => {
-    let holdSecondEvent!: Promise<EventDTO>;
+    let holdSecondEvent!: Promise<typeof event>;
     const client = makeClient();
     const router = renderPageWithRouter(client);
     await screen.findByText('Active revision 2');
-    holdSecondEvent = new Promise<EventDTO>(() => undefined);
+    holdSecondEvent = new Promise<typeof event>(() => undefined);
     client.getEvent.mockReturnValueOnce(holdSecondEvent);
 
     await router.navigate('/admin/events/event-2/games');

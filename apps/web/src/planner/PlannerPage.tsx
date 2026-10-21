@@ -124,7 +124,7 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
       <h1>Round planner</h1>
       <p>{event.name} · {event.division} {event.section}</p>
       <p>
-        Current settings: {event.courts} courts, {event.playMinutes}-minute games, {event.changeoverMinutes}-minute changeover; rank minimums {event.rank1Min}/{event.rank2Min}/{event.rank3Min}; playing window {event.firstWhistle}–{event.lastWhistle}.
+        Current settings: {event.courts} courts, {event.playMinutes}-minute games, {event.changeoverMinutes}-minute changeover; rank minimums {event.rank1Min}/{event.rank2Min}/{event.rank3Min}; playing window {event.gameStartTime}–{event.endTime}.
       </p>
       <p>
         {preview.checkedInPlayers} checked-in players. Minimum round lower bound: {preview.minimumRounds}. At this lower bound, play requires {preview.requiredMinutes} minutes of the {preview.windowMinutes}-minute window.

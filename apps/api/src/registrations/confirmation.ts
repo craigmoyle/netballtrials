@@ -10,7 +10,7 @@ export type ConfirmationInput = {
     name: string;
     eventDate: string;
     venue: string;
-    firstWhistle: string;
+    gameStartTime: string;
   };
   ticketUrl: string;
   qrCid: string;
@@ -35,7 +35,7 @@ function escapeHtml(value: string): string {
 
 export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
   const { playerName, event, ticketUrl, qrCid, policyUrl } = input;
-  const when = `${event.eventDate} at ${event.firstWhistle}`;
+  const when = `${event.eventDate} at ${event.gameStartTime}`;
   const subject = `Trial registration confirmed: ${playerName} (${event.name})`;
   const text = [
     `${playerName} is registered for ${event.name}.`,
@@ -80,7 +80,7 @@ export async function sendConfirmation(
     venue: string;
     startTime: string;
     endTime: string;
-    firstWhistle: string;
+    gameStartTime: string;
   },
   ticketUrl: string,
   options: { batchId?: string } = {},
@@ -90,7 +90,7 @@ export async function sendConfirmation(
   const calendar = buildTrialCalendar(event, `${registration.id}@chisholmnetball.com`, registration.paidAt ?? undefined);
   const email = buildConfirmation({
     playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
-    event: { name: event.name, eventDate, venue: event.venue, firstWhistle: event.firstWhistle },
+    event: { name: event.name, eventDate, venue: event.venue, gameStartTime: event.gameStartTime },
     ticketUrl,
     qrCid: 'ticket-qr',
     policyUrl: registration.policyReference,

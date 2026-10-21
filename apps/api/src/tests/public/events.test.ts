@@ -17,6 +17,8 @@ describe('GET /api/public/events/:id', () => {
     expect(body.name).toBe('15/U Ladies');
     expect(body.competitionYear).toBe(2027);
     expect(body.startTime).toBe('08:30');
+    expect(body.gameStartTime).toBe('09:00');
+    expect(body).not.toHaveProperty('lastWhistle');
     expect(body.minAge).toBe(12);
     expect(body.registrationFeeCents).toBe(3500);
     expect(body).not.toHaveProperty('policyDocumentName');

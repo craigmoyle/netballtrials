@@ -309,7 +309,7 @@ async function createPublishedRevision(
       eventName: source.eventName,
       eventDate: source.eventDate,
       venue: source.venue,
-      firstWhistle: source.firstWhistle,
+      gameStartTime: source.gameStartTime,
       publishedAt: now,
       validationWarnings: warnings as unknown as Prisma.InputJsonValue,
     },

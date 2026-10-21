@@ -80,12 +80,12 @@ describe('Public home page', () => {
     apiMocks.listPublicEvents.mockResolvedValue([
       {
         id: 'open-trial', name: '15/U State Titles Trial', division: '15/U', section: 'Ladies',
-        eventDate: '2099-03-01T00:00:00.000Z', venue: 'SNC', startTime: '08:30', firstWhistle: '09:00',
+        eventDate: '2099-03-01T00:00:00.000Z', venue: 'SNC', startTime: '08:30', gameStartTime: '09:00',
         registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
       },
       {
         id: 'closed-trial', name: '17/U State Titles Trial', division: '17/U', section: 'Ladies',
-        eventDate: '2099-04-01T00:00:00.000Z', venue: 'MENA', startTime: '09:00', firstWhistle: '09:30',
+        eventDate: '2099-04-01T00:00:00.000Z', venue: 'MENA', startTime: '09:00', gameStartTime: '09:30',
         registrationFeeCents: 4000, currency: 'aud', status: 'CLOSED',
       },
     ]);
@@ -103,6 +103,11 @@ describe('Public home page', () => {
     expect(await screen.findByRole('heading', { name: '15/U State Titles Trial' })).toBeInTheDocument();
     expect(screen.getByText(/35\.00/)).toBeInTheDocument();
     expect(screen.getByText('1 March 2099')).toBeInTheDocument();
+    const openTrial = screen.getByRole('heading', { name: '15/U State Titles Trial' }).closest('article')!;
+    expect(within(openTrial).getByText('Arrival time')).toBeInTheDocument();
+    expect(within(openTrial).getByText('Start time')).toBeInTheDocument();
+    expect(within(openTrial).getByText('08:30')).toBeInTheDocument();
+    expect(within(openTrial).getByText('09:00')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Register for 15/U State Titles Trial' })).toHaveAttribute('href', '/register/open-trial');
     expect(screen.getByText('Registration closed')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
@@ -158,7 +163,7 @@ describe('App route boundaries', () => {
   it('loads public registration without checking admin authentication', async () => {
     apiMocks.getPublicEvent.mockResolvedValue({
       id: 'event-1', name: 'Trials', division: '15/U', section: 'Ladies', eventDate: '2026-09-12T00:00:00.000Z',
-      venue: 'Chisholm', startTime: '08:30', firstWhistle: '09:00', competitionYear: 2027, registrationFeeCents: 0, currency: 'aud', policyUrl: null,
+      venue: 'Chisholm', startTime: '08:30', gameStartTime: '09:00', competitionYear: 2027, registrationFeeCents: 0, currency: 'aud', policyUrl: null,
       minAge: 12, maxAge: 15, courts: 1, status: 'OPEN',
     });
     renderApp('/register/event-1');
@@ -172,7 +177,7 @@ describe('App route boundaries', () => {
   it('keeps public registration drafts scoped to the current event', async () => {
     apiMocks.getPublicEvent.mockImplementation(async (id: string) => ({
       id, name: `Trial ${id}`, division: '15/U', section: 'Ladies', eventDate: '2026-09-12T00:00:00.000Z',
-      venue: 'Chisholm', startTime: '08:30', firstWhistle: '09:00', competitionYear: 2027,
+      venue: 'Chisholm', startTime: '08:30', gameStartTime: '09:00', competitionYear: 2027,
       registrationFeeCents: 0, currency: 'aud', policyUrl: null, minAge: 12, maxAge: 15, courts: 1, status: 'OPEN',
     }));
     const router = renderApp('/register/event-1');
@@ -241,7 +246,7 @@ describe('App route boundaries', () => {
     apiMocks.getEvent.mockResolvedValue({
       id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
       eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 2,
+      gameStartTime: '09:00', registrationFeeCents: 3500, courts: 2,
       rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
       minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
     });
@@ -288,7 +293,7 @@ describe('App route boundaries', () => {
     apiMocks.getEvent.mockResolvedValue({
       id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
       eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
       rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
       minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
     });
@@ -310,7 +315,7 @@ describe('App route boundaries', () => {
     apiMocks.getEvent.mockResolvedValue({
       id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
       eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
       rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
       minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
     });
@@ -351,7 +356,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
     apiMocks.getEvent.mockResolvedValue({
       id: 'event-1', name: '15/U Ladies', eventDate: '2026-09-12T00:00:00.000Z', venue: 'SNC',
-      startTime: '08:30', firstWhistle: '09:00', competitionYear: 2027, registrationFeeCents: 3500,
+      startTime: '08:30', gameStartTime: '09:00', competitionYear: 2027, registrationFeeCents: 3500,
       currency: 'aud', policyUrl: null, minAge: 12, maxAge: 15,
     });
     renderApp('/admin/events/event-1/day-of-registration');
@@ -384,7 +389,7 @@ describe('App route boundaries', () => {
     apiMocks.getEvent.mockResolvedValue({
       id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
       eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
       rank1Min: 0, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
       minAge: 12, maxAge: 15, policyUrl: null, status: 'OPEN',
     });
@@ -416,7 +421,7 @@ describe('App route boundaries', () => {
     apiMocks.getEvent.mockResolvedValue({
       id: 'event-1', name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
       eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-      firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 1,
+      gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
       rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
       minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
     });
@@ -435,7 +440,7 @@ describe('App route boundaries', () => {
   it('loads the volunteer trial selector without calling the admin session endpoint', async () => {
     apiMocks.listPublicEvents.mockResolvedValue([{
       id: 'event-42', name: '17/U State Titles Trial', division: '17/U', section: 'State Titles',
-      eventDate: '2099-09-12T00:00:00.000Z', venue: 'Chisholm Netball Centre', startTime: '08:30', firstWhistle: '09:00',
+      eventDate: '2099-09-12T00:00:00.000Z', venue: 'Chisholm Netball Centre', startTime: '08:30', gameStartTime: '09:00',
       registrationFeeCents: 3500, currency: 'aud', status: 'CLOSED',
     }]);
     renderApp('/check-in');
@@ -460,7 +465,7 @@ describe('App route boundaries', () => {
   it('requires a trial selection before starting volunteer check-in', async () => {
     apiMocks.listPublicEvents.mockResolvedValue([{
       id: 'event-42', name: '17/U State Titles Trial', division: '17/U', section: 'State Titles',
-      eventDate: '2099-09-12T00:00:00.000Z', venue: 'Chisholm Netball Centre', startTime: '08:30', firstWhistle: '09:00',
+      eventDate: '2099-09-12T00:00:00.000Z', venue: 'Chisholm Netball Centre', startTime: '08:30', gameStartTime: '09:00',
       registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
     }]);
     renderApp('/check-in');

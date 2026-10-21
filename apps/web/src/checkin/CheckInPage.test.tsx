@@ -57,7 +57,7 @@ describe('CheckInPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
 
     await waitFor(() => expect(openCheckIn).toHaveBeenCalledWith(event.id, '1234'));
-    expect(await screen.findByLabelText('Current URL')).toHaveTextContent('/check-in/scan');
+    await waitFor(() => expect(screen.getByLabelText('Current URL')).toHaveTextContent('/check-in/scan'));
   });
 
   it('explains when there are no upcoming trials to choose', async () => {

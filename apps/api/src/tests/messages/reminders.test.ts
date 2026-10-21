@@ -32,7 +32,7 @@ describe('Melbourne event start and reminders', () => {
 
   it('sends to distinct paid parents exactly at the 24-hour startTime boundary and is idempotent', async () => {
     const event = await prisma.event.create({
-      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', firstWhistle: '09:00' },
+      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', gameStartTime: '09:00' },
     });
     await paid(event.id, 'anne@example.com', 'Ada');
     await paid(event.id, 'anne@example.com', 'Bea');
@@ -78,9 +78,9 @@ describe('Melbourne event start and reminders', () => {
     expect(await prisma.emailLog.count()).toBe(1);
   });
 
-  it('uses event start time rather than first whistle for the due window', async () => {
+  it('uses event arrival time rather than game start time for the due window', async () => {
     const event = await prisma.event.create({
-      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', firstWhistle: '09:00' },
+      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', gameStartTime: '09:00' },
     });
     await paid(event.id, 'anne@example.com', 'Ada');
     const result = await sendDueReminders({ prisma, mailer: createDevMailer([]) }, new Date('2026-09-10T22:45:00Z'));

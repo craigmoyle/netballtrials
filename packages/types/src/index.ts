@@ -44,8 +44,7 @@ export interface EventDTO {
   venue: string;
   startTime: string;
   endTime: string;
-  firstWhistle: string;
-  lastWhistle: string;
+  gameStartTime: string;
   registrationFeeCents: number;
   courts: number;
   rank1Min: number;
@@ -88,7 +87,7 @@ export interface PublicEventDTO {
   section: string;
   eventDate: string;
   venue: string;
-  firstWhistle: string;
+  gameStartTime: string;
   startTime: string;
   competitionYear: number;
   registrationFeeCents: number;
@@ -108,7 +107,7 @@ export interface PublicTrialDTO {
   eventDate: string;
   venue: string;
   startTime: string;
-  firstWhistle: string;
+  gameStartTime: string;
   registrationFeeCents: number;
   currency: string;
   status: 'OPEN' | 'CLOSED';
@@ -124,7 +123,7 @@ export type RegistrationStatus =
 export interface TicketDTO {
   playerName: string;
   qrCode: string;
-  event: { name: string; eventDate: string; venue: string; startTime: string; firstWhistle: string };
+  event: { name: string; eventDate: string; venue: string; startTime: string; gameStartTime: string };
   bibNumber?: number | null;
 }
 
@@ -215,7 +214,7 @@ export interface RoundPlanDTO {
   eventName: string;
   eventDate: string;
   venue: string;
-  firstWhistle: string;
+  gameStartTime: string;
   createdAt: string;
   publishedAt: string | null;
   slots: RoundSlotDTO[];

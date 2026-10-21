@@ -32,7 +32,7 @@ describe('planner routes', () => {
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
     const preview = await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/plan/preview`, cookies: { nt_session: cookie } });
     expect(preview.statusCode).toBe(200);
-    expect(preview.json()).toMatchObject({ checkedInPlayers: 28, minimumRounds: 2, requiredMinutes: 18, windowMinutes: 150, fitsTimeWindow: true });
+    expect(preview.json()).toMatchObject({ checkedInPlayers: 28, minimumRounds: 2, requiredMinutes: 18, windowMinutes: 180, fitsTimeWindow: true });
     expect((await app.inject({ method: 'GET', url: `/api/admin/events/${event.id}/plan?published=true`, cookies: { nt_session: cookie } })).statusCode).toBe(404);
     const generated = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/generate`, cookies: { nt_session: cookie } });
     expect(generated.statusCode).toBe(201);
@@ -59,6 +59,8 @@ describe('planner routes', () => {
     });
     expect(read.json().slots).toHaveLength(2 * 2 * 14);
     expect(read.json().players).toHaveLength(28);
+    expect(read.json().gameStartTime).toBe(event.gameStartTime);
+    expect(read.json()).not.toHaveProperty('lastWhistle');
     expect(read.json().validationWarnings).toEqual([]);
     expect(JSON.stringify(read.json())).not.toMatch(/parentEmail|parentMobile|amountCents/);
     const published = await app.inject({

@@ -195,7 +195,7 @@ describe('apiClient', () => {
   it('fetches the public upcoming-trial list', async () => {
     const events = [{
       id: 'trial-1', name: '15/U Trials', division: '15/U', section: 'Ladies', eventDate: '2099-03-01T00:00:00.000Z',
-      venue: 'SNC', startTime: '08:30', firstWhistle: '09:00', registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
+      venue: 'SNC', startTime: '08:30', gameStartTime: '09:00', registrationFeeCents: 3500, currency: 'aud', status: 'OPEN',
     }];
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(events), { status: 200, headers: { 'content-type': 'application/json' } }));
 
@@ -290,7 +290,7 @@ describe('apiClient', () => {
   });
 
   it('throws a typed error carrying field names', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"validation_failed","fields":["lastWhistle"]}', { status: 400, headers: { 'content-type': 'application/json' } }));
-    await expect(apiClient('http://api.test').createEvent({} as any)).rejects.toMatchObject({ status: 400, fields: ['lastWhistle'] });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"validation_failed","fields":["gameStartTime"]}', { status: 400, headers: { 'content-type': 'application/json' } }));
+    await expect(apiClient('http://api.test').createEvent({} as any)).rejects.toMatchObject({ status: 400, fields: ['gameStartTime'] });
   });
 });

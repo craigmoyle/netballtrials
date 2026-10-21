@@ -51,7 +51,7 @@ describe('buildIcs', () => {
 describe('trial calendar', () => {
   it('calls the assigned identifier Number, not bib', () => {
     const calendar = buildTrialCalendar(
-      { name: '15/U Trials', eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', endTime: '12:00', venue: 'SNC' },
+      { name: '15/U Trials', eventDate: new Date('2026-09-12T00:00:00Z'), gameStartTime: '09:00', endTime: '12:00', venue: 'SNC' },
       'trial-calendar@chisholmnetball.com',
       new Date('2026-09-01T00:00:00Z'),
     );
@@ -76,7 +76,7 @@ describe('durable confirmation delivery', () => {
     } };
     await sendConfirmation(
       { prisma, mailer }, registration,
-      { id: event.id, name: event.name, eventDate: event.eventDate, venue: event.venue, startTime: event.startTime, endTime: event.endTime, firstWhistle: event.firstWhistle },
+      { id: event.id, name: event.name, eventDate: event.eventDate, venue: event.venue, startTime: event.startTime, endTime: event.endTime, gameStartTime: event.gameStartTime },
       'https://trials.example/ticket/opaque-token',
     );
     const delivery = await prisma.emailLog.findFirstOrThrow({ where: { registrationId: registration.id, kind: 'confirmation' } });
@@ -99,7 +99,7 @@ describe('buildConfirmation', () => {
   it('uses an inline QR cid and escapes URL attributes', () => {
     const email = buildConfirmation({
       playerName: 'Ada Lovelace',
-      event: { name: '15/U Trials', eventDate: '2026-09-12', venue: 'SNC', firstWhistle: '09:00' },
+      event: { name: '15/U Trials', eventDate: '2026-09-12', venue: 'SNC', gameStartTime: '09:00' },
       ticketUrl: 'https://example.com/ticket/abc',
       qrCid: 'ticket-qr',
       policyUrl: 'https://example.com/policy?x=1&y=2',
@@ -121,7 +121,7 @@ describe('buildConfirmation', () => {
       },
       {
         id: 'event-1', name: '15/U Trials', eventDate: new Date('2026-09-12T00:00:00Z'), venue: 'SNC',
-        startTime: '08:30', endTime: '12:00', firstWhistle: '09:00',
+        startTime: '08:30', endTime: '12:00', gameStartTime: '09:00',
       },
       'https://trials.example/ticket/opaque-random-ticket-token',
     );
@@ -133,7 +133,7 @@ describe('buildConfirmation', () => {
     expect(message.inlineImages?.[0].content.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     expect(message.attachments?.[0].filename).toBe('registration-1.ics');
     const calendar = Buffer.from(message.attachments?.[0].content ?? []).toString('utf8');
-    expect(calendar).toContain('DTSTART:20260911T223000Z');
+    expect(calendar).toContain('DTSTART:20260911T230000Z');
     expect(calendar).toContain('DTEND:20260912T020000Z');
   });
 });

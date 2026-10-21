@@ -15,8 +15,7 @@ const eventFieldsSchema = z.object({
   venue: z.string().trim().min(1).max(200),
   startTime: timeSchema,
   endTime: timeSchema,
-  firstWhistle: timeSchema,
-  lastWhistle: timeSchema,
+  gameStartTime: timeSchema,
   registrationFeeCents: z.number().int().min(0).max(100000),
   courts: z.number().int().min(1).max(12),
   rank1Min: z.number().int().min(0).max(20),
@@ -64,18 +63,15 @@ function toMinutes(value: string): number {
 export function validateWindow(times: {
   startTime: string;
   endTime: string;
-  firstWhistle: string;
-  lastWhistle: string;
+  gameStartTime: string;
 }): string[] {
   const errors: string[] = [];
   const start = toMinutes(times.startTime);
-  const first = toMinutes(times.firstWhistle);
-  const last = toMinutes(times.lastWhistle);
-  const end = toMinutes(times.endTime);
+  const gameStart = toMinutes(times.gameStartTime);
+  const finish = toMinutes(times.endTime);
 
-  if (start > first) errors.push('firstWhistle');
-  if (first >= last) errors.push('lastWhistle');
-  if (last > end) errors.push('endTime');
+  if (start > gameStart) errors.push('gameStartTime');
+  if (finish < gameStart) errors.push('endTime');
 
   return errors;
 }

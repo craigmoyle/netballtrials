@@ -17,6 +17,8 @@ describe('public ticket', () => {
     expect(res.json().bibNumber).toBe(42);
     expect(res.json().qrCode).toMatch(/^data:image\/png;base64,/);
     expect(res.json().event.startTime).toBe('08:30');
+    expect(res.json().event.gameStartTime).toBe('09:00');
+    expect(res.json().event).not.toHaveProperty('lastWhistle');
     expect(res.json()).not.toHaveProperty('parentEmail');
     expect(res.json()).not.toHaveProperty('parentName');
     expect(res.json()).not.toHaveProperty('amountCents');
@@ -33,7 +35,7 @@ describe('public ticket', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/calendar');
     expect(res.headers['content-disposition']).toContain('.ics');
-    expect(res.body).toContain('DTSTART:20260911T223000Z');
+    expect(res.body).toContain('DTSTART:20260911T230000Z');
     expect(res.body).toContain('DTEND:20260912T020000Z');
   });
   it('returns 404 for an unpaid registration token', async () => {

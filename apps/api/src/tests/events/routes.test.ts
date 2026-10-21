@@ -14,7 +14,7 @@ beforeEach(async () => {
   cookie = await signInAsNewAdmin(app, 'admin@example.com');
 });
 
-const payload = { name: '17/U', competitionYear: 2027, division: '17/U', section: 'Ladies', eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00', firstWhistle: '09:00', lastWhistle: '11:30', registrationFeeCents: 3500, courts: 4, rank1Min: 2, rank2Min: 1, rank3Min: 1, minAge: 14, maxAge: 17 };
+const payload = { name: '17/U', competitionYear: 2027, division: '17/U', section: 'Ladies', eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00', gameStartTime: '09:00', registrationFeeCents: 3500, courts: 4, rank1Min: 2, rank2Min: 1, rank3Min: 1, minAge: 14, maxAge: 17 };
 
 describe('event admin routes', () => {
   it('requires an admin session', async () => {
@@ -22,11 +22,14 @@ describe('event admin routes', () => {
     expect(res.statusCode).toBe(401);
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/events/event-1' })).statusCode).toBe(401);
   });
-  it('creates and lists an event for an admin', async () => {
+  it('creates and lists an event with distinct arrival and game start times', async () => {
     const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
     expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ startTime: '08:30', gameStartTime: '09:00' });
+    expect(created.json()).not.toHaveProperty('lastWhistle');
     const listed = await app.inject({ method: 'GET', url: '/api/admin/events', cookies: { nt_session: cookie } });
     expect(listed.json()).toHaveLength(1);
+    expect(listed.json()[0]).toMatchObject({ startTime: '08:30', gameStartTime: '09:00' });
   });
   it('preserves non-default durations and an omitted policy URL on a venue-only PATCH', async () => {
     const created = await app.inject({
@@ -117,10 +120,16 @@ describe('event admin routes', () => {
     expect(responses[2].json().courts).toBe(3);
   });
 
-  it('returns 400 with field errors for a reversed window', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/admin/events', payload: { ...payload, lastWhistle: '08:45' }, cookies: { nt_session: cookie } });
+  it('returns 400 with field errors when game start precedes arrival', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/admin/events', payload: { ...payload, gameStartTime: '08:00' }, cookies: { nt_session: cookie } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().fields).toContain('gameStartTime');
+  });
+
+  it('returns 400 when finish is earlier than game start', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/admin/events', payload: { ...payload, endTime: '08:45' }, cookies: { nt_session: cookie } });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('validation_failed');
-    expect(res.json().fields).toContain('lastWhistle');
+    expect(res.json().fields).toContain('endTime');
   });
 });
