@@ -25,6 +25,7 @@ import { MessagesPage } from './admin/MessagesPage';
 import { RosterPage } from './admin/RosterPage';
 import { AssociationsPage } from './admin/AssociationsPage';
 import { BibColorsPage } from './admin/BibColorsPage';
+import { StaffAccessPage } from './admin/StaffAccessPage';
 import { PublicHomePage } from './routes/PublicHomePage';
 import { PublicSiteHeader } from './SiteNavigation';
 
@@ -47,6 +48,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/bib-colors$/, 'Bib colors'],
+  [/^\/admin\/staff$/, 'Staff access'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
   [/^\/admin\/events\/[^/]+\/games$/, 'Full Game List'],
   [/^\/admin\/events\/[^/]+\/sheets\/blank$/, 'Blank game sheet'],
@@ -214,6 +216,7 @@ export function App() {
         </Route>
         <Route path="associations" element={<AssociationsPage client={client} />} />
         <Route path="bib-colors" element={<BibColorsPage client={client} />} />
+        <Route path="staff" element={<StaffAccessPage client={client} />} />
       </Route>
       <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></PageContent>} />
     </Routes>

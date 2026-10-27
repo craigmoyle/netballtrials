@@ -341,6 +341,16 @@ describe('FullGameListPage', () => {
     expect(screen.queryByRole('table', { name: /Round 1 by position/ })).not.toBeInTheDocument();
   });
 
+  it('does not offer edits for rounds in the frozen prefix', async () => {
+    const frozenPlan = makePlan({ frozenThroughRound: 1 });
+    renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(frozenPlan) }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+
+    expect(screen.getByText('This round is frozen and cannot be changed.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit round 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit round 2' })).toBeInTheDocument();
+  });
+
   it('keeps roster controls collapsed until needed so assignments lead the mobile view', async () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
@@ -482,18 +492,27 @@ describe('FullGameListPage', () => {
     expect(input.slots.every((slot) => slot.round === 1)).toBe(true);
   });
 
-  it('supports native drag and drop to swap assigned players within the selected round', async () => {
+  it('supports pointer drag and drop to swap assigned players and keeps the menu fallback', async () => {
     const client = renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
     fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
     const table = screen.getByRole('table', { name: 'Round 1, Court 1, Team A' });
-    const transfer = { setData: vi.fn(), getData: vi.fn(() => 'player-0'), effectAllowed: 'move' };
-    fireEvent.dragStart(within(table).getByRole('button', { name: 'Player 1' }), { dataTransfer: transfer });
-    fireEvent.dragOver(within(table).getByRole('row', { name: /GA Player 3/ }), { dataTransfer: transfer });
-    fireEvent.drop(within(table).getByRole('row', { name: /GA Player 3/ }), { dataTransfer: transfer });
+    const source = within(table).getByRole('button', { name: 'Move Player 1, Number 1' });
+    const destination = within(table).getByRole('row', { name: /GA Player 3/ });
+    const original = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: vi.fn(() => destination) });
+    try {
+      fireEvent.pointerDown(source, { pointerId: 1, pointerType: 'touch', button: 0, clientX: 10, clientY: 10 });
+      fireEvent.pointerMove(source, { pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
+      fireEvent.pointerUp(source, { pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
+    } finally {
+      if (original) Object.defineProperty(document, 'elementFromPoint', original);
+      else Reflect.deleteProperty(document, 'elementFromPoint');
+    }
 
     expect(within(table).getByRole('row', { name: /GS Player 3/ })).toBeInTheDocument();
     expect(within(table).getByRole('row', { name: /GA Player 1/ })).toBeInTheDocument();
+    expect(screen.getByText('Use player and destination menus instead')).toBeInTheDocument();
     expect(client.saveManualRound).not.toHaveBeenCalled();
   });
 
@@ -505,11 +524,18 @@ describe('FullGameListPage', () => {
     renderPage(makeClient({ getGameRoster: vi.fn().mockResolvedValue([...roster, lateArrival]) }));
     await screen.findByRole('heading', { name: 'Full Game List' });
     fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
-    const transfer = { setData: vi.fn(), getData: vi.fn(() => 'player-0'), effectAllowed: 'move' };
-    fireEvent.dragStart(screen.getByRole('button', { name: 'Player 1' }), { dataTransfer: transfer });
-    const restingPlayer = screen.getByRole('button', { name: 'Late Arrival' });
-    fireEvent.dragOver(restingPlayer, { dataTransfer: transfer });
-    fireEvent.drop(restingPlayer, { dataTransfer: transfer });
+    const source = screen.getByRole('button', { name: 'Move Player 1, Number 1' });
+    const restingPlayer = screen.getByRole('button', { name: 'Move Late Arrival, Number 99' });
+    const original = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: vi.fn(() => restingPlayer) });
+    try {
+      fireEvent.pointerDown(source, { pointerId: 1, pointerType: 'touch', button: 0, clientX: 10, clientY: 10 });
+      fireEvent.pointerMove(source, { pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
+      fireEvent.pointerUp(source, { pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
+    } finally {
+      if (original) Object.defineProperty(document, 'elementFromPoint', original);
+      else Reflect.deleteProperty(document, 'elementFromPoint');
+    }
 
     const teamA = screen.getByRole('table', { name: 'Round 1, Court 1, Team A' });
     expect(within(teamA).getByText('Late Arrival')).toBeInTheDocument();

@@ -574,11 +574,18 @@ function maxRoundsWithinWindow(input: PlannerInput): number {
   return duration > 0 ? Math.floor((input.windowMinutes + input.changeoverMinutes) / duration) : 0;
 }
 
-function failureFrom(candidates: PlannerResult[]): PlannerResult {
+export function failureFrom(candidates: PlannerResult[]): PlannerResult {
   const failed = candidates.filter((candidate): candidate is { ok: false; gaps: PlannerGap[] } => !candidate.ok);
   const gaps = failed.flatMap((candidate) => candidate.gaps);
   const unique = [...new Map(gaps.map((gap) => [`${gap.code}:${gap.message}`, gap])).values()];
-  return { ok: false, gaps: unique.length ? unique : [{ code: 'no_solution', message: 'no valid schedule was found in the playing window' }] };
+  const notes = unique.map((gap) => gap.message).join('; ');
+  return {
+    ok: false,
+    gaps: [{
+      code: 'no_solution',
+      message: `The planner did not find a valid schedule in its search attempts. This is not proof that none exists. Review the roster, position options and playing window, then try again.${notes ? ` Search notes: ${notes}` : ''}`,
+    }],
+  };
 }
 
 export function generatePlan(input: PlannerInput, seed: number): PlannerResult {

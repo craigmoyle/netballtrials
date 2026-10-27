@@ -91,6 +91,19 @@ describe('LookupPanel', () => {
     expect(await screen.findByText('0 of 1 arrived')).toBeInTheDocument();
   });
 
+  it('does not offer undo when manual lookup reports an existing check-in', async () => {
+    const client = {
+      lookup: vi.fn().mockResolvedValue([{ id: 'r1', playerName: 'Ada Lovelace', bibNumber: 5, checkedIn: true }]),
+      manualCheckIn: vi.fn().mockResolvedValue({ result: 'already', registrationId: 'r1', playerName: 'Ada Lovelace', bibNumber: 5, referToCommittee: false }),
+      undoCheckIn: vi.fn(),
+    };
+    render(<MemoryRouter><LookupPanel client={client as any} /></MemoryRouter>);
+    fireEvent.change(screen.getByLabelText(/player name/i), { target: { value: 'Ada' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Check in again' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(/already checked in/i);
+    expect(screen.queryByRole('button', { name: /undo last check-in/i })).not.toBeInTheDocument();
+  });
+
   it('cancels the pending lookup debounce when the panel unmounts', async () => {
     vi.useFakeTimers();
     const lookup = vi.fn().mockResolvedValue([]);

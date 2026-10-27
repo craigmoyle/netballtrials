@@ -185,7 +185,9 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
         }
         return reply.code(202).send(fakeSimulationAcknowledgement(simulationToken));
       }
-      await sendCheckoutContinuation(deps, registration);
+      if (!(await sendCheckoutContinuation(deps, registration))) {
+        return reply.code(503).send({ error: 'registration_follow_up_unavailable' });
+      }
       return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);
     } catch (error) {
       if (error instanceof RegistrationValidationError) {
@@ -194,7 +196,10 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (error instanceof RegistrationConflictError) {
         if (error.reason === 'duplicate') {
           if (error.existing?.status === 'PENDING') {
-            await sendCheckoutContinuation(deps, error.existing);
+            const followUpSent = await sendCheckoutContinuation(deps, error.existing);
+            if (!followUpSent && !fakeSimulationEnabled) {
+              return reply.code(503).send({ error: 'registration_follow_up_unavailable' });
+            }
           } else if (error.existing?.status === 'PAID') {
             await sendDuplicateGuidance(deps, error.existing);
           }

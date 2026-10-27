@@ -45,9 +45,25 @@ describe('ReviewPage', () => {
       }]),
     };
     renderPage(client);
-    expect(await screen.findByText(/payment received after the registration expired or was withdrawn/i)).toBeInTheDocument();
+    expect(await screen.findByText(/payment needs review.*compare the recorded note and stripe status/i)).toBeInTheDocument();
     expect(screen.getByText('Stripe payment pi_123')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /withdraw/i })).not.toBeInTheDocument();
+  });
+
+  it('loads resolved notes into a read-only history view', async () => {
+    const resolved = {
+      id: 'i1', reason: 'age_out_of_range', note: 'Checked with association', resolvedAt: '2026-09-01T00:00:00Z',
+      registration: { id: 'r1', playerName: 'Ada Lovelace', ageFlagged: true, bibNumber: null },
+    };
+    const listReview = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([resolved]);
+    renderPage({ listReview });
+    fireEvent.click(await screen.findByLabelText('Include resolved history'));
+
+    expect(await screen.findByText('Checked with association')).toBeInTheDocument();
+    expect(screen.getByText(/^Reviewed /)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark reviewed/i })).not.toBeInTheDocument();
+    expect(listReview).toHaveBeenNthCalledWith(1, 'e1', false);
+    expect(listReview).toHaveBeenNthCalledWith(2, 'e1', true);
   });
 
   it('uses the note entered when resolving a review item', async () => {

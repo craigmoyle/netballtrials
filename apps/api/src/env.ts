@@ -91,6 +91,9 @@ export type Env = {
 };
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
+  if ((source.NODE_ENV ?? 'production') === 'production' && !source.DATABASE_URL?.trim()) {
+    throw new Error('DATABASE_URL must be explicitly configured in production');
+  }
   const parsed = envSchema.parse(source);
   return {
     ...parsed,

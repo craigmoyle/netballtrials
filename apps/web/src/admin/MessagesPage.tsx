@@ -131,16 +131,16 @@ function EventMessages({ client, eventId }: { client: Client; eventId: string })
     }
   }
 
-  async function retry(deliveryIds: string[], includeAmbiguous = false) {
-    if (!batchId || deliveryIds.length === 0) return;
+  async function retry(targetBatchId: string, deliveryIds: string[], includeAmbiguous = false) {
+    if (!targetBatchId || deliveryIds.length === 0) return;
     if (includeAmbiguous && !window.confirm('Gmail may already have accepted these messages. Retrying can send duplicates. Continue?')) return;
     const generation = ++operation.current;
     setBusy(true);
     setError(null);
     try {
-      const summary = await client.retryMessage(eventId, batchId, deliveryIds, includeAmbiguous);
+      const summary = await client.retryMessage(eventId, targetBatchId, deliveryIds, includeAmbiguous);
       if (generation !== operation.current) return;
-      setHistoryBatchId(batchId);
+      setHistoryBatchId(targetBatchId);
       const deliveryResult = {
         sent: summary.sent,
         failed: summary.failed,
@@ -148,10 +148,10 @@ function EventMessages({ client, eventId }: { client: Client; eventId: string })
         pending: summary.pending,
       };
       setResult(deliveryResult);
-      const history = await refreshLog(batchId);
+      const history = await refreshLog(targetBatchId);
       if (generation !== operation.current) return;
       if (history.complete || (deliveryResult.failed === 0 && deliveryResult.ambiguous === 0 && deliveryResult.pending === 0)) {
-        finishBatch(batchId);
+        finishBatch(targetBatchId);
         if (!history.refreshed) setError('The message was sent, but the delivery history could not be refreshed.');
       }
     } catch {
@@ -200,12 +200,12 @@ function EventMessages({ client, eventId }: { client: Client; eventId: string })
       {batchId && (failedIds.length > 0 || ambiguousIds.length > 0) ? (
         <p>
           {failedIds.length > 0 ? (
-            <button type="button" disabled={busy} onClick={() => retry(failedIds)}>
+            <button type="button" disabled={busy} onClick={() => retry(batchId, failedIds)}>
               Retry failed deliveries ({failedIds.length})
             </button>
           ) : null}{' '}
           {ambiguousIds.length > 0 ? (
-            <button type="button" disabled={busy} onClick={() => retry(ambiguousIds, true)}>
+            <button type="button" disabled={busy} onClick={() => retry(batchId, ambiguousIds, true)}>
               Retry ambiguous deliveries ({ambiguousIds.length})
             </button>
           ) : null}
@@ -220,6 +220,19 @@ function EventMessages({ client, eventId }: { client: Client; eventId: string })
           {log.map((entry) => (
             <li key={entry.id}>
               {entry.status === 'ANONYMIZED' ? 'Message details removed under retention policy' : entry.subject || '(no subject)'} — {entry.status === 'FAILED' ? `failed: ${entry.error ?? 'delivery rejected'}` : entry.status === 'AMBIGUOUS' ? `outcome unknown: ${entry.error ?? 'provider may have accepted the message'}` : entry.status.toLowerCase()}
+              {entry.status !== 'ANONYMIZED' ? (
+                <details>
+                  <summary>Delivery details</summary>
+                  <p>Recipient: {entry.to}</p>
+                  <p>Sender ID: {entry.senderUserId ?? 'System'}</p>
+                  <p>Created: <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></p>
+                  {entry.lastAttemptAt ? <p>Last attempt: <time dateTime={entry.lastAttemptAt}>{new Date(entry.lastAttemptAt).toLocaleString()}</time></p> : null}
+                  {entry.sentAt ? <p>Sent: <time dateTime={entry.sentAt}>{new Date(entry.sentAt).toLocaleString()}</time></p> : null}
+                  <pre>{entry.body}</pre>
+                </details>
+              ) : null}
+              {entry.status === 'FAILED' ? <p><button type="button" disabled={busy} onClick={() => void retry(entry.batchId, [entry.id])}>Retry this delivery</button></p> : null}
+              {entry.status === 'AMBIGUOUS' ? <p><button type="button" disabled={busy} onClick={() => void retry(entry.batchId, [entry.id], true)}>Retry ambiguous delivery</button></p> : null}
             </li>
           ))}
         </ul>

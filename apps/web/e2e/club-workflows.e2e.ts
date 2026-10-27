@@ -384,6 +384,9 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   await reviewPage.screenshot({ path: `${reviewDirectory}/mobile.png`, fullPage: true });
   await expectAccessible(reviewPage);
   await reviewPage.getByRole('button', { name: 'Edit round 1' }).click();
+  await expect(reviewPage.getByText('Use player and destination menus instead')).toBeVisible();
+  await expect(reviewPage.getByLabel('Player to move')).toBeHidden();
+  await reviewPage.getByText('Use player and destination menus instead').click();
   await expect(reviewPage.getByLabel('Player to move')).toBeVisible();
   await expect(reviewPage.getByLabel('Destination slot')).toBeVisible();
   expect(await reviewPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -440,6 +443,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
     plan.slots.filter((slot) => slot.round === round).map(({ round: slotRound, court, position, team, registrationId }) => ({ round: slotRound, court, position, team, registrationId }));
   const performMove = async (round: number, registrationId: string, slot: { round: number; court: number; position: string; team: number }) => {
     await page.getByRole('button', { name: `Edit round ${round}` }).click();
+    await page.getByText('Use player and destination menus instead').click();
     await page.getByLabel('Player to move').selectOption(registrationId);
     await page.getByLabel('Destination slot').selectOption(keyFor(slot));
     await page.getByRole('button', { name: 'Move or substitute' }).click();
@@ -450,7 +454,21 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await expectAccessible(page);
   for (const color of ['White', 'Black', 'Grey', 'Orange']) await expect(page.getByText(color).first()).toBeVisible();
 
-  await performMove(1, playerOneId, targetSlot);
+  await page.getByRole('button', { name: 'Edit round 1' }).click();
+  const dragSource = page.getByRole('button', { name: /Move Player1 Trial/ });
+  const dragTarget = page.locator(`[data-game-slot-key="${keyFor(targetSlot)}"]`);
+  await dragSource.scrollIntoViewIfNeeded();
+  await dragTarget.scrollIntoViewIfNeeded();
+  const sourceBounds = await dragSource.boundingBox();
+  const targetBounds = await dragTarget.boundingBox();
+  expect(sourceBounds).not.toBeNull();
+  expect(targetBounds).not.toBeNull();
+  await page.mouse.move(sourceBounds!.x + sourceBounds!.width / 2, sourceBounds!.y + sourceBounds!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBounds!.x + targetBounds!.width / 2, targetBounds!.y + targetBounds!.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(`[data-game-slot-key="${keyFor(firstSlot)}"]`)).not.toContainText('Player1 Trial');
+  await expect(dragTarget).toContainText('Player1 Trial');
   await page.getByRole('button', { name: 'Cancel changes' }).click();
   const afterCancel = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
   expect(afterCancel.id).toBe(originalPlan.id);

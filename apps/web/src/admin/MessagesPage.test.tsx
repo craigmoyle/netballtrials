@@ -111,6 +111,26 @@ describe('MessagesPage', () => {
     expect(screen.getByLabelText('Message')).toHaveValue('');
   });
 
+  it('shows audited delivery details and can retry a failed historical delivery after reload', async () => {
+    const client = {
+      listEmailLog: vi.fn()
+        .mockResolvedValueOnce([failedDelivery])
+        .mockResolvedValueOnce([{ ...failedDelivery, status: 'SENT', sentAt: '2026-10-10T00:05:00.000Z', error: null }]),
+      getMessageRecipientCount: vi.fn(),
+      sendMessage: vi.fn(),
+      retryMessage: vi.fn().mockResolvedValue({ batchId: BATCH_1, sent: 1, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery-failed'] }),
+    };
+    renderPage(client);
+    expect(await screen.findByText(/venue update — failed/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Delivery details'));
+    expect(screen.getByText('Recipient: retry@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Sender ID: admin-1')).toBeInTheDocument();
+    expect(screen.getByText('Trials are at SNC.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry this delivery' }));
+    await waitFor(() => expect(client.retryMessage).toHaveBeenCalledWith('event-1', BATCH_1, ['delivery-failed'], false));
+    expect(await screen.findByText(/venue update — sent/i)).toBeInTheDocument();
+  });
+
   it('preserves the draft after total failure', async () => {
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_2);
     const client = {

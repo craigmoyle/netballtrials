@@ -40,6 +40,7 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
           <Link to="/admin/events" aria-current={pathname.startsWith('/admin/events') ? 'page' : undefined}>Events</Link>
           <Link to="/admin/associations" aria-current={pathname.startsWith('/admin/associations') ? 'page' : undefined}>Member associations</Link>
           <Link to="/admin/bib-colors" aria-current={pathname.startsWith('/admin/bib-colors') ? 'page' : undefined}>Bib colors</Link>
+          <Link to="/admin/staff" aria-current={pathname.startsWith('/admin/staff') ? 'page' : undefined}>Staff access</Link>
         </nav>
         <button
           type="button"

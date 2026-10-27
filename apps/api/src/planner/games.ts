@@ -338,8 +338,8 @@ export async function saveManualRoundRevision(
     if (!event || !source || event.publishedPlanId !== source.id || !settingsMatch(source, event)) {
       return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
     }
-    if (!Number.isInteger(round) || round < 1 || round > source.rounds) {
-      return { ok: false, reason: 'invalid_plan', errors: [gap(`Round must be between 1 and ${source.rounds}.`)], warnings: [] };
+    if (!Number.isInteger(round) || round <= source.frozenThroughRound || round > source.rounds) {
+      return { ok: false, reason: 'invalid_plan', errors: [gap(`Round must be after frozen round ${source.frozenThroughRound} and no later than round ${source.rounds}.`)], warnings: [] };
     }
 
     const registrations = await tx.registration.findMany({

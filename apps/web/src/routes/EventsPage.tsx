@@ -7,13 +7,14 @@ import { formatTrialDate } from '../formatTrialDate';
 export function EventsPage({ client }: { client: Client }) {
   const [events, setEvents] = useState<EventDTO[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
     client
       .listEvents()
       .then((data) => {
-        if (active) setEvents(data);
+        if (active) { setEvents(data); setError(null); }
       })
       .catch(() => {
         if (active) setError('Could not load events.');
@@ -21,10 +22,10 @@ export function EventsPage({ client }: { client: Client }) {
     return () => {
       active = false;
     };
-  }, [client]);
+  }, [client, retry]);
 
   if (error) {
-    return <p role="alert">{error}</p>;
+    return <p role="alert">{error} <button type="button" onClick={() => { setEvents(null); setRetry((count) => count + 1); }}>Retry loading events</button></p>;
   }
 
   if (!events) {

@@ -33,6 +33,15 @@ describe('review routes', () => {
     });
     expect(resolved.statusCode).toBe(200);
     expect(resolved.json().resolvedByUserId).toBeTruthy();
+    const history = await app.inject({
+      method: 'GET',
+      url: `/api/admin/events/${eventId}/review?includeResolved=true`,
+      cookies: { nt_session: cookie },
+    });
+    expect(history.json()).toHaveLength(1);
+    expect(history.json()[0]).toMatchObject({ id: list.json()[0].id, resolvedAt: expect.any(String), note: 'ok' });
+    const openQueue = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/review`, cookies: { nt_session: cookie } });
+    expect(openQueue.json()).toEqual([]);
   });
   it('withdraws a registration and clears its check-in', async () => {
     const reg = await seedPaidFlagged(eventId);

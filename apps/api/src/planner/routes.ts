@@ -284,6 +284,7 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
       registrationId: slot.registrationId,
     }));
     const html = renderSelectorSheets({
+      logoUrl: new URL('/chisholm-netball-logo.jpg', deps.env.WEB_ORIGIN).toString(),
       event: {
         name: plan.eventName,
         eventDate: plan.eventDate.toISOString().slice(0, 10),

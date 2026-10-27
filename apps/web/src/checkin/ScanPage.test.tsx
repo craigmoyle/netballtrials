@@ -72,6 +72,15 @@ describe('ScanPage', () => {
     ]);
   });
 
+  it('does not offer undo when a scan finds a prior check-in', async () => {
+    const client = { scan: vi.fn().mockResolvedValue(result({ result: 'already' })), undoCheckIn: vi.fn() };
+    render(<MemoryRouter><ScanPage client={client as any} /></MemoryRouter>);
+    await waitForDecoder();
+    await act(async () => { decoded!({ getText: () => 'already-checked-in' }); });
+    expect(await screen.findByRole('status')).toHaveTextContent('Ada Lovelace');
+    expect(screen.queryByRole('button', { name: /undo last check-in/i })).not.toBeInTheDocument();
+  });
+
   it('ignores camera decodes while an undo is in flight', async () => {
     let finishUndo!: () => void;
     const client = {
@@ -127,6 +136,22 @@ describe('ScanPage', () => {
     await waitForDecoder();
     await act(async () => { decoded!({ getText: () => 'qr-arrival' }); });
     expect(await screen.findByText('1 of 1 arrived')).toBeInTheDocument();
+  });
+
+  it('refreshes the arrival count periodically for changes made on another device', async () => {
+    vi.useFakeTimers();
+    const client = {
+      checkInSummary: vi.fn()
+        .mockResolvedValueOnce({ eventId: 'e1', eventName: 'Trials', registered: 2, checkedIn: 0, closed: false })
+        .mockResolvedValueOnce({ eventId: 'e1', eventName: 'Trials', registered: 2, checkedIn: 1, closed: false }),
+    };
+    render(<MemoryRouter><CheckInLayout client={client as any} /></MemoryRouter>);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('0 of 2 arrived')).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(screen.getByText('1 of 2 arrived')).toBeInTheDocument();
+    expect(client.checkInSummary).toHaveBeenCalledTimes(2);
   });
 
   it('reports camera permission failure and provides the manual fallback', async () => {

@@ -26,6 +26,7 @@ function selectorInput(options: { courts?: number; rounds?: number; eventName?: 
   ].slice(0, courts);
 
   return {
+    logoUrl: 'https://trials.example/chisholm-netball-logo.jpg',
     event: { name: options.eventName ?? '15/U Ladies', eventDate: '2026-09-12', venue: 'SNC' },
     slots: generated.plan.slots,
     players,
@@ -41,6 +42,7 @@ describe('renderSelectorSheets', () => {
     expect((html.match(/class="sheet"/g) ?? [])).toHaveLength(4);
     expect(html.indexOf('data-round="1"')).toBeLessThan(html.indexOf('data-round="2"'));
     expect(html).toContain('@page { size: A4 landscape');
+    expect(html).toContain('<img src="https://trials.example/chisholm-netball-logo.jpg" alt="Chisholm Netball"');
     expect(html).toMatch(/selector-print__teams\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
     for (const header of ['Position', 'Number', 'Player', 'Choices', 'Rating', 'Notes/Feedback']) expect(html).toContain(header);
     for (const color of ['Team A', 'Team B', 'White', 'Black', 'Grey', 'Orange']) expect(html).toContain(color);

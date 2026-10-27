@@ -20,10 +20,12 @@ const retrySchema = z.object({
 });
 
 export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void {
-  app.get('/api/admin/events/:id/review', { preHandler: requireAdmin(deps) }, async (req) => {
+  app.get('/api/admin/events/:id/review', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = z.object({ includeResolved: z.enum(['true', 'false']).optional() }).safeParse(req.query ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id } = req.params as { id: string };
     await ensureReviewItems(deps.prisma, id);
-    return listReviewQueue(deps.prisma, id);
+    return listReviewQueue(deps.prisma, id, parsed.data.includeResolved === 'true');
   });
 
   app.post(

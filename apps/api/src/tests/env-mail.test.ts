@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../env';
 
-describe('Gmail OAuth production config', () => {
+describe('production environment config', () => {
   const base = {
     DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
     NODE_ENV: 'production',
@@ -12,6 +12,12 @@ describe('Gmail OAuth production config', () => {
     STRIPE_SECRET_KEY: 'sk_test_configured',
     STRIPE_WEBHOOK_SECRET: 'whsec_configured',
   };
+
+  it('requires an explicit database URL in production', () => {
+    const source = { ...base } as NodeJS.ProcessEnv;
+    delete source.DATABASE_URL;
+    expect(() => loadEnv(source)).toThrow(/DATABASE_URL.*production/i);
+  });
 
   it('requires client ID, client secret, and refresh token for production Gmail', () => {
     expect(() => loadEnv(base as NodeJS.ProcessEnv)).toThrow(/GMAIL_CLIENT_ID|GMAIL_REFRESH_TOKEN|Gmail OAuth/i);

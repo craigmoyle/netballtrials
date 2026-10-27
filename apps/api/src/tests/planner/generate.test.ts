@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generatePlan } from '../../planner/generate';
+import { failureFrom, generatePlan } from '../../planner/generate';
 import { verifyPlan } from '../../planner/verify';
 import { COURT_POSITIONS } from '../../planner/types';
 import { player, plannerInput } from '../helpers/planner';
@@ -15,6 +15,15 @@ const cases = [
 ];
 
 describe('generatePlan', () => {
+  it('does not present a bounded-search failure as proof of infeasibility', () => {
+    const result = failureFrom([{ ok: false, gaps: [{ code: 'no_solution', message: 'could not fill court 1' }] }]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.gaps[0].message).toContain('not proof that none exists');
+      expect(result.gaps[0].message).toContain('could not fill court 1');
+    }
+  });
+
   it.each(cases)('fills every court and passes verification for %o', ({ courts, players }) => {
     const input = plannerInput({ courts, players });
     const result = generatePlan(input, 7);

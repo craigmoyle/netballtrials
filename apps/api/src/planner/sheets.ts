@@ -4,12 +4,14 @@ import { COURT_POSITIONS, type PlanSlot } from './types';
 type EventLabel = { name: string; eventDate: string; venue: string };
 type SelectorSheetsInput = {
   event: EventLabel;
+  logoUrl: string;
   slots: PlanSlot[];
   players: RoundPlanPlayerDTO[];
   courtColors: EventCourtColorDTO[];
 };
 type SheetInput = {
   event: EventLabel;
+  logoUrl: string;
   round: number;
   court: number;
   slots: PlanSlot[];
@@ -58,7 +60,7 @@ function renderSection(input: SheetInput): string {
   const players = new Map(input.players.map((player) => [player.registrationId, player]));
   const slots = input.slots.filter((slot) => slot.round === input.round && slot.court === input.court);
   return `<section class="sheet" data-round="${input.round}" data-court="${input.court}">
-<header class="selector-print__header"><h1>${escapeHtml(input.event.name)}</h1><p>${escapeHtml(input.event.eventDate)} · ${escapeHtml(input.event.venue)} · Round ${input.round} · Court ${input.court}</p></header>
+<header class="selector-print__header"><img src="${escapeHtml(input.logoUrl)}" alt="Chisholm Netball" /><div><h1>${escapeHtml(input.event.name)}</h1><p>${escapeHtml(input.event.eventDate)} · ${escapeHtml(input.event.venue)} · Round ${input.round} · Court ${input.court}</p></div></header>
 <div class="selector-print__teams">${renderTeam({ ...input, slots }, 0, players)}${renderTeam({ ...input, slots }, 1, players)}</div>
 <p class="selector-print__legend">* out of the player's selected positions</p>
 </section>`;
@@ -73,7 +75,7 @@ export function renderSelectorSheets(input: SelectorSheetsInput): string {
   for (const round of rounds) {
     for (const court of courts) {
       if (input.slots.some((slot) => slot.round === round && slot.court === court)) {
-        sections.push(renderSection({ event: input.event, slots: input.slots, players, courtColors, round, court }));
+        sections.push(renderSection({ event: input.event, logoUrl: input.logoUrl, slots: input.slots, players, courtColors, round, court }));
       }
     }
   }
@@ -86,7 +88,8 @@ export function renderSelectorSheets(input: SelectorSheetsInput): string {
 .selector-print { color: #111; font: 12px/1.3 system-ui, sans-serif; }
 .selector-print .sheet { min-height: 180mm; break-inside: avoid; page-break-inside: avoid; }
 .selector-print .sheet:not(:last-child) { break-after: page; page-break-after: always; }
-.selector-print__header { margin-bottom: 5mm; border-bottom: 2px solid #511631; }
+.selector-print__header { display: flex; align-items: center; gap: 5mm; margin-bottom: 5mm; border-bottom: 2px solid #511631; }
+.selector-print__header img { display: block; width: 45mm; height: auto; }
 .selector-print__header h1 { margin: 0; font-size: 18px; }
 .selector-print__header p { margin: 1mm 0 3mm; }
 .selector-print__teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; }

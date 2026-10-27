@@ -102,7 +102,7 @@ describe('manual published-plan revisions', () => {
     expect(response.json().slots).not.toContainEqual(expect.objectContaining({ round: 1, registrationId: displaced.registrationId }));
   });
 
-  it('allows an unchanged withdrawn player in a completed slot but blocks a future assignment', async () => {
+  it('blocks edits to a frozen round and future assignments for withdrawn players', async () => {
     await resetDb();
     adminCookie = await signInAsNewAdmin(app, 'manual-plan-admin@example.com');
     await createPublishedEvent(29, true);
@@ -131,16 +131,17 @@ describe('manual published-plan revisions', () => {
     const edited = completed.map((slot) => slot.registrationId === first.registrationId
       ? { ...slot, registrationId: second.registrationId }
       : slot.registrationId === second.registrationId ? { ...slot, registrationId: first.registrationId } : slot);
-    const saved = await saveRound(1, planInput(edited));
-    expect(saved.statusCode, saved.body).toBe(201);
-    expect(saved.json().slots).toContainEqual(expect.objectContaining({ round: 1, registrationId: withdrawnSlot.registrationId }));
-    expect(saved.json().slots).not.toContainEqual(expect.objectContaining({ round: 2, registrationId: withdrawnSlot.registrationId }));
+    const frozenEdit = await saveRound(1, planInput(edited));
+    expect(frozenEdit.statusCode).toBe(422);
+    expect(frozenEdit.json()).toMatchObject({ error: 'invalid_plan' });
+    expect(frozenEdit.json().errors[0].message).toContain('frozen round 1');
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).publishedPlanId).toBe(source.id);
 
-    const future = saved.json().slots.filter((slot: { round: number }) => slot.round === 2).map(slotInput);
+    const future = source.slots.filter((slot) => slot.round === 2).map(slotInput);
     future[0] = { ...future[0], registrationId: withdrawnSlot.registrationId };
     const rejected = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/plan/rounds/2/manual`,
-      cookies: { nt_session: adminCookie }, payload: { sourcePlanId: saved.json().id, slots: future, overrideWarnings: false },
+      cookies: { nt_session: adminCookie }, payload: { sourcePlanId: source.id, slots: future, overrideWarnings: false },
     });
     expect(rejected.statusCode).toBe(422);
     expect(rejected.json()).toMatchObject({ error: 'invalid_plan' });

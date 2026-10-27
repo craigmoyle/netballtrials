@@ -33,9 +33,11 @@ export function CheckInLayout({ client }: { client: Client }) {
         });
     };
     load();
+    const refreshInterval = window.setInterval(load, 15_000);
     window.addEventListener(CHECK_IN_UPDATED_EVENT, load);
     return () => {
       active = false;
+      window.clearInterval(refreshInterval);
       window.removeEventListener(CHECK_IN_UPDATED_EVENT, load);
     };
   }, [client, navigate]);

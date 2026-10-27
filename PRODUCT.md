@@ -37,10 +37,10 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - Seven positions: GS, GA, WA, C, WD, GD, GK. Each court runs a full 7-a-side game of 14 players every round.
 - Third position choice is optional per player; an opt-in lets a player be used in positions they did not choose, and those games are marked on the sheets.
 - Duplicate registrations are detected by name and date of birth within an event; siblings can share a parent email.
-- No refunds and no manual editing of generated schedules in the first release. Selector ratings and post-trial team selection are out of scope.
+- No refunds. Admins can make validated manual changes to an unfrozen round and rebuild future rounds; frozen rounds cannot be edited. Selector ratings and post-trial team selection are out of scope.
 - Internet access is assumed at check-in; there is no offline mode.
 - Card data is never stored; Stripe handles it. QR codes contain only a random token.
-- Personal data is deleted or anonymized 12 months after the event.
+- Personal data held by the application is deleted or anonymized 12 months after the event. Gmail Sent copies are outside this retention period.
 - Open decisions: hosting platform, final selector-sheet fields and layout.
 
 ## Brand Commitments

@@ -326,6 +326,8 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         setSubmitError('Day-of registration is available only on the event date while check-in is open. Your details are still here.');
       } else if (adminAssisted && status === 503 && message === 'checkout_unavailable') {
         setSubmitError('Could not prepare or send the secure Checkout link. No payment has been taken. Your details are still here; try again.');
+      } else if (!adminAssisted && status === 503 && message === 'registration_follow_up_unavailable') {
+        setSubmitError('We could not prepare or send the next-step email. Retry your request; it will not create a second registration or charge a payment. If the problem continues, contact the club.');
       } else if (status === 429) {
         setSubmitError('Too many attempts. Wait a little while, then try again. Your details are still here.');
       } else if (status === 400) {
@@ -415,7 +417,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         <ul>
           <li>Age: {event.minAge}–{event.maxAge} on 31 December {event.competitionYear}.</li>
           <li>Permanent player in a domestic or representative competition at a Chisholm Region member association.</li>
-          <li>At least six association games from 1 January {event.competitionYear} to the day before the trial.</li>
+          <li>At least six association games in the date range published in the selection policy.</li>
         </ul>
       </section>
       <p className="registration-privacy-note">
@@ -535,7 +537,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           <ul id="eligibility-confirmation-summary" className="eligibility-criteria">
             <li>The player must be {event.minAge}–{event.maxAge} years old as at 31 December {event.competitionYear}.</li>
             <li>The player must be a permanent player in a domestic or representative competition at a Chisholm Region member association.</li>
-            <li>The player must have played at least six association games between 1 January {event.competitionYear} and the day before the trial.</li>
+            <li>The player must have played at least six association games in the date range published in the selection policy.</li>
           </ul>
           {invalid('eligibilityConfirmed') ? <p id="eligibilityConfirmed-error">Confirm the player meets the eligibility requirements.</p> : null}
           <p>
@@ -553,7 +555,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           <summary>Privacy details</summary>
           <p>These details are used for registration, payment, check-in and event messages.</p>
           <p>Parent contact details are not shown to volunteers.</p>
-          <p>The app removes or anonymises personal details 12 calendar months after the event date.</p>
+          <p>The app removes or anonymises personal details 12 calendar months after the event date. Gmail Sent copies are outside this retention schedule.</p>
           <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
           {!adminAssisted && hasUnsavedDetails ? (
             <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p>

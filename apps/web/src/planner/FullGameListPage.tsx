@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
@@ -47,6 +47,11 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
   const [editedSlots, setEditedSlots] = useState<PlanSlotInputDTO[]>([]);
   const [playerToMove, setPlayerToMove] = useState('');
   const [destinationSlot, setDestinationSlot] = useState('');
+  const [draggingRegistrationId, setDraggingRegistrationId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const pointerDrag = useRef<{ registrationId: string; pointerId: number; x: number; y: number; moved: boolean } | null>(null);
+  const moveControlsRef = useRef<HTMLDetailsElement | null>(null);
+  const suppressMoveClick = useRef(false);
   const [warnings, setWarnings] = useState<PlannerGapDTO[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
@@ -329,10 +334,8 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     updateEditedSlots(next);
   }
 
-  function dropAssignedPlayerOnResting(event: DragEvent<HTMLLIElement>, restingId: string) {
+  function movePlayerToResting(registrationId: string, restingId: string) {
     if (!editing || stalePlan) return;
-    event.preventDefault();
-    const registrationId = event.dataTransfer.getData('text/plain');
     const sourceIndex = editedSlots.findIndex((slot) => slot.registrationId === registrationId);
     if (sourceIndex < 0 || editedSlots.some((slot) => slot.registrationId === restingId)) return;
     const next = [...editedSlots];
@@ -340,16 +343,58 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     updateEditedSlots(next);
   }
 
-  function startDrag(event: DragEvent<HTMLButtonElement>, registrationId: string) {
-    event.dataTransfer.setData('text/plain', registrationId);
-    event.dataTransfer.effectAllowed = 'move';
+  function targetAt(x: number, y: number): string | null {
+    const target = document.elementFromPoint(x, y);
+    const slot = target?.closest<HTMLElement>('[data-game-slot-key]');
+    if (slot?.dataset.gameSlotKey) return `slot:${slot.dataset.gameSlotKey}`;
+    const resting = target?.closest<HTMLElement>('[data-game-resting-id]');
+    return resting?.dataset.gameRestingId ? `resting:${resting.dataset.gameRestingId}` : null;
   }
 
-  function dropOnSlot(event: DragEvent<HTMLTableRowElement>, slot: PlanSlotInputDTO) {
-    if (!editing || stalePlan) return;
+  function selectPlayerForMove(registrationId: string) {
+    setPlayerToMove(registrationId);
+    if (moveControlsRef.current) moveControlsRef.current.open = true;
+    document.getElementById('destination-slot')?.focus();
+  }
+
+  function startPointerDrag(event: PointerEvent<HTMLButtonElement>, registrationId: string) {
+    if (!editing || stalePlan || event.button !== 0) return;
     event.preventDefault();
-    const registrationId = event.dataTransfer.getData('text/plain');
-    if (registrationId) movePlayer(registrationId, slotKey(slot));
+    suppressMoveClick.current = false;
+    pointerDrag.current = { registrationId, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    setDraggingRegistrationId(registrationId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function movePointerDrag(event: PointerEvent<HTMLButtonElement>) {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) return;
+    drag.moved = true;
+    setDropTarget(targetAt(event.clientX, event.clientY));
+  }
+
+  function finishPointerDrag(event: PointerEvent<HTMLButtonElement>) {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const target = drag.moved ? targetAt(event.clientX, event.clientY) : null;
+    if (drag.moved) {
+      suppressMoveClick.current = true;
+      window.setTimeout(() => { suppressMoveClick.current = false; }, 0);
+    }
+    pointerDrag.current = null;
+    setDraggingRegistrationId(null);
+    setDropTarget(null);
+    if (!target) return;
+    if (target.startsWith('slot:')) movePlayer(drag.registrationId, target.slice('slot:'.length));
+    else movePlayerToResting(drag.registrationId, target.slice('resting:'.length));
+  }
+
+  function cancelPointerDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (pointerDrag.current?.pointerId !== event.pointerId) return;
+    pointerDrag.current = null;
+    setDraggingRegistrationId(null);
+    setDropTarget(null);
   }
 
   async function saveRound(overrideWarnings = false) {
@@ -506,10 +551,10 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
               const player = playerDetails(slot.registrationId, fullSlot);
               const movable = editing && !stalePlan && rosterById.has(slot.registrationId);
               return (
-                <tr key={position} onDragOver={editing ? (event) => event.preventDefault() : undefined} onDrop={editing ? (event) => dropOnSlot(event, slot) : undefined}>
+                <tr key={position} data-game-slot-key={slotKey(slot)} data-drop-target={dropTarget === `slot:${slotKey(slot)}` ? 'true' : undefined}>
                   <th scope="row">{position}</th>
                   <td>
-                    {movable ? <button type="button" className="game-player-drag" draggable onDragStart={(event) => startDrag(event, slot.registrationId)}>{player.playerName}</button> : player.playerName}
+                    {movable ? <button type="button" className={`game-player-drag${draggingRegistrationId === slot.registrationId ? ' is-dragging' : ''}`} aria-label={`Move ${player.playerName}, Number ${player.bibNumber ?? '—'}`} onClick={() => { if (!suppressMoveClick.current) selectPlayerForMove(slot.registrationId); }} onPointerDown={(event) => startPointerDrag(event, slot.registrationId)} onPointerMove={movePointerDrag} onPointerUp={finishPointerDrag} onPointerCancel={cancelPointerDrag}>{player.playerName}</button> : player.playerName}
                   </td>
                   <td>{player.bibNumber ?? '—'}</td>
                 </tr>
@@ -527,7 +572,7 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
       <section className="full-game-round" aria-labelledby={`game-round-${round}`} key={round}>
         <header className="full-game-round-heading">
           <h2 id={`game-round-${round}`}>Round {round}</h2>
-          {editing && selectedRound === round ? <p>Changes are local until saved.</p> : !readOnly ? <button type="button" className="button-secondary" disabled={busy || stalePlan || suffixEditing} onClick={() => beginEdit(round)}>Edit round {round}</button> : null}
+          {editing && selectedRound === round ? <p>Changes are local until saved.</p> : !readOnly && round <= (availablePlan?.frozenThroughRound ?? 0) ? <p>This round is frozen and cannot be changed.</p> : !readOnly ? <button type="button" className="button-secondary" disabled={busy || stalePlan || suffixEditing} onClick={() => beginEdit(round)}>Edit round {round}</button> : null}
         </header>
         <div className="full-game-courts">
           {courts.map((court) => (
@@ -824,25 +869,28 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
               {editing ? (
                 <section className="game-editor" aria-labelledby="game-editor-title">
                   <h2 id="game-editor-title">Edit round {selectedRound}</h2>
-                  <p>Move or substitute players within this round. Other rounds stay unchanged.</p>
-                  <div className="game-move-controls">
-                    <label htmlFor="player-to-move">Player to move
-                      <select id="player-to-move" value={playerToMove} disabled={busy || stalePlan} onChange={(changeEvent) => setPlayerToMove(changeEvent.target.value)}>
-                        <option value="">Choose a player</option>
-                        {roster.map((player) => <option key={player.registrationId} value={player.registrationId}>{player.playerName} — Number {player.bibNumber}{selectedIds.has(player.registrationId) ? ', playing this round' : ', resting or available'}</option>)}
-                      </select>
-                    </label>
-                    <label htmlFor="destination-slot">Destination slot
-                      <select id="destination-slot" value={destinationSlot} disabled={busy || stalePlan} onChange={(changeEvent) => setDestinationSlot(changeEvent.target.value)}>
-                        <option value="">Choose a court position</option>
-                        {sortedSlots(editedSlots).map((slot) => {
-                          const current = rosterById.get(slot.registrationId) ?? playerDetails(slot.registrationId);
-                          return <option key={slotKey(slot)} value={slotKey(slot)}>Court {slot.court}, Team {slot.team === 0 ? 'A' : 'B'}, {slot.position} — {current.playerName}, Number {current.bibNumber ?? '—'}</option>;
-                        })}
-                      </select>
-                    </label>
-                    <button type="button" className="button-secondary" disabled={!playerToMove || !destinationSlot || busy || stalePlan} onClick={() => movePlayer(playerToMove, destinationSlot)}>Move or substitute</button>
-                  </div>
+                  <p>Drag a player’s name onto another player to swap places, or onto a resting player to substitute. Use the controls below if you prefer not to drag.</p>
+                  <details ref={moveControlsRef} className="game-move-controls-fallback">
+                    <summary>Use player and destination menus instead</summary>
+                    <div className="game-move-controls">
+                      <label htmlFor="player-to-move">Player to move
+                        <select id="player-to-move" value={playerToMove} disabled={busy || stalePlan} onChange={(changeEvent) => setPlayerToMove(changeEvent.target.value)}>
+                          <option value="">Choose a player</option>
+                          {roster.map((player) => <option key={player.registrationId} value={player.registrationId}>{player.playerName} — Number {player.bibNumber}{selectedIds.has(player.registrationId) ? ', playing this round' : ', resting or available'}</option>)}
+                        </select>
+                      </label>
+                      <label htmlFor="destination-slot">Destination slot
+                        <select id="destination-slot" value={destinationSlot} disabled={busy || stalePlan} onChange={(changeEvent) => setDestinationSlot(changeEvent.target.value)}>
+                          <option value="">Choose a court position</option>
+                          {sortedSlots(editedSlots).map((slot) => {
+                            const current = rosterById.get(slot.registrationId) ?? playerDetails(slot.registrationId);
+                            return <option key={slotKey(slot)} value={slotKey(slot)}>Court {slot.court}, Team {slot.team === 0 ? 'A' : 'B'}, {slot.position} — {current.playerName}, Number {current.bibNumber ?? '—'}</option>;
+                          })}
+                        </select>
+                      </label>
+                      <button type="button" className="button-secondary" disabled={!playerToMove || !destinationSlot || busy || stalePlan} onClick={() => movePlayer(playerToMove, destinationSlot)}>Move or substitute</button>
+                    </div>
+                  </details>
                   <div className="game-edit-actions">
                     <button type="button" onClick={() => void saveRound(false)} disabled={busy || !dirty || stalePlan}>{busy ? 'Saving...' : `Save round ${selectedRound}`}</button>
                     <button type="button" className="button-secondary" disabled={busy} onClick={cancelEdit}>Cancel changes</button>
@@ -864,8 +912,8 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
               {viewMode === 'team' || viewMode === 'position' ? <section className="game-resting-list" aria-labelledby="resting-players-heading">
                 <h2 id="resting-players-heading">Resting players</h2>
                 {restingPlayers.length ? <ul>{restingPlayers.map((player) => (
-                  <li key={player.registrationId} onDragOver={editing ? (event) => event.preventDefault() : undefined} onDrop={editing ? (event) => dropAssignedPlayerOnResting(event, player.registrationId) : undefined}>
-                    {editing && !stalePlan ? <button type="button" draggable onDragStart={(event) => startDrag(event, player.registrationId)}>{player.playerName}</button> : player.playerName}
+                  <li key={player.registrationId} data-game-resting-id={player.registrationId} data-drop-target={dropTarget === `resting:${player.registrationId}` ? 'true' : undefined}>
+                    {editing && !stalePlan ? <button type="button" className={`game-player-drag${draggingRegistrationId === player.registrationId ? ' is-dragging' : ''}`} aria-label={`Move ${player.playerName}, Number ${player.bibNumber ?? '—'}`} onClick={() => { if (!suppressMoveClick.current) selectPlayerForMove(player.registrationId); }} onPointerDown={(event) => startPointerDrag(event, player.registrationId)} onPointerMove={movePointerDrag} onPointerUp={finishPointerDrag} onPointerCancel={cancelPointerDrag}>{player.playerName}</button> : player.playerName}
                     {' '}<span>Number {player.bibNumber ?? '—'}</span>
                   </li>
                 ))}</ul> : <p>No players are resting or waiting to be placed in round {selectedRound}.</p>}

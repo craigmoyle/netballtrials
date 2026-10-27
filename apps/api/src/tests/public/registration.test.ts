@@ -63,6 +63,31 @@ describe('POST /api/public/events/:id/registrations', () => {
     expect(mailer.sent[0].text).toContain('checkout.test');
   });
 
+  it('returns a retryable neutral failure when checkout setup fails, then retries on duplicate submission', async () => {
+    const createCheckout = vi.fn()
+      .mockRejectedValueOnce(new Error('Stripe unavailable'))
+      .mockImplementation((request, key) => payment.createCheckout(request, key));
+    app = createApp({
+      payment: { ...payment, createCheckout },
+      mailer,
+      env: { ...testEnv(), PAYMENT_PROVIDER: 'stripe' },
+    });
+
+    const failed = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toEqual({ error: 'registration_follow_up_unavailable' });
+    expect(await prisma.registration.findFirstOrThrow({ where: { eventId } })).toMatchObject({ status: 'PENDING', checkoutSessionId: null });
+    expect(mailer.sent).toHaveLength(0);
+
+    const retried = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+    expect(retried.statusCode).toBe(202);
+    expect(retried.json()).toEqual({ status: 'received' });
+    expect(createCheckout.mock.calls.map((call) => call[1])).toEqual([expect.any(String), expect.any(String)]);
+    expect(createCheckout.mock.calls[0]?.[1]).toBe(createCheckout.mock.calls[1]?.[1]);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0].to).toBe('anne@example.com');
+  });
+
   it('does not permit public registration after registration is closed', async () => {
     await prisma.event.update({ where: { id: eventId }, data: { status: 'CLOSED' } });
     const response = await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });

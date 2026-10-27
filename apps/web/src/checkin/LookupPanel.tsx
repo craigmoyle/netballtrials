@@ -62,7 +62,7 @@ export function LookupPanel({ client }: { client: Client }) {
       const checked = await client.manualCheckIn(id);
       if (!mounted.current) return;
       setResult(checked);
-      setUndoableId(checked.result === 'refused' ? null : checked.registrationId ?? id);
+      setUndoableId(checked.result === 'checked_in' ? checked.registrationId ?? id : null);
       setResults((rows) => rows.map((row) => row.id === id && checked.result !== 'refused'
         ? { ...row, checkedIn: true, bibNumber: checked.bibNumber ?? row.bibNumber }
         : row));

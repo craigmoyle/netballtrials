@@ -108,6 +108,7 @@ export function apiClient(baseUrl: string) {
         body: JSON.stringify({ token }),
       }),
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
+    inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
     listEvents: () => request<EventDTO[]>(baseUrl, '/api/admin/events'),
     getEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}`),
@@ -233,8 +234,8 @@ export function apiClient(baseUrl: string) {
       manualPlanAction(baseUrl, `/api/admin/events/${eventId}/plan/suffix/manual`, input),
     getSheetsHtml: (eventId: string) => requestHtml(baseUrl, `/api/admin/events/${eventId}/sheets`),
     getBlankSheetHtml: (eventId: string) => requestHtml(baseUrl, `/api/admin/events/${eventId}/sheets/blank`),
-    listReview: (eventId: string) =>
-      request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/review`),
+    listReview: (eventId: string, includeResolved = false) =>
+      request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/review${includeResolved ? '?includeResolved=true' : ''}`),
     resolveReview: (eventId: string, itemId: string, note: string) =>
       request<ReviewItemDTO>(baseUrl, `/api/admin/events/${eventId}/review/${itemId}/resolve`, {
         method: 'POST',

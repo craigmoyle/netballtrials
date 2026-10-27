@@ -51,6 +51,14 @@ describe('EventOperationsPage', () => {
     expect(client.getCourtColors).toHaveBeenCalledWith('e1');
   });
 
+  it('retries loading operations after a request failure', async () => {
+    const client = operationsClient({ getEvent: vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(savedEvent) });
+    renderOperations(client);
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry loading event operations' }));
+    expect(await screen.findByText(/status: draft/i)).toBeInTheDocument();
+    expect(client.getEvent).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps lifecycle and check-in PIN actions available', async () => {
     const confirm = vi.fn().mockReturnValue(true);
     vi.stubGlobal('confirm', confirm);

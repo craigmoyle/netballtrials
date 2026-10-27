@@ -93,6 +93,18 @@ describe('RegisterPage', () => {
     expect(window.sessionStorage.getItem(publicDraftKey)).toBeNull();
   });
 
+  it('explains that a failed follow-up email can be retried without duplicate registration or charge', async () => {
+    const register = vi.fn().mockRejectedValue({ status: 503, message: 'registration_follow_up_unavailable' });
+    render(<RegisterPage client={client(register)} eventId="e1" />);
+    await fillRegistrationForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not prepare or send the next-step email/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/will not create a second registration or charge a payment/i);
+    expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
+    expect(screen.getByRole('button', { name: 'Submit registration' })).toBeEnabled();
+  });
+
   it('marks all server-required controls and leaves optional choices optional', async () => {
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
     await screen.findByRole('group', { name: 'Eligibility confirmation' });
@@ -275,7 +287,7 @@ describe('RegisterPage', () => {
     expect(within(criteria).getAllByRole('listitem')).toHaveLength(3);
     expect(within(criteria).getByText(/12–15 years old as at 31 December 2027/i)).toBeInTheDocument();
     expect(within(criteria).getByText(/permanent player in a domestic or representative competition/i)).toBeInTheDocument();
-    expect(within(criteria).getByText(/six association games between 1 January 2027/i)).toBeInTheDocument();
+    expect(within(criteria).getByText(/six association games in the date range published in the selection policy/i)).toBeInTheDocument();
   });
 
   it('omits the selection-policy link when the event has no policy URL', async () => {
@@ -328,7 +340,7 @@ describe('RegisterPage', () => {
     const summary = await screen.findByRole('region', { name: 'Eligibility at a glance' });
     expect(within(summary).getByText(/Age: 12–15 on 31 December 2027/i)).toBeInTheDocument();
     expect(within(summary).getByText(/Permanent player in a domestic or representative competition at a Chisholm Region member association/i)).toBeInTheDocument();
-    expect(within(summary).getByText(/at least six association games from 1 January 2027 to the day before the trial/i)).toBeInTheDocument();
+    expect(within(summary).getByText(/at least six association games in the date range published in the selection policy/i)).toBeInTheDocument();
     expect(within(summary).getByRole('link', { name: 'View full criteria' })).toHaveAttribute('href', '/register/e1#eligibility-confirmation-summary');
 
     const firstField = await screen.findByLabelText(/player first name/i);
@@ -350,7 +362,7 @@ describe('RegisterPage', () => {
     const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
     expect(screen.getByRole('region', { name: 'Eligibility at a glance' })).toBeInTheDocument();
     expect(within(eligibility).getByText(/12–15 years old as at 31 December 2027/i)).toBeInTheDocument();
-    expect(within(eligibility).getByText(/six association games between 1 January 2027 and the day before the trial/i)).toBeInTheDocument();
+    expect(within(eligibility).getByText(/six association games in the date range published in the selection policy/i)).toBeInTheDocument();
     expect(within(eligibility).getByLabelText(/I confirm the player meets these eligibility requirements/i)).toBeInTheDocument();
   });
 
@@ -447,7 +459,7 @@ describe('RegisterPage', () => {
     expect(privacyDetails.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(privacyDetails);
     expect(screen.getByText(/parent contact details are not shown to volunteers/i)).toBeInTheDocument();
-    expect(screen.getByText(/12 calendar months after the event date/i)).toBeInTheDocument();
+    expect(screen.getByText(/12 calendar months after the event date.*Gmail Sent copies are outside this retention schedule/i)).toBeInTheDocument();
   });
 
   it('associates server field errors with controls and focuses the error summary', async () => {

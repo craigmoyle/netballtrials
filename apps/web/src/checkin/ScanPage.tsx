@@ -62,7 +62,7 @@ export function ScanPage({ client }: { client: Client }) {
       if (!isActive()) return;
       setResult(scanned);
       setCanRescanLastToken(true);
-      setUndoableId(scanned.registrationId && scanned.result !== 'refused' ? scanned.registrationId : null);
+      setUndoableId(scanned.result === 'checked_in' ? scanned.registrationId ?? null : null);
       if (scanned.result === 'checked_in') notifyCheckInUpdated();
       announce(scanned, audioContexts.current);
     } catch (error) {
