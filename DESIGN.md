@@ -225,8 +225,20 @@ Labels sit above native inputs and selects. Fields use a white surface, ink text
 ### Navigation
 The app bar is Chisholm Blue with dark links, a plum lower rule and the club wordmark on a white panel. Navigation text links remain underlined; the wordmark and button-style calls to action are exceptions. The mobile header wraps rather than shrinking its controls.
 
+The four Full Game List views—Full Game List, Position View, Player Statistics and Player Reference—are navigation items, not a native select. Keep them visible and directly selectable on desktop and mobile, with a clear active state and keyboard operation. Do not hide these core views behind a dropdown. Player Statistics include Games, ranked-position and Other assignments, Unique opponents, and Repeat meetings; state the meaning of opponent metrics and show the total repeated-pair count for the schedule.
+
+Expose Communications as a direct Admin destination and from the event workflow. Keep the workflow groups and their links visible when the tools menu is open on mobile; do not nest core destinations behind another disclosure.
+
 ### Lists and tables
-Public trial entries are separated by rules, not cards. Tables use a Light Blue header and plain ink text. The game list, statistics and reference views use captions and row/column headers; mobile tables scroll within their own region.
+Public trial entries are separated by rules, not cards. Tables use a Light Blue header and plain ink text. The game list, statistics and reference views use captions and row/column headers; mobile tables scroll within their own region. Participant lists show the assigned Number next to the player's name wherever it exists; before check-in, show a clear unassigned state rather than implying a Number has been issued.
+
+### Member associations
+Manage the association name and its primary contact name and email together. Keep contact details clearly labelled and restricted to the Admin workspace; they are not part of parent registration or volunteer check-in views.
+
+### Communications workspace
+Use one Communications workspace for event participants and member-association contacts. Make the audience choice explicit, then show searchable, filterable recipients in a readable list with a selection control. Participant rows include Number when assigned, player name, association and relevant registration/check-in context. Filters and individual include/exclude controls must let an Admin reach the intended audience without exposing one family's contacts to another.
+
+Keep reusable templates, send scheduling and delivery history inside the Communications workspace. Before sending or scheduling, show the selected audience and recipient count. Scheduled sends use Australia/Melbourne time and expose their next-send time, status, edit/cancel action and delivery outcome. Failed or ambiguous delivery recovery stays with its message history; retrying an ambiguous result requires confirmation because it may duplicate email.
 
 ### Feedback panels
 Validation summaries use a plain white panel with a plum outline; invalid controls and scan errors use red treatments. Warnings use ochre text on pale yellow, while successful updates use green. These treatments are restrained and always include words, not color alone.

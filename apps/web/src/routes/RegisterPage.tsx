@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker, useLocation } from 'react-router-dom';
-import { melbourneDateKey, POSITIONS, type EventDTO, type MemberAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
+import { melbourneDateKey, POSITIONS, type EventDTO, type PublicAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
 import type { ApiClient as Client } from '../api/client';
 import { formatFee } from '../formatFee';
 import { formatTrialDate } from '../formatTrialDate';
@@ -110,7 +110,7 @@ function loadRegistrationDraft(eventId: string): RegistrationDraft {
 
 export function RegisterPage({ client, eventId, adminAssisted = false }: { client: Client; eventId: string; adminAssisted?: boolean }) {
   const [event, setEvent] = useState<PublicEventDTO | EventDTO | null>(null);
-  const [associations, setAssociations] = useState<MemberAssociationDTO[] | null>(null);
+  const [associations, setAssociations] = useState<PublicAssociationDTO[] | null>(null);
   const [eventError, setEventError] = useState(false);
   const [associationError, setAssociationError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);

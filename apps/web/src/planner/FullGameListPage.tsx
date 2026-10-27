@@ -3,11 +3,18 @@ import { Link, useBlocker } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { useUnsavedSignOut } from '../useUnsavedSignOut';
+import { measureOpponentVariety } from './opponent-variety';
 
 type ViewMode = 'team' | 'position' | 'statistics' | 'reference';
 type DisplayPlayer = { playerName: string; bibNumber: number | null };
 
 const POSITION_INDEX = new Map(POSITIONS.map((position, index) => [position, index]));
+const GAME_VIEWS: Array<{ id: ViewMode; label: string }> = [
+  { id: 'team', label: 'Full Game List' },
+  { id: 'position', label: 'Position View' },
+  { id: 'statistics', label: 'Player Statistics' },
+  { id: 'reference', label: 'Player Reference' },
+];
 
 function slotKey(slot: { round: number; court: number; position: string; team: number }): string {
   return `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
@@ -25,6 +32,7 @@ function colorFor(colors: EventCourtColorDTO[], court: number, team: 0 | 1) {
 function sortedSlots(slots: PlanSlotInputDTO[]): PlanSlotInputDTO[] {
   return [...slots].sort((a, b) => a.round - b.round || a.court - b.court || POSITION_INDEX.get(a.position)! - POSITION_INDEX.get(b.position)! || a.team - b.team);
 }
+
 
 export function FullGameListPage({ client, eventId }: { client: Client; eventId: string }) {
   return <EventGameList key={eventId} client={client} eventId={eventId} />;
@@ -137,6 +145,7 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     assignments.push(slot);
     assignmentsByPlayer.set(slot.registrationId, assignments);
   }
+  const opponentStats = useMemo(() => measureOpponentVariety(availablePlan?.slots ?? []), [availablePlan]);
 
   function playerDetails(registrationId: string, slot?: RoundSlotDTO): DisplayPlayer {
     const snapshot = snapshotById.get(registrationId);
@@ -629,12 +638,13 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     return (
       <section className="player-report" aria-labelledby="player-statistics-heading">
         <h2 id="player-statistics-heading">Player Statistics</h2>
-        <p>Other counts assignments outside the player's recorded choices.</p>
+        <p>Other counts assignments outside the player's recorded choices. Unique opponents counts distinct opposing players; repeat meetings counts additional times the same opponents meet.</p>
+        <p>Repeated opponent pairings across this schedule: {opponentStats.repeatedPairs}.</p>
         <p className="player-report-scroll-note">Scroll horizontally to view all columns.</p>
         <div className="table-scroll" role="region" aria-label="Scrollable player statistics" tabIndex={0}>
           <table className="player-statistics-table">
             <caption>Player Statistics</caption>
-            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th></tr></thead>
+            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th></tr></thead>
             <tbody>{reportPlayers.map((player) => {
               const slots = assignmentsByPlayer.get(player.registrationId) ?? [];
               const counts = { rank1: 0, rank2: 0, rank3: 0, other: 0 };
@@ -644,7 +654,8 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
                 else if (player.rank3Position && slot.position === player.rank3Position) counts.rank3 += 1;
                 else counts.other += 1;
               }
-              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td></tr>;
+              const variety = opponentStats.byPlayer.get(player.registrationId) ?? { uniqueOpponents: 0, repeatMeetings: 0 };
+              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td><td>{variety.uniqueOpponents}</td><td>{variety.repeatMeetings}</td></tr>;
             })}</tbody>
           </table>
         </div>
@@ -710,11 +721,13 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
           <header className="full-game-header">
             <div><h1 id="full-game-title">Full Game List</h1>{event ? <p>{event.division} {event.section} · {event.courts} courts</p> : null}</div>
             {!loading && availablePlan ? (
-              <label htmlFor="game-view">Game view
-                <select id="game-view" aria-label="Game view" value={viewMode} disabled={editing || suffixEditing} onChange={(changeEvent) => setViewMode(changeEvent.target.value as ViewMode)}>
-                  <option value="team">Full game list</option><option value="position">Position View</option><option value="statistics">Player Statistics</option><option value="reference">Player Reference</option>
-                </select>
-              </label>
+              <nav className="game-view-nav" aria-label="Game views">
+                {GAME_VIEWS.map((view) => (
+                  <button key={view.id} type="button" aria-pressed={viewMode === view.id} disabled={editing || suffixEditing} onClick={() => setViewMode(view.id)}>
+                    {view.label}
+                  </button>
+                ))}
+              </nav>
             ) : null}
           </header>
 

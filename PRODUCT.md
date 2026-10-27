@@ -13,7 +13,7 @@ React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; 
 ## Users
 
 - **Parents and guardians** register a player and pay, usually on a phone. Many are doing this for the first time each year and are not technical. Some may have accessibility needs even when the child does not.
-- **Committee members** (Chisholm Netball Region committee, including the State Titles Officer) run everything: creating events, reviewing flagged registrations, checking players in on the day, generating rounds, printing sheets, and messaging registrants. Check-in volunteers are drawn from the committee and use a separate event PIN so their access is limited to check-in.
+- **Committee members** (Chisholm Netball Region committee, including the State Titles Officer) run everything: creating events, managing member-association contacts, reviewing flagged registrations, checking players in on the day, generating rounds, printing sheets, and communicating with associations and registrants. They manage reusable email templates and scheduled sends. Check-in volunteers are drawn from the committee and use a separate event PIN so their access is limited to check-in.
 - **Coaches and selectors** pick the teams on trial day. They use printed landscape sheets only and have no screens of their own in this release.
 
 ## Product Purpose
@@ -29,19 +29,25 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - One event per age group or division (15/U, 17/U, Open, All Abilities, and occasional boys trials), one date per event, typically 60 to 100 players on 4 to 6 courts.
 - Players register through an event link, pay by card through the club's existing Stripe account, and receive a confirmation with a QR code.
 - On the day, volunteers scan QR codes on phones or tablets, often outdoors, assign bib numbers, and close check-in when the roster is final. Rounds are generated only from players who arrived.
-- Selectors work from printed landscape sheets showing round, court, teams, positions, bib numbers and names.
+- Selectors work from printed landscape sheets showing round, court, teams, positions, player Numbers and names, with writable space for selection notes.
 - Eligibility and age rules come from the club's published selection policy (https://chisholmnetball.com/selection-policy/, reviewed 27 August 2025); age is measured at 31 December of the competition year.
 
 ## Capabilities and Constraints
 
 - Seven positions: GS, GA, WA, C, WD, GD, GK. Each court runs a full 7-a-side game of 14 players every round.
-- Third position choice is optional per player; an opt-in lets a player be used in positions they did not choose, and those games are marked on the sheets.
+- Players enter up to three distinct ranked position choices; the third is optional. An opt-in lets a player be used outside their choices, and those assignments are marked on selector sheets. Spread extra-position assignments fairly and vary opponents where feasible so the same players are not repeatedly overused to fill gaps. Player Statistics report each player's unique opponents and repeat meetings, plus the total number of repeated player-pair meetings in the schedule.
+- Every active player should play on every court. The planner enforces minimum games for each chosen rank; when position shortages require extra-position assignments, it balances appearances and explains any shortfall rather than silently relaxing requirements.
 - Duplicate registrations are detected by name and date of birth within an event; siblings can share a parent email.
+- Each member association has a primary contact name and email for committee communications. These contact details are restricted to Admins and are not shown to parents or volunteers.
+- A Communications workspace sends email to selected association contacts or to parents/guardians of participants in an event. Participant recipients are filterable by relevant event, association, registration/payment status, check-in status and position choices; an Admin can include or exclude individual recipients. Preview the final recipient count and list before sending or scheduling. Participant rows show the player's Number when assigned, alongside their name.
+- Admins manage reusable email templates and schedule one-off communications. Scheduled messages use the Australia/Melbourne timezone, can be reviewed and cancelled before sending, and have delivery status and safe retry history. Scheduled sends revalidate recipient eligibility at send time.
+- Send the automatic event reminder approximately 24 hours before the trial.
+- Admins can attach a selection-policy document (PDF) to an event so families can open or download it from registration and event communications; do not require an Admin to hand-type a non-clickable policy link.
 - No refunds. Admins can make validated manual changes to an unfrozen round and rebuild future rounds; frozen rounds cannot be edited. Selector ratings and post-trial team selection are out of scope.
 - Internet access is assumed at check-in; there is no offline mode.
 - Card data is never stored; Stripe handles it. QR codes contain only a random token.
 - Personal data held by the application is deleted or anonymized 12 months after the event. Gmail Sent copies are outside this retention period.
-- Open decisions: hosting platform, final selector-sheet fields and layout.
+- Open decisions: hosting platform, final selector-sheet fields and layout, and how long current member-association contact records are retained between events.
 
 ## Brand Commitments
 

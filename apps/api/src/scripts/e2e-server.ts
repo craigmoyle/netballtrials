@@ -7,7 +7,6 @@ import { createDevMailer } from '../mail/dev-mailer';
 import { createFakePaymentProvider } from '../payments/fake';
 import { hashPin } from '../checkin/pin';
 import { e2eBindHost } from './e2e-runtime';
-import { melbourneDateKey } from '@netball-trials/types';
 import { COURT_POSITIONS } from '../planner/types';
 import { eventFixture, registrationFixture } from '../tests/helpers/fixtures';
 
@@ -30,12 +29,16 @@ async function resetFixtures(): Promise<Record<string, string>> {
   await prisma.staffUser.deleteMany();
   mailer.sent.splice(0);
   payment.checkouts.splice(0);
-  await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
+  await prisma.memberAssociation.create({ data: {
+    name: 'MENA', active: true,
+    primaryContactName: 'E2E Association Contact', primaryContactEmail: 'association@example.test',
+  } });
 
   const mainEvent = await prisma.event.create({
     data: { ...eventFixture({
       name: 'E2E 15/U Ladies', status: 'OPEN', eventDate: new Date('2027-09-12T00:00:00Z'),
-      courts: 2, nextBibNumber: 29, rank1Min: 1, rank2Min: 0, rank3Min: 0,
+      courts: 3, nextBibNumber: 70, rank1Min: 2, rank2Min: 1, rank3Min: 1,
+      checkInPinHash: await hashPin('482193'),
     }) },
   });
   const [white, black, grey, orange] = await Promise.all(['White', 'Black', 'Grey', 'Orange'].map((name) =>
@@ -44,68 +47,40 @@ async function resetFixtures(): Promise<Record<string, string>> {
   await prisma.eventCourtColor.createMany({ data: [
     { eventId: mainEvent.id, court: 1, teamAColorId: white.id, teamBColorId: black.id },
     { eventId: mainEvent.id, court: 2, teamAColorId: grey.id, teamBColorId: orange.id },
+    { eventId: mainEvent.id, court: 3, teamAColorId: white.id, teamBColorId: orange.id },
   ] });
-  for (let index = 0; index < 28; index++) {
-    const parentEmail = index === 27 ? 'PARENT1@example.test' : `parent${index + 1}@example.test`;
+  const ticketToken = 'e2e-parent-ticket-token-0123456789abcdef';
+  for (let index = 0; index < 70; index++) {
+    const isTicketPlayer = index === 69;
+    const isWaiting = index === 0;
+    const playerFirstName = isTicketPlayer ? 'Ada' : `Player${index + 1}`;
+    const playerLastName = isTicketPlayer ? 'Ticket' : 'Trial';
     await prisma.registration.create({
       data: registrationFixture(mainEvent.id, {
-        playerFirstName: `Player${index + 1}`,
-        playerLastName: 'Trial',
-        playerNameNormalized: `player${index + 1} trial`,
+        playerFirstName,
+        playerLastName,
+        playerNameNormalized: `${playerFirstName} ${playerLastName}`.toLowerCase(),
         parentName: `Parent ${index + 1}`,
-        parentEmail,
+        parentEmail: isTicketPlayer ? 'PARENT1@example.test' : `parent${index + 1}@example.test`,
         dateOfBirth: new Date('2012-04-02T00:00:00Z'),
         memberAssociation: 'MENA',
         rank1Position: COURT_POSITIONS[index % COURT_POSITIONS.length],
-        optInExtraPositions: true,
+        rank2Position: COURT_POSITIONS[(index + 2) % COURT_POSITIONS.length],
+        rank3Position: COURT_POSITIONS[(index + 4) % COURT_POSITIONS.length],
+        optInExtraPositions: false,
         status: 'PAID',
         ageFlagged: index < 2,
-        qrToken: `e2e-main-token-${index}-abcdefghijklmnopqrstuvwxyz`,
-        checkedInAt: new Date(),
-        checkedInBy: 'E2E volunteer',
-        bibNumber: index + 1,
-      }),
-    });
-  }
-  const ticketToken = 'e2e-parent-ticket-token-0123456789abcdef';
-  await prisma.registration.create({
-    data: registrationFixture(mainEvent.id, {
-      playerFirstName: 'Ada', playerLastName: 'Ticket', playerNameNormalized: 'ada ticket',
-      parentName: 'Parent 1', parentEmail: 'parent1@example.test', memberAssociation: 'MENA',
-      status: 'PAID', qrToken: ticketToken, checkedInAt: null, checkedInBy: null, bibNumber: null,
-    }),
-  });
-
-  const checkInEvent = await prisma.event.create({
-    data: { ...eventFixture({
-      name: 'E2E Check-in', status: 'OPEN', eventDate: new Date('2027-09-19T00:00:00Z'),
-      courts: 1, rank1Min: 0, rank2Min: 0, rank3Min: 0, checkInPinHash: await hashPin('482193'),
-    }) },
-  });
-  for (let index = 0; index < 14; index++) {
-    await prisma.registration.create({
-      data: registrationFixture(checkInEvent.id, {
-        playerFirstName: `Checkin${index + 1}`, playerLastName: 'Trial', playerNameNormalized: `checkin${index + 1} trial`,
-        parentEmail: `checkin${index + 1}@example.test`, memberAssociation: 'MENA', rank1Position: 'GS',
-        status: 'PAID', ageFlagged: index === 0, qrToken: `e2e-checkin-token-${index}-abcdefghijklmnopqrstuvwxyz`,
+        qrToken: isTicketPlayer ? ticketToken : `e2e-main-token-${index}-abcdefghijklmnopqrstuvwxyz`,
+        checkedInAt: isWaiting ? null : new Date(),
+        checkedInBy: isWaiting ? null : 'E2E volunteer',
+        bibNumber: isWaiting ? null : index,
       }),
     });
   }
 
-  const dayOfEvent = await prisma.event.create({
-    data: { ...eventFixture({
-      name: 'E2E Day-of registration', status: 'CLOSED',
-      eventDate: new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`), courts: 1,
-      rank1Min: 0, rank2Min: 0, rank3Min: 0,
-    }) },
-  });
-
-  const draftEvent = await prisma.event.create({
-    data: { ...eventFixture({ name: 'E2E Draft event', status: 'DRAFT', eventDate: new Date('2027-10-01T00:00:00Z'), courts: 1 }) },
-  });
   const adminEmail = `e2e-admin-${++adminSequence}@example.test`;
   await prisma.staffUser.create({ data: { email: adminEmail } });
-  fixtures = { mainEventId: mainEvent.id, checkInEventId: checkInEvent.id, dayOfEventId: dayOfEvent.id, draftEventId: draftEvent.id, ticketToken, adminEmail };
+  fixtures = { mainEventId: mainEvent.id, ticketToken, adminEmail };
   return fixtures;
 }
 

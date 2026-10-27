@@ -71,6 +71,9 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
   const [busy, setBusy] = useState(false);
   const [savedEventName, setSavedEventName] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [policyDocumentName, setPolicyDocumentName] = useState<string | null>(null);
+  const [policyDocumentBusy, setPolicyDocumentBusy] = useState(false);
+  const [policyDocumentError, setPolicyDocumentError] = useState<string | null>(null);
   const [loadedEventId, setLoadedEventId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -129,6 +132,7 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
         if (!active) return;
         setSavedEventName(event.name);
         setEventDate(event.eventDate);
+        setPolicyDocumentName(event.policyDocumentName);
         const loadedForm: FormState = {
           name: event.name,
           competitionYear: String(event.competitionYear),
@@ -173,6 +177,53 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
       }
       return next;
     });
+  }
+
+  async function uploadPolicy(file: File | undefined) {
+    if (!id || !file) return;
+    if (!/\.pdf$/i.test(file.name) || file.type !== 'application/pdf' || file.size > 700 * 1024) {
+      setPolicyDocumentError('Choose a PDF no larger than 700 KB.');
+      return;
+    }
+    setPolicyDocumentBusy(true);
+    setPolicyDocumentError(null);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('file_read_failed'));
+        reader.onload = () => {
+          const result = String(reader.result ?? '');
+          const comma = result.indexOf(',');
+          if (comma < 0) reject(new Error('file_read_failed'));
+          else resolve(result.slice(comma + 1));
+        };
+        reader.readAsDataURL(file);
+      });
+      const uploaded = await client.uploadPolicyDocument(id, { fileName: file.name, pdfBase64: base64 });
+      setPolicyDocumentName(uploaded.policyDocumentName);
+      setForm((current) => ({ ...current, policyUrl: uploaded.policyUrl }));
+      savedForm.current = { ...savedForm.current, policyUrl: uploaded.policyUrl };
+    } catch {
+      setPolicyDocumentError('Could not upload the policy PDF. Check that it is a valid PDF under 700 KB and try again.');
+    } finally {
+      setPolicyDocumentBusy(false);
+    }
+  }
+
+  async function removePolicyDocument() {
+    if (!id || !policyDocumentName) return;
+    setPolicyDocumentBusy(true);
+    setPolicyDocumentError(null);
+    try {
+      await client.deletePolicyDocument(id);
+      setPolicyDocumentName(null);
+      setForm((current) => ({ ...current, policyUrl: '' }));
+      savedForm.current = { ...savedForm.current, policyUrl: '' };
+    } catch {
+      setPolicyDocumentError('Could not remove the policy PDF. Try again.');
+    } finally {
+      setPolicyDocumentBusy(false);
+    }
   }
 
   async function onSubmit(event: FormEvent) {
@@ -261,6 +312,15 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
         </>
       ) : <p role="status">Loading event details...</p>) : <>
       {id && savedEventName && eventDate ? <p className="event-form-context">{savedEventName} · {formatTrialDate(eventDate)}</p> : null}
+      {id && loadedEventId === id ? (
+        <section aria-labelledby="policy-document-heading" className="policy-document-controls">
+          <h2 id="policy-document-heading">Selection policy PDF</h2>
+          {policyDocumentName ? <p>Attached: <a href={`${import.meta.env.VITE_API_URL ?? ''}/api/public/events/${encodeURIComponent(id)}/policy-document`} target="_blank" rel="noreferrer">{policyDocumentName} (new tab)</a></p> : <p>No policy PDF attached.</p>}
+          {policyDocumentError ? <p role="alert">{policyDocumentError}</p> : null}
+          <p><label htmlFor="policy-pdf">Upload a selection policy PDF (max 700 KB)</label><input id="policy-pdf" type="file" accept="application/pdf,.pdf" disabled={policyDocumentBusy || busy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; void uploadPolicy(file); }} /></p>
+          {policyDocumentName ? <button type="button" className="button-secondary" disabled={policyDocumentBusy || busy} onClick={() => void removePolicyDocument()}>{policyDocumentBusy ? 'Updating...' : 'Remove policy PDF'}</button> : null}
+        </section>
+      ) : null}
       {fieldErrors.length > 0 ? (
         <div ref={errorSummary} role="alert" aria-labelledby="event-errors-title" tabIndex={-1} className="error-summary">
           <h2 id="event-errors-title">Check these event details</h2>

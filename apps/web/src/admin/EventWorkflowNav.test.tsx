@@ -34,7 +34,7 @@ describe('EventWorkflowNav', () => {
     expect(within(eventGroup).getByRole('link', { name: 'Roster and export' })).toBeInTheDocument();
     expect(within(planningGroup).getByRole('link', { name: 'Plan rounds' })).toBeInTheDocument();
     expect(within(planningGroup).getByRole('link', { name: 'Print selector sheets' })).toBeInTheDocument();
-    expect(within(trialDayGroup).getByRole('link', { name: 'Messages' })).toBeInTheDocument();
+    expect(within(trialDayGroup).getByRole('link', { name: 'Communications' })).toBeInTheDocument();
     expect(within(trialDayGroup).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in?eventId=e1');
     const toggle = screen.getByRole('button', { name: 'Event tools: Event operations' });
     const links = nav.querySelector('#event-workflow-links')!;
@@ -44,7 +44,7 @@ describe('EventWorkflowNav', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(links).toHaveClass('is-open');
-    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Messages', 'Volunteer check-in']) {
+    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Communications', 'Volunteer check-in']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });

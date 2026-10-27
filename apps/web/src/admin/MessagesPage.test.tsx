@@ -1,270 +1,109 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { MessagesPage } from './MessagesPage';
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-const BATCH_1 = '11111111-1111-4111-8111-111111111111';
-const BATCH_2 = '22222222-2222-4222-8222-222222222222';
-const BATCH_3 = '33333333-3333-4333-8333-333333333333';
-const BATCH_4 = '44444444-4444-4444-8444-444444444444';
-const BATCH_AMBIGUOUS = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const BATCH_PENDING = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-
-function fillDraft() {
-  fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Venue update' } });
-  fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Trials are at SNC.' } });
-}
-
-function renderPage(client: Record<string, unknown>) {
-  return render(<MemoryRouter><MessagesPage client={client as any} eventId="event-1" /></MemoryRouter>);
-}
-
-const failedDelivery = {
-  id: 'delivery-failed', batchId: BATCH_1, to: 'retry@example.com', subject: 'Venue update', body: 'Trials are at SNC.',
-  kind: 'message', status: 'FAILED', attempts: 1, senderUserId: 'admin-1', registrationId: 'reg-1',
-  createdAt: '2026-10-10T00:00:00.000Z', lastAttemptAt: null, sentAt: null, failedAt: null, error: 'provider_rejected_403',
+const participant = (id: string, name: string, email: string, extra: Partial<Record<string, unknown>> = {}) => ({
+  id, name, email, number: null, association: 'MENA', registrationStatus: 'PAID', checkedIn: false, positions: ['GS'], ...extra,
+});
+const recipients = {
+  participants: [participant('p1', 'Ada Lovelace', 'ada@example.test', { number: 7, checkedIn: true }), participant('p2', 'Grace Hopper', 'grace@example.test'), participant('pending', 'Pending Player', 'pending@example.test', { registrationStatus: 'PENDING' })],
+  associations: [{ id: 'a1', name: 'MENA — Casey Contact', email: 'mena@example.test', number: null, association: 'MENA', registrationStatus: null, checkedIn: null, positions: [] }],
 };
-const sentDelivery = { ...failedDelivery, id: 'delivery-sent', to: 'ok@example.com', status: 'SENT' };
 
-describe('MessagesPage', () => {
-  it('shows the exact distinct-recipient count before sending', async () => {
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValue([]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 3 }),
-      sendMessage: vi.fn(),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    expect(await screen.findByText(/3 distinct paid parent email addresses/i)).toBeInTheDocument();
-    expect(client.sendMessage).not.toHaveBeenCalled();
+function renderPage(overrides: Record<string, unknown> = {}) {
+  const client = {
+    getEvent: vi.fn().mockResolvedValue({ policyDocumentName: null }),
+    getCommunicationRecipients: vi.fn().mockResolvedValue(recipients),
+    listCommunicationTemplates: vi.fn().mockResolvedValue([]),
+    listScheduledCommunications: vi.fn().mockResolvedValue([]),
+    listCommunicationDeliveries: vi.fn().mockResolvedValue([]),
+    previewCommunication: vi.fn().mockImplementation(async (_eventId: string, input: { recipientIds: string[] }) => ({
+      count: input.recipientIds.length,
+      recipients: recipients.participants.filter((recipient) => input.recipientIds.includes(recipient.id) && recipient.registrationStatus === 'PAID'),
+    })),
+    sendCommunication: vi.fn().mockResolvedValue({ batchId: 'batch-1', sent: 2, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
+    scheduleCommunication: vi.fn().mockResolvedValue({ id: 'scheduled-1', eventId: 'event-1', audience: 'participants', recipientIds: ['p1'], batchId: 'scheduled-batch', subject: 'Trial update', body: 'See you soon', scheduledAt: '2027-01-15T23:30:00Z', status: 'SCHEDULED', attempts: 0, error: null }),
+    cancelScheduledCommunication: vi.fn().mockResolvedValue({ status: 'CANCELLED' }),
+    saveCommunicationTemplate: vi.fn().mockResolvedValue({ id: 'template-1', name: 'Trial update', audience: 'participants', subject: 'Trial update', body: 'See you soon', createdAt: '', updatedAt: '' }),
+    deleteCommunicationTemplate: vi.fn().mockResolvedValue(undefined),
+    retryCommunication: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  };
+  render(<MemoryRouter><MessagesPage client={client as any} eventId="event-1" /></MemoryRouter>);
+  return client;
+}
+
+describe('CommunicationsPage', () => {
+  it('filters participants, shows the player Number, and excludes pending registrations from selection', async () => {
+    renderPage();
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText(/Paid · Checked in/i)).toBeInTheDocument();
+    const pending = screen.getByRole('checkbox', { name: 'Include Pending Player' });
+    expect(pending).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Filter by association'), { target: { value: 'MENA' } });
+    fireEvent.change(screen.getByLabelText('Filter by position'), { target: { value: 'GS' } });
+    fireEvent.change(screen.getByLabelText('Filter by payment or attendance'), { target: { value: 'checked-in' } });
+    expect(screen.getByRole('row', { name: /Ada Lovelace/ })).toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: /Grace Hopper/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Member associations' }));
+    expect(screen.getByText('MENA — Casey Contact')).toBeInTheDocument();
+    expect(screen.getByText('mena@example.test')).toBeInTheDocument();
   });
 
-  it('loads slow initial history even after reviewing recipients and canceling', async () => {
-    let resolveHistory!: (entries: typeof sentDelivery[]) => void;
-    const history = new Promise<typeof sentDelivery[]>((resolve) => { resolveHistory = resolve; });
-    const client = {
-      listEmailLog: vi.fn(() => history),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn(),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: 'Review recipients' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-    await act(async () => { resolveHistory([{ ...sentDelivery, subject: 'Previous announcement' }]); });
+  it('previews explicit recipients before sending and uses the confirmed list', async () => {
+    const client = renderPage();
+    await screen.findByText('Ada Lovelace');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Grace Hopper' }));
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Trial update' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Bring water.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview recipients' }));
 
-    expect(screen.getByText('Previous announcement — sent')).toBeInTheDocument();
-    expect(screen.queryByText('No messages sent for this event yet.')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Subject')).toHaveValue('Venue update');
-    expect(screen.getByLabelText('Message')).toHaveValue('Trials are at SNC.');
-    expect(client.listEmailLog).toHaveBeenCalledTimes(1);
-    expect(client.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('does not let slow initial history replace a newer batch reconciliation', async () => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_1);
-    let resolveHistory!: (entries: typeof sentDelivery[]) => void;
-    const history = new Promise<typeof sentDelivery[]>((resolve) => { resolveHistory = resolve; });
-    const client = {
-      listEmailLog: vi.fn().mockReturnValueOnce(history).mockResolvedValueOnce([failedDelivery]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_1, sent: 0, failed: 1, ambiguous: 0, pending: 0 }),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: 'Review recipients' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Send to 1 recipient' }));
-    await screen.findByRole('button', { name: /retry failed deliveries/i });
-    await act(async () => { resolveHistory([{ ...sentDelivery, subject: 'Previous announcement' }]); });
-
-    expect(screen.queryByText('Previous announcement — sent')).not.toBeInTheDocument();
-    expect(screen.getByText(/Venue update — failed/)).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('0 sent, 1 failed');
-    expect(screen.getByLabelText('Subject')).toHaveValue('Venue update');
-  });
-
-  it('reports partial delivery, preserves the draft and retries only known failed recipients', async () => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_1);
-    const client = {
-      listEmailLog: vi.fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([failedDelivery, sentDelivery])
-        .mockResolvedValueOnce([{ ...failedDelivery, status: 'SENT', error: null, sentAt: '2026-10-10T00:05:00.000Z' }, sentDelivery]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 2 }),
-      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_1, sent: 1, failed: 1, ambiguous: 0, pending: 0, deliveryIds: ['delivery-sent', 'delivery-failed'], sentThisRun: 1, failedThisRun: 1, ambiguousThisRun: 0 }),
-      retryMessage: vi.fn().mockResolvedValue({ batchId: BATCH_1, sent: 2, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery-sent', 'delivery-failed'] }),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 2 recipients/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('1 sent, 1 failed');
-    expect(screen.getByLabelText('Subject')).toHaveValue('Venue update');
-    expect(screen.getByLabelText('Message')).toHaveValue('Trials are at SNC.');
-    fireEvent.click(screen.getByRole('button', { name: /retry failed deliveries/i }));
-    await waitFor(() => expect(client.retryMessage).toHaveBeenCalledWith('event-1', BATCH_1, ['delivery-failed'], false));
+    expect(await screen.findByRole('heading', { name: 'Review recipients' })).toBeInTheDocument();
+    expect(client.previewCommunication).toHaveBeenCalledWith('event-1', { audience: 'participants', recipientIds: ['p1', 'p2'] });
+    expect(screen.getByText(/2 distinct email recipients will receive this message/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send now to 2' }));
+    await waitFor(() => expect(client.sendCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({
+      audience: 'participants', recipientIds: ['p1', 'p2'], subject: 'Trial update', text: 'Bring water.', batchId: expect.any(String),
+    })));
     expect(await screen.findByRole('status')).toHaveTextContent('2 sent, 0 failed');
-    expect(screen.getByLabelText('Subject')).toHaveValue('');
-    expect(screen.getByLabelText('Message')).toHaveValue('');
   });
 
-  it('shows audited delivery details and can retry a failed historical delivery after reload', async () => {
-    const client = {
-      listEmailLog: vi.fn()
-        .mockResolvedValueOnce([failedDelivery])
-        .mockResolvedValueOnce([{ ...failedDelivery, status: 'SENT', sentAt: '2026-10-10T00:05:00.000Z', error: null }]),
-      getMessageRecipientCount: vi.fn(),
-      sendMessage: vi.fn(),
-      retryMessage: vi.fn().mockResolvedValue({ batchId: BATCH_1, sent: 1, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery-failed'] }),
-    };
-    renderPage(client);
-    expect(await screen.findByText(/venue update — failed/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Delivery details'));
-    expect(screen.getByText('Recipient: retry@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Sender ID: admin-1')).toBeInTheDocument();
-    expect(screen.getByText('Trials are at SNC.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry this delivery' }));
-    await waitFor(() => expect(client.retryMessage).toHaveBeenCalledWith('event-1', BATCH_1, ['delivery-failed'], false));
-    expect(await screen.findByText(/venue update — sent/i)).toBeInTheDocument();
+  it('saves and applies audience-specific email templates', async () => {
+    const template = { id: 'template-1', name: 'Trial update', audience: 'participants', subject: 'Saved subject', body: 'Saved body', createdAt: '', updatedAt: '' };
+    const client = renderPage({
+      listCommunicationTemplates: vi.fn().mockResolvedValue([template]),
+      saveCommunicationTemplate: vi.fn().mockResolvedValue(template),
+    });
+    await screen.findByText('Ada Lovelace');
+    fireEvent.change(screen.getByLabelText('Use a saved template'), { target: { value: 'template-1' } });
+    expect(screen.getByLabelText('Subject')).toHaveValue('Saved subject');
+    expect(screen.getByLabelText('Message')).toHaveValue('Saved body');
+    fireEvent.change(screen.getByLabelText('Save current message as template'), { target: { value: 'Another template' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
+    await waitFor(() => expect(client.saveCommunicationTemplate).toHaveBeenCalledWith({ name: 'Another template', audience: 'participants', subject: 'Saved subject', body: 'Saved body' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Template saved.');
+    fireEvent.click(screen.getByRole('button', { name: 'Member associations' }));
+    expect(screen.getByRole('option', { name: 'Choose a template' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Trial update' })).not.toBeInTheDocument();
   });
 
-  it('preserves the draft after total failure', async () => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_2);
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ ...failedDelivery, batchId: BATCH_2 }]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_2, sent: 0, failed: 1, ambiguous: 0, pending: 0, deliveryIds: ['delivery-failed'], sentThisRun: 0, failedThisRun: 1, ambiguousThisRun: 0 }),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('0 sent, 1 failed');
-    expect(screen.getByLabelText('Subject')).toHaveValue('Venue update');
-    expect(screen.getByLabelText('Message')).toHaveValue('Trials are at SNC.');
-  });
-
-  it('reports successful delivery even if refreshing the delivery history fails', async () => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_3);
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('refresh failed')).mockResolvedValueOnce([{ ...sentDelivery, batchId: BATCH_3 }]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_3, sent: 1, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery-sent'], sentThisRun: 1, failedThisRun: 0, ambiguousThisRun: 0 }),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('1 sent, 0 failed');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/delivery history could not be refreshed/i);
-    expect(screen.getByLabelText('Subject')).toHaveValue('');
-    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'New draft B' } });
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep these details' } });
-    fireEvent.click(screen.getByRole('button', { name: /refresh delivery history/i }));
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(screen.getByText(/venue update — sent/i)).toBeInTheDocument();
-    expect(screen.getByLabelText('Subject')).toHaveValue('New draft B');
-    expect(screen.getByLabelText('Message')).toHaveValue('Keep these details');
-  });
-
-  it.each(['new batch', 'new event'])('ignores a delayed old history refresh after starting a %s', async (supersededBy) => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(BATCH_1).mockReturnValueOnce(BATCH_2);
-    let resolveHistory!: (entries: unknown[]) => void;
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('offline'))
-        .mockImplementationOnce(() => new Promise(resolve => { resolveHistory = resolve; }))
-        .mockResolvedValue([{ ...failedDelivery, batchId: BATCH_2 }]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn().mockResolvedValueOnce({ batchId: BATCH_1, sent: 1, failed: 0, ambiguous: 0, pending: 0 })
-        .mockResolvedValueOnce({ batchId: BATCH_2, sent: 0, failed: 1, ambiguous: 0, pending: 0 }),
-    };
-    const page = renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /refresh delivery history/i }));
-    if (supersededBy === 'new event') {
-      page.rerender(<MemoryRouter><MessagesPage client={client as any} eventId="event-2" /></MemoryRouter>);
-      await waitFor(() => expect(client.listEmailLog).toHaveBeenCalledWith('event-2'));
-    }
-    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'New batch B' } });
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep B' } });
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
-    await screen.findByRole('button', { name: /retry failed deliveries/i });
-    await act(async () => resolveHistory([sentDelivery]));
-    expect(screen.getByLabelText('Subject')).toHaveValue('New batch B');
-    expect(screen.getByLabelText('Message')).toHaveValue('Keep B');
-    expect(screen.getByRole('button', { name: /retry failed deliveries/i })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('0 sent, 1 failed');
-  });
-
-  it('requires explicit confirmation before retrying an ambiguous delivery', async () => {
-    const confirm = vi.fn().mockReturnValue(false);
-    vi.stubGlobal('confirm', confirm);
-    const ambiguousDelivery = { ...failedDelivery, id: 'delivery-ambiguous', batchId: BATCH_AMBIGUOUS, status: 'AMBIGUOUS', error: 'delivery_outcome_unknown' };
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([ambiguousDelivery]).mockResolvedValueOnce([{ ...ambiguousDelivery, status: 'SENT' }]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_AMBIGUOUS, sent: 0, failed: 0, ambiguous: 1, pending: 0, deliveryIds: ['delivery-ambiguous'], sentThisRun: 0, failedThisRun: 0, ambiguousThisRun: 1 }),
-      retryMessage: vi.fn().mockResolvedValue({ batchId: BATCH_AMBIGUOUS, sent: 1, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery-ambiguous'] }),
-    };
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_AMBIGUOUS);
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
-    expect(await screen.findByText(/outcome unknown: delivery_outcome_unknown/i)).toBeInTheDocument();
-    expect(screen.queryByText(/failed: delivery_outcome_unknown/i)).not.toBeInTheDocument();
-    fireEvent.click(await screen.findByRole('button', { name: /retry ambiguous deliveries/i }));
-    expect(confirm).toHaveBeenCalled();
-    expect(client.retryMessage).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole('button', { name: /retry ambiguous deliveries/i }));
-    await waitFor(() => expect(client.retryMessage).toHaveBeenCalledWith('event-1', BATCH_AMBIGUOUS, ['delivery-ambiguous'], true));
-    expect(await screen.findByRole('status')).toHaveTextContent('1 sent, 0 failed');
-  });
-
-  it('lets an administrator recheck a still-pending batch without starting a new one', async () => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_PENDING);
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ ...failedDelivery, batchId: BATCH_PENDING, status: 'SENDING' }])
-        .mockResolvedValueOnce([{ ...sentDelivery, batchId: BATCH_PENDING }]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage: vi.fn().mockResolvedValue({ batchId: BATCH_PENDING, sent: 0, failed: 0, ambiguous: 0, pending: 1, deliveryIds: ['delivery-sent'], sentThisRun: 0, failedThisRun: 0, ambiguousThisRun: 0 }),
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /send to 1 recipient/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('1 still pending');
-    fireEvent.click(screen.getByRole('button', { name: /check delivery status/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent('1 sent, 0 failed');
-    expect(client.sendMessage).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText('Subject')).toHaveValue('');
-  });
-
-  it('prevents a duplicate send while the first request is pending', async () => {
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(BATCH_4);
-    let resolveSend!: (value: unknown) => void;
-    const sendMessage = vi.fn(() => new Promise((resolve) => { resolveSend = resolve; }));
-    const client = {
-      listEmailLog: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ ...sentDelivery, batchId: BATCH_4 }]),
-      getMessageRecipientCount: vi.fn().mockResolvedValue({ count: 1 }),
-      sendMessage,
-    };
-    renderPage(client);
-    fillDraft();
-    fireEvent.click(screen.getByRole('button', { name: /review recipients/i }));
-    const send = await screen.findByRole('button', { name: /send to 1 recipient/i });
-    fireEvent.click(send);
-    fireEvent.click(send);
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    resolveSend({ batchId: BATCH_4, sent: 1, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [], sentThisRun: 1, failedThisRun: 0, ambiguousThisRun: 0 });
-    expect(await screen.findByRole('status')).toHaveTextContent('1 sent, 0 failed');
+  it('schedules a reviewed message and offers cancellation before it sends', async () => {
+    const client = renderPage();
+    await screen.findByText('Ada Lovelace');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' }));
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Reminder' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Tomorrow.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview recipients' }));
+    await screen.findByRole('heading', { name: 'Review recipients' });
+    fireEvent.change(screen.getByLabelText('Send at (Australia/Melbourne)'), { target: { value: '2099-01-15T10:30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule email' }));
+    await waitFor(() => expect(client.scheduleCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({ audience: 'participants', recipientIds: ['p1'], subject: 'Reminder', text: 'Tomorrow.', scheduledLocal: '2099-01-15T10:30' })));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel scheduled email' }));
+    await waitFor(() => expect(client.cancelScheduledCommunication).toHaveBeenCalledWith('event-1', 'scheduled-1'));
   });
 });

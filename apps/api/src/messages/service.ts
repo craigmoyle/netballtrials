@@ -196,20 +196,25 @@ async function dispatchOne(
       },
     });
     if (!current || !current.to || current.error === INTERRUPTED_SEND) return null;
-    const eligible = await tx.registration.findFirst({
-      where: {
-        eventId: current.eventId,
-        ...mailRegistrationEligibility(current.kind, now),
-        OR: [
-          { id: current.registrationId ?? '' },
-          // A batch represents a household, not just the first paid sibling.
-          ...(['message', 'reminder'].includes(current.kind)
-            ? [{ parentEmail: { equals: current.to, mode: 'insensitive' as const } }]
-            : []),
-        ],
-      },
-      select: { id: true },
-    });
+    const eligible = current.kind === 'association'
+      ? current.associationId ? await tx.memberAssociation.findFirst({
+          where: { id: current.associationId, active: true, primaryContactEmail: { equals: current.to, mode: 'insensitive' } },
+          select: { id: true },
+        }) : null
+      : await tx.registration.findFirst({
+          where: {
+            eventId: current.eventId,
+            ...mailRegistrationEligibility(current.kind, now),
+            OR: [
+              { id: current.registrationId ?? '' },
+              // A batch represents a household, not just the first paid sibling.
+              ...(['message', 'reminder'].includes(current.kind)
+                ? [{ parentEmail: { equals: current.to, mode: 'insensitive' as const } }]
+                : []),
+            ],
+          },
+          select: { id: true },
+        });
     if (!eligible) return null;
     const claim = await tx.emailLog.updateMany({
       where: { id: current.id, status: { in: retryable } },
@@ -326,6 +331,16 @@ async function sendBatch(
   await expireSendingLease(deps.prisma, batchId, now);
   const rows = await prepareBatch(deps.prisma, eventId, message, kind, batchId, now, options.senderUserId, recipient);
   const outcomes = await dispatchBatch(deps, rows, now, false, options.maxAttempts);
+  return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
+}
+
+export async function dispatchSelectedRows(
+  deps: DeliveryDeps,
+  rows: DeliveryRow[],
+  now: Date,
+): Promise<DeliverySummary> {
+  const batchId = rows[0]?.batchId ?? '';
+  const outcomes = await dispatchBatch(deps, rows, now);
   return { ...await getDeliverySummary(deps.prisma, batchId), ...runCounts(outcomes) };
 }
 

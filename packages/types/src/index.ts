@@ -59,10 +59,15 @@ export interface EventDTO {
   status: EventStatus;
 }
 
-export interface MemberAssociationDTO {
+export interface PublicAssociationDTO {
   id: string;
   name: string;
   active: boolean;
+}
+
+export interface MemberAssociationDTO extends PublicAssociationDTO {
+  primaryContactName: string | null;
+  primaryContactEmail: string | null;
 }
 
 export interface BibColorDTO {
@@ -303,9 +308,45 @@ export interface RosterDTO {
   };
 }
 
+export interface CommunicationRecipientDTO {
+  id: string;
+  name: string;
+  email: string;
+  number: number | null;
+  association: string | null;
+  registrationStatus: RegistrationStatus | null;
+  checkedIn: boolean | null;
+  positions: Position[];
+}
+
+export interface EmailTemplateDTO {
+  id: string;
+  name: string;
+  audience: 'participants' | 'associations';
+  subject: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduledMessageDTO {
+  id: string;
+  eventId: string;
+  audience: 'participants' | 'associations';
+  recipientIds: string[];
+  batchId: string;
+  subject: string;
+  body: string;
+  scheduledAt: string;
+  status: 'SCHEDULED' | 'SENDING' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
+  attempts: number;
+  error: string | null;
+}
+
 export interface EmailLogDTO {
   id: string;
   registrationId: string | null;
+  associationId?: string | null;
   senderUserId: string | null;
   batchId: string;
   to: string;

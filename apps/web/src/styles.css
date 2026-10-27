@@ -343,8 +343,31 @@ thead { background: var(--blue-pale); }
 .full-game-round-filter label { display: grid; gap: 0.25rem; width: min(100%, 36rem); }
 .full-game-round-filter select { width: 100%; }
 .full-game-header p { margin: 0.3rem 0 0; }
-.full-game-header label { min-width: 10rem; }
-.full-game-header select { display: block; margin-top: 0.25rem; }
+.game-view-nav { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.game-view-nav button { min-height: 2.75rem; padding: 0.35rem 0.15rem; color: var(--burgundy); background: transparent; border: 0; border-radius: 0; text-decoration: underline; text-underline-offset: 0.18em; }
+.game-view-nav button:hover:not(:disabled) { color: var(--burgundy-dark); background: transparent; text-decoration-thickness: 2px; }
+.game-view-nav button[aria-pressed="true"] { font-weight: 700; text-decoration-thickness: 2px; }
+.game-view-nav button:disabled { color: var(--placeholder-ink); }
+.association-list { padding-left: 1.25rem; }
+.association-list > li { padding-block: 0.75rem; border-bottom: 1px solid var(--line); }
+.association-list h2 { margin: 0 0 0.5rem; font-size: 1.25rem; }
+.association-list form { display: flex; flex-wrap: wrap; align-items: end; gap: 0.25rem 0.75rem; }
+.association-list form p { margin: 0; }
+.policy-document-controls { margin-block: 1rem; padding-block: 0.75rem; border-block: 1px solid var(--line); }
+.policy-document-controls h2 { margin-top: 0; }
+.communications-page > section { margin-block: 1.5rem; }
+.communications-page h2 { margin-bottom: 0.5rem; }
+.communication-audience { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 1rem; }
+.communication-audience button[aria-pressed="true"] { color: var(--paper); background: var(--burgundy); }
+.communication-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 1rem; }
+.communication-filters label { display: grid; gap: 0.25rem; }
+.communications-page table { min-width: 46rem; }
+.communications-page td:first-child { text-align: center; }
+.communications-page input[type="checkbox"] { min-width: 1.25rem; min-height: 1.25rem; }
+.communications-page .message-confirmation { margin-block: 1rem; padding: 1rem; background: var(--warning-surface); border: 1px solid var(--warning-border); }
+.communications-page .message-confirmation pre { white-space: pre-wrap; }
+.communications-page details { margin-block: 0.35rem; }
+.communications-page li + li { margin-top: 0.5rem; }
 .game-active-revision, .game-plan-revision { margin-block: 0.6rem; font-weight: 650; }
 .full-game-round { margin-block: 1.5rem; }
 .full-game-round-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
@@ -430,11 +453,14 @@ thead { background: var(--blue-pale); }
   .full-game-sidebar { padding: 0 0 1rem; border-right: 0; border-bottom: 1px solid var(--line); }
   .full-game-teams { grid-template-columns: minmax(0, 1fr); }
   .game-move-controls { grid-template-columns: minmax(0, 1fr); }
+  .association-list form { display: grid; align-items: stretch; }
+  .communications-page .communication-filters { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .communications-page table { min-width: 44rem; }
 }
 
 @media (max-width: 38rem) {
   .full-game-header { align-items: start; }
-  .full-game-header label { width: 100%; }
+  .game-view-nav { width: 100%; }
   .full-game-position-table { font-size: var(--type-game-table-mobile); }
   .full-game-position-table th, .full-game-position-table td { padding: 0.4rem; }
   .game-editor, .game-empty-state, .game-history-banner { padding: 0.75rem; }

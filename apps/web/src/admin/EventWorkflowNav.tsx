@@ -25,7 +25,7 @@ const workflowGroups: WorkflowGroup[] = [
   {
     label: 'Trial day',
     workflows: [
-      { id: 'messages', label: 'Messages', path: '/messages' },
+      { id: 'messages', label: 'Communications', path: '/communications' },
     ],
   },
 ];
@@ -41,6 +41,7 @@ export function EventWorkflowNav({ eventId }: Props) {
   const current = path === basePath
     ? 'settings'
     : workflows.find(({ path: suffix }) => suffix !== '' && path === `${basePath}${suffix}`)?.id
+      ?? (path === `${basePath}/messages` ? 'messages' : null)
       ?? (path.startsWith(`${basePath}/sheets/`) ? 'sheets' : null);
   const specialCurrent = path === `${basePath}/check-in`
     ? 'Admin check-in'

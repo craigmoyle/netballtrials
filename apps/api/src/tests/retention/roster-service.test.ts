@@ -17,10 +17,10 @@ describe('admin roster service', () => {
     expect(roster?.registrations[0]).toMatchObject({ playerName: 'Ada Lovelace', parentEmail: 'anne@example.com', bibNumber: 6 });
   });
 
-  it('hides a retained number after check-in was undone', async () => {
+  it('keeps an assigned Number visible after check-in is undone', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     await prisma.registration.create({ data: registrationFixture(event.id, { status: 'PAID', bibNumber: 6, checkedInAt: null }) });
-    expect((await getRoster(prisma, event.id))?.registrations[0].bibNumber).toBeNull();
+    expect((await getRoster(prisma, event.id))?.registrations[0].bibNumber).toBe(6);
   });
 
   it('exports a quoted formula-neutralized CSV only before the calendar cutoff', async () => {

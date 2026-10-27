@@ -54,7 +54,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/sheets\/blank$/, 'Blank game sheet'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
   [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
-  [/^\/admin\/events\/[^/]+\/messages$/, 'Messages'],
+  [/^\/admin\/events\/[^/]+\/(?:communications|messages)$/, 'Communications'],
   [/^\/admin\/events\/[^/]+$/, 'Event settings'],
   [/^\/admin\/events$/, 'Events'],
   [/^\/admin/, 'Administration'],
@@ -212,6 +212,7 @@ export function App() {
           <Route path="sheets/blank" element={<BlankSheetRoute client={client} />} />
           <Route path="sheets" element={<SheetsRoute client={client} />} />
           <Route path="review" element={<ReviewRoute client={client} />} />
+          <Route path="communications" element={<MessagesRoute client={client} />} />
           <Route path="messages" element={<MessagesRoute client={client} />} />
         </Route>
         <Route path="associations" element={<AssociationsPage client={client} />} />

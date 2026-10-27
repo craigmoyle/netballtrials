@@ -21,6 +21,7 @@ model StaffUser {
   loginTokens       LoginToken[]
   sessions          Session[]
   emailDeliveries   EmailLog[]    @relation("EmailLogSender")
+  scheduledMessages ScheduledMessage[] @relation("ScheduledMessageSender")
 }
 
 model LoginToken {
@@ -88,6 +89,7 @@ model Event {
   roundPlans           RoundPlan[]
   reviewItems          ReviewItem[]
   emailLogs            EmailLog[]
+  scheduledMessages    ScheduledMessage[]
   courtColors          EventCourtColor[]
   policyDocument       EventPolicyDocument?
   publishedPlanId      String?
@@ -103,9 +105,58 @@ model EventPolicyDocument {
 }
 
 model MemberAssociation {
-  id     String  @id @default(cuid())
-  name   String  @unique
-  active Boolean @default(true)
+  id                   String  @id @default(cuid())
+  name                 String  @unique
+  primaryContactName   String?
+  primaryContactEmail  String?
+  active               Boolean   @default(true)
+  emailLogs            EmailLog[]
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  audience    String
+  subject     String
+  body        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  scheduledMessages ScheduledMessage[]
+}
+
+enum ScheduledMessageStatus {
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+model ScheduledMessage {
+  id            String                 @id @default(cuid())
+  eventId       String
+  event         Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  senderUserId  String?
+  sender        StaffUser?             @relation("ScheduledMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  templateId    String?
+  template      EmailTemplate?         @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  audience      String
+  recipientIds  Json
+  batchId       String                 @unique
+  subject       String
+  body          String
+  policyAttachment Json?
+  scheduledAt   DateTime
+  status        ScheduledMessageStatus @default(SCHEDULED)
+  attempts      Int                    @default(0)
+  lastAttemptAt DateTime?
+  completedAt   DateTime?
+  error         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([eventId, scheduledAt])
 }
 
 model BibColor {
@@ -327,6 +378,8 @@ model EmailLog {
   event          Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   registrationId String?
   registration   Registration?       @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  associationId  String?
+  association    MemberAssociation?  @relation(fields: [associationId], references: [id], onDelete: SetNull)
   senderUserId   String?
   sender         StaffUser?          @relation("EmailLogSender", fields: [senderUserId], references: [id], onDelete: SetNull)
   batchId        String

@@ -49,8 +49,8 @@ export async function getRoster(prisma: PrismaClient, eventId: string): Promise<
     status: row.status,
     amountCents: row.amountCents,
     currency: row.currency,
-    // An undone check-in keeps its number for re-check-in; only show it while checked in.
-    bibNumber: row.checkedInAt ? row.bibNumber : null,
+    // A number remains assigned across an undo so it is still visible in roster and contact lists.
+    bibNumber: row.bibNumber,
     checkedInAt: row.checkedInAt?.toISOString() ?? null,
   }));
   return { eventId, registrations, positionCounts: countPositions(activeRows) };

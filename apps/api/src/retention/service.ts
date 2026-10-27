@@ -113,6 +113,7 @@ export async function anonymizeExpiredRegistrations(
         WHERE "eventId" = ${eventId} AND "status" <> 'ANONYMIZED'
       `);
       await tx.reviewItem.deleteMany({ where: { eventId } });
+      await tx.scheduledMessage.deleteMany({ where: { eventId } });
       await tx.checkInSession.deleteMany({ where: { eventId } });
       return count;
     }, { timeout: 60_000 });

@@ -99,6 +99,23 @@ describe('EventFormPage', () => {
     expect(venue.compareDocumentPosition(deleteHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('uploads and removes a selection-policy PDF from event settings', async () => {
+    const uploadPolicyDocument = vi.fn().mockResolvedValue({ policyDocumentName: 'Selection policy.pdf', policyUrl: 'http://localhost:3000/api/public/events/e1/policy-document' });
+    const deletePolicyDocument = vi.fn().mockResolvedValue(undefined);
+    renderEditRoute(editEventClient({ uploadPolicyDocument, deletePolicyDocument }));
+    await screen.findByLabelText('Event name');
+    const file = new File(['%PDF-1.4 policy'], 'Selection policy.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText(/upload a selection policy pdf/i), { target: { files: [file] } });
+
+    await waitFor(() => expect(uploadPolicyDocument).toHaveBeenCalledWith('e1', {
+      fileName: 'Selection policy.pdf', pdfBase64: btoa('%PDF-1.4 policy'),
+    }));
+    expect(await screen.findByRole('link', { name: 'Selection policy.pdf (new tab)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove policy PDF' }));
+    await waitFor(() => expect(deletePolicyDocument).toHaveBeenCalledWith('e1'));
+    expect(await screen.findByText('No policy PDF attached.')).toBeInTheDocument();
+  });
+
   it('prompts before the Cancel button discards unsaved changes', async () => {
     const confirm = vi.fn().mockReturnValue(true);
     vi.stubGlobal('confirm', confirm);

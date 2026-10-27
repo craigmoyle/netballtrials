@@ -2,12 +2,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { melbourneDateKey } from '@netball-trials/types';
 
 type Fixtures = {
   mainEventId: string;
-  checkInEventId: string;
-  dayOfEventId: string;
-  draftEventId: string;
   ticketToken: string;
   adminEmail: string;
 };
@@ -79,6 +77,12 @@ async function adminPost(page: Page, request: APIRequestContext, url: string, da
   const session = (await page.context().cookies(API_ORIGIN)).find((cookie) => cookie.name === 'nt_session');
   expect(session, 'verified browser session cookie').toBeTruthy();
   return request.post(url, { headers: { cookie: `nt_session=${session!.value}` }, data });
+}
+
+async function adminPatch(page: Page, request: APIRequestContext, url: string, data: unknown) {
+  const session = (await page.context().cookies(API_ORIGIN)).find((cookie) => cookie.name === 'nt_session');
+  expect(session, 'verified browser session cookie').toBeTruthy();
+  return request.patch(url, { headers: { cookie: `nt_session=${session!.value}` }, data });
 }
 
 async function expectAccessible(page: Page): Promise<void> {
@@ -213,17 +217,22 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(unauthorized.status()).toBe(401);
   expect(unauthorizedExport.status()).toBe(401);
   await signIn(page, request);
+  const trial = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`).then((response) => response.json());
+  expect(trial).toMatchObject({ competitionYear: 2027, courts: 3, rank1Min: 2, rank2Min: 1, rank3Min: 1 });
+  const seededRoster = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/roster`).then((response) => response.json());
+  expect(seededRoster.registrations).toHaveLength(70);
+  expect(seededRoster.registrations.every((player: { rank1Position: string; rank2Position: string | null; rank3Position: string | null }) =>
+    Boolean(player.rank1Position && player.rank2Position && player.rank3Position) &&
+    new Set([player.rank1Position, player.rank2Position, player.rank3Position]).size === 3)).toBe(true);
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expectAccessible(page);
 
-  await page.getByRole('link', { name: 'E2E Draft event' }).click();
+  await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Event operations');
-  await expect(page.getByText('Status: draft')).toBeVisible();
+  await expect(page.getByText('Status: open', { exact: true })).toBeVisible();
   await expectAccessible(page);
   page.on('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: /open registration/i }).click();
-  await expect(page.getByText('Status: open')).toBeVisible();
   await page.getByLabel('Set or rotate check-in PIN').fill('482193');
   await page.getByRole('button', { name: /set or rotate pin/i }).click();
   await expect(page.getByText('PIN: Configured')).toBeVisible();
@@ -233,9 +242,11 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText('Status: closed', { exact: true })).toBeVisible();
   await page.locator('nav[aria-label="Administration"]').getByRole('link', { name: 'Member associations' }).click();
   await expect(page.getByRole('heading', { name: 'Member associations' })).toBeVisible();
-  await page.getByLabel('New association name').fill('Test Region Club');
+  await page.getByLabel('Association name').fill('Test Region Club');
+  await page.getByLabel('Primary contact name (optional)').fill('Casey Contact');
+  await page.getByLabel('Primary contact email (optional)').fill('casey-contact@example.test');
   await page.getByRole('button', { name: 'Add association' }).click();
-  await expect(page.getByText('Test Region Club', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Test Region Club — Active' })).toBeVisible();
   await expectAccessible(page);
 
   await page.getByRole('link', { name: 'Events', exact: true }).click();
@@ -263,29 +274,30 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await page.getByRole('button', { name: /withdraw/i }).click();
   await expect(page.getByText('Nothing to review.')).toBeVisible();
 
-  await openEventTool(page, 'Messages');
+  await openEventTool(page, 'Communications');
+  await page.getByRole('button', { name: 'Select visible eligible' }).click();
   await page.getByLabel('Subject').fill('Trial day update');
-  await page.getByLabel('Message').fill('Please arrive at the usual time.');
+  await page.getByLabel('Message', { exact: true }).fill('Please arrive at the usual time.');
   await page.getByRole('button', { name: 'Review recipients' }).click();
-  await expect(page.getByText(/26 distinct paid parent email addresses/i)).toBeVisible();
+  await expect(page.getByText(/68 distinct email recipients will receive this message/i)).toBeVisible();
   await expectAccessible(page);
-  await page.getByRole('button', { name: 'Send to 26 recipients' }).click();
-  await expect(page.getByRole('status')).toHaveText('26 sent, 0 failed');
+  await page.getByRole('button', { name: 'Send now to 68' }).click();
+  await expect(page.getByRole('status')).toHaveText('68 sent, 0 failed.');
   expect(pageErrors).toEqual([]);
 });
 
 test('Admin opens event-scoped check-in without a PIN', async ({ page, request }) => {
   await signIn(page, request);
-  await page.getByRole('link', { name: 'E2E Check-in' }).click();
+  await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
   await openEventTool(page, 'Event operations');
   await page.getByRole('link', { name: 'Admin check-in' }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
   await expect(page.getByLabel('Event PIN')).toHaveCount(0);
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
-  await page.getByLabel('Player name').fill('Checkin1 Trial');
+  await page.getByLabel('Player name').fill('Player1 Trial');
   await page.getByRole('button', { name: 'Check in' }).first().click();
-  await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, Number 1 — Refer to committee/);
+  await expect(page.getByRole('status')).toHaveText(/Player1 Trial, Number 70 — Refer to committee/);
 });
 
 test('Admin assists a family on a closed event day and sends hosted Checkout without marking paid', async ({ page, request }) => {
@@ -295,11 +307,16 @@ test('Admin assists a family on a closed event day and sends hosted Checkout wit
     if (['http:', 'https:'].includes(url.protocol) && !['localhost', '127.0.0.1'].includes(url.hostname)) externalRequests.push(requestEvent.url());
   });
   await signIn(page, request);
-  await page.getByRole('link', { name: 'E2E Day-of registration' }).click();
+  const eventUrl = `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`;
+  const eventDate = await adminPatch(page, request, eventUrl, { eventDate: melbourneDateKey(new Date()) });
+  expect(eventDate.status()).toBe(200);
+  const closedEvent = await adminPost(page, request, `${eventUrl}/close`, {});
+  expect(closedEvent.status()).toBe(200);
+  await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
   await openEventTool(page, 'Event operations');
   await page.getByRole('link', { name: 'Add day-of player' }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Day-of registration' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
   await page.getByLabel('Player first name').fill('Day-of');
   await page.getByLabel('Player last name').fill('Player');
   await page.getByLabel('Player date of birth').fill('2012-05-04');
@@ -317,14 +334,14 @@ test('Admin assists a family on a closed event day and sends hosted Checkout wit
   const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=dayofparent%40example.test`).then((response) => response.json());
   const checkoutEmail = outbox.messages.find((message: { subject: string }) => message.subject === 'Continue your Netball Trials registration');
   expect(checkoutEmail?.text).toMatch(/https:\/\/checkout\.test\/fake_[\w-]+/);
-  const rosterResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.dayOfEventId}/roster`);
+  const rosterResponse = await adminGet(page, request, `${eventUrl}/roster`);
   expect(rosterResponse.status()).toBe(200);
   const roster = await rosterResponse.json();
   expect(roster.registrations).toContainEqual(expect.objectContaining({ playerName: 'Day-of Player', status: 'PENDING', checkedInAt: null }));
 
-  await page.goto(`/admin/events/${fixtures.dayOfEventId}/check-in`);
-  await expect(page.getByRole('heading', { name: 'E2E Day-of registration' })).toBeVisible();
-  await expect(page.getByText('0 of 0 arrived')).toBeVisible();
+  await page.goto(`/admin/events/${fixtures.mainEventId}/check-in`);
+  await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
+  await expect(page.getByText('69 of 70 arrived')).toBeVisible();
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   const lookupResponse = page.waitForResponse((response) => response.url().includes('/api/check-in/lookup?'));
   await page.getByLabel('Player name').fill('Day-of Player');
@@ -337,23 +354,23 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/check-in?eventId=${encodeURIComponent(fixtures.checkInEventId)}`);
-  await expect(page.getByLabel('Event ID')).toHaveValue(fixtures.checkInEventId);
+  await page.goto(`/check-in?eventId=${encodeURIComponent(fixtures.mainEventId)}`);
+  await expect(page.getByLabel('Event ID')).toHaveValue(fixtures.mainEventId);
   await page.getByLabel('Event PIN').fill('482193');
   await page.getByRole('button', { name: 'Start check-in' }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Check-in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
-  await expect(page.getByText('0 of 14 arrived')).toBeVisible();
+  await expect(page.getByText('69 of 70 arrived')).toBeVisible();
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
-  await page.getByLabel('Player name').fill('Checkin1 Trial');
-  await page.getByRole('button', { name: 'Check in' }).first().click();
-  await expect(page.getByRole('status')).toHaveText(/Checkin1 Trial, Number 1 — Refer to committee/);
-  await expect(page.getByText('1 of 14 arrived')).toBeVisible();
-  await expect(page.getByText(/checkin1@example\.test/)).toHaveCount(0);
+  await page.getByLabel('Player name').fill('Player1 Trial');
+  await page.getByRole('button', { name: 'Check in' }).click();
+  await expect(page.getByRole('status')).toHaveText(/Player1 Trial, Number 70 — Refer to committee/);
+  await expect(page.getByText('70 of 70 arrived')).toBeVisible();
+  await expect(page.getByText(/parent1@example\.test/)).toHaveCount(0);
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Undo last check-in' }).click();
-  await expect(page.getByText('0 of 14 arrived')).toBeVisible();
+  await expect(page.getByText('69 of 70 arrived')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
@@ -404,9 +421,11 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   await page.setViewportSize({ width: 390, height: 844 });
   await openRosterChanges(page);
   await page.getByRole('button', { name: 'Remove early leaver' }).click();
-  await page.getByLabel('Remove Player1 Trial from round 1 onward').check();
+  for (let player = 2; player <= 29; player += 1) {
+    await page.getByLabel(`Remove Player${player} Trial from round 1 onward`).check();
+  }
   await page.getByRole('button', { name: 'Rebuild fixtures from round' }).click();
-  await expect(page.getByRole('alert')).toContainText(/cannot fill 2 courts.*need 28/i);
+  await expect(page.getByRole('alert')).toContainText(/41 checked-in players cannot fill 3 courts \(need 42\)/i);
   const publishedAfter = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`).then((response) => response.json());
   const latest = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan`).then((response) => response.json());
   expect(publishedAfter.id).toBe(publishedBefore.id);
@@ -432,10 +451,14 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   const publishedResponse = await adminGet(page, request, `${planUrl}?published=true`);
   expect(publishedResponse.status()).toBe(200);
   const originalPlan = await publishedResponse.json();
-  const playerOneId = originalPlan.players.find((player: { playerName: string }) => player.playerName === 'Player1 Trial')?.registrationId;
-  expect(playerOneId).toBeTruthy();
-  const firstSlot = originalPlan.slots.find((slot: { round: number; registrationId: string }) => slot.round === 1 && slot.registrationId === playerOneId);
-  const targetSlot = originalPlan.slots.find((slot: { round: number; registrationId: string }) => slot.round === 1 && slot.registrationId !== playerOneId);
+  const firstSlot = originalPlan.slots.find((slot: { round: number }) => slot.round === 1);
+  expect(firstSlot).toBeTruthy();
+  const playerOneId = firstSlot.registrationId;
+  const playerOne = originalPlan.players.find((player: { registrationId: string }) => player.registrationId === playerOneId);
+  const playerOneName = playerOne.playerName as string;
+  const playerOneNumber = playerOne.bibNumber as number;
+  const targetSlot = originalPlan.slots.find((slot: { round: number; court: number; position: string; team: number; registrationId: string }) =>
+    slot.round === 1 && slot.court === firstSlot.court && slot.position === firstSlot.position && slot.team !== firstSlot.team);
   expect(firstSlot).toBeTruthy();
   expect(targetSlot).toBeTruthy();
   const keyFor = (slot: { round: number; court: number; position: string; team: number }) => `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
@@ -455,7 +478,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   for (const color of ['White', 'Black', 'Grey', 'Orange']) await expect(page.getByText(color).first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Edit round 1' }).click();
-  const dragSource = page.getByRole('button', { name: /Move Player1 Trial/ });
+  const dragSource = page.getByRole('button', { name: `Move ${playerOneName}, Number ${playerOneNumber}` });
   const dragTarget = page.locator(`[data-game-slot-key="${keyFor(targetSlot)}"]`);
   await dragSource.scrollIntoViewIfNeeded();
   await dragTarget.scrollIntoViewIfNeeded();
@@ -467,8 +490,8 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await page.mouse.down();
   await page.mouse.move(targetBounds!.x + targetBounds!.width / 2, targetBounds!.y + targetBounds!.height / 2, { steps: 8 });
   await page.mouse.up();
-  await expect(page.locator(`[data-game-slot-key="${keyFor(firstSlot)}"]`)).not.toContainText('Player1 Trial');
-  await expect(dragTarget).toContainText('Player1 Trial');
+  await expect(page.locator(`[data-game-slot-key="${keyFor(firstSlot)}"]`)).not.toContainText(playerOneName);
+  await expect(dragTarget).toContainText(playerOneName);
   await page.getByRole('button', { name: 'Cancel changes' }).click();
   const afterCancel = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
   expect(afterCancel.id).toBe(originalPlan.id);
@@ -547,11 +570,11 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Late Arrival Trial');
   await page.getByRole('button', { name: 'Check in' }).click();
-  await expect(page.getByText(/Late Arrival Trial, Number 29/)).toBeVisible();
+  await expect(page.getByText(/Late Arrival Trial, Number 70/)).toBeVisible();
   const checkedInRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
-  expect(checkedInRoster.registrations.find((registration: { id: string }) => registration.id === lateRegistration.id)).toMatchObject({ status: 'PAID', bibNumber: 29 });
+  expect(checkedInRoster.registrations.find((registration: { id: string }) => registration.id === lateRegistration.id)).toMatchObject({ status: 'PAID', bibNumber: 70 });
   const checkedInGameRoster = await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json());
-  expect(checkedInGameRoster).toContainEqual(expect.objectContaining({ registrationId: lateRegistration.id, playerName: 'Late Arrival Trial', bibNumber: 29 }));
+  expect(checkedInGameRoster).toContainEqual(expect.objectContaining({ registrationId: lateRegistration.id, playerName: 'Late Arrival Trial', bibNumber: 70 }));
 
   await page.goto(`/admin/events/${fixtures.mainEventId}/games`);
   await expect(page.getByText('Late Arrival Trial')).toBeVisible();
@@ -569,7 +592,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await openRosterChanges(page);
   await page.getByRole('button', { name: 'Remove early leaver' }).click();
   await page.getByLabel('Remove future assignments from round').selectOption('2');
-  await page.getByLabel('Remove Player1 Trial from round 2 onward').check();
+  await page.getByLabel(`Remove ${playerOneName} from round 2 onward`).check();
   await page.getByRole('button', { name: 'Rebuild fixtures from round' }).click();
   await expect(page.getByText('Draft revision 4 is ready for review.')).toBeVisible();
   const activeDuringDraft = await adminGet(page, request, `${planUrl}?published=true`).then((response) => response.json());
@@ -590,7 +613,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   expect(finalPlan.slots.some((slot: { round: number; registrationId: string }) => slot.round === 1 && slot.registrationId === playerOneId)).toBe(true);
   expect(finalPlan.slots.some((slot: { round: number; registrationId: string }) => slot.round >= 2 && slot.registrationId === playerOneId)).toBe(false);
   const playerOneAfter = (await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json())).registrations.find((registration: { id: string }) => registration.id === playerOneId);
-  expect(playerOneAfter).toMatchObject({ status: 'PAID', bibNumber: 1, checkedInAt: playerOneBefore.checkedInAt });
+  expect(playerOneAfter).toMatchObject({ status: 'PAID', bibNumber: playerOneNumber, checkedInAt: playerOneBefore.checkedInAt });
   expect((await adminGet(page, request, `${planUrl}/revisions/${originalPlan.id}`).then((response) => response.json())).slots).toEqual(originalPlan.slots);
   expect((await adminGet(page, request, `${planUrl}/revisions/${beforeRebuild.id}`).then((response) => response.json())).slots).toEqual(beforeRebuild.slots);
 
@@ -598,15 +621,15 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   const reportRoster = JSON.stringify(await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json()));
   expect(reportRoster).not.toMatch(/parentEmail|parentName|amountCents|paymentIntentId|checkoutSessionId/i);
   expect(JSON.stringify(finalPlan)).not.toMatch(/parentEmail|parentName|parentMobile|amountCents|paymentIntentId|checkoutSessionId/i);
-  await page.getByLabel('Game view').selectOption('statistics');
+  await page.getByRole('button', { name: 'Player Statistics' }).click();
   const statistics = page.getByRole('table', { name: 'Player Statistics' });
   await expect(statistics).toBeVisible();
-  const earlyStats = statistics.getByRole('row', { name: /Player1 Trial/ });
+  const earlyStats = statistics.getByRole('row', { name: new RegExp(playerOneName) });
   const lateStats = statistics.getByRole('row', { name: /Late Arrival Trial/ });
-  expect((await earlyStats.getByRole('cell').allTextContents()).slice(0, 2)).toEqual(['1', '1']);
+  expect((await earlyStats.getByRole('cell').allTextContents()).slice(0, 2)).toEqual([String(playerOneNumber), '1']);
   const lateGameCount = finalPlan.slots.filter((slot: { registrationId: string }) => slot.registrationId === lateRegistration.id).length;
   expect(lateGameCount).toBeGreaterThan(0);
-  expect((await lateStats.getByRole('cell').allTextContents()).slice(0, 2)).toEqual(['29', String(lateGameCount)]);
+  expect((await lateStats.getByRole('cell').allTextContents()).slice(0, 2)).toEqual(['70', String(lateGameCount)]);
   expect(await statistics.innerText()).not.toMatch(/late-parent@example\.test|parent\d+@example\.test|amount|payment/i);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
@@ -614,16 +637,18 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
     await expectAccessible(page);
   }
 
-  await page.getByLabel('Game view').selectOption('reference');
+  await page.getByRole('button', { name: 'Player Reference' }).click();
   const reference = page.getByRole('table', { name: 'Player Reference' });
   await expect(reference).toBeVisible();
-  const earlyReference = await reference.getByRole('row', { name: /Player1 Trial/ }).getByRole('cell').allTextContents();
+  const earlyReference = await reference.getByRole('row', { name: new RegExp(playerOneName) }).getByRole('cell').allTextContents();
   const lateReference = await reference.getByRole('row', { name: /Late Arrival Trial/ }).getByRole('cell').allTextContents();
-  expect(earlyReference[0]).toBe('1');
+  expect(earlyReference[0]).toBe(String(playerOneNumber));
   expect(earlyReference.slice(2)).toEqual(Array.from({ length: finalPlan.rounds - 1 }, () => 'Not playing'));
-  expect(lateReference[0]).toBe('29');
+  expect(lateReference[0]).toBe('70');
   expect(lateReference[1]).toBe('Not playing');
-  expect(lateReference.slice(2).every((cell: string) => /Court \d, .* — (White|Black|Grey|Orange)/.test(cell))).toBe(true);
+  const lateAssignments = lateReference.slice(2).filter((cell: string) => cell !== 'Not playing');
+  expect(lateAssignments.length).toBeGreaterThan(0);
+  expect(lateAssignments.every((cell: string) => /Court \d, .* — (White|Black|Grey|Orange)/.test(cell))).toBe(true);
   for (const color of ['White', 'Black', 'Grey', 'Orange']) await expect(reference).toContainText(color);
   expect(await reference.innerText()).not.toMatch(/late-parent@example\.test|parent\d+@example\.test|amount|payment/i);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
@@ -634,12 +659,12 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   expect(externalRequests).toEqual([]);
 });
 
-test('planner previews, publishes, regenerates without changing the prefix, and prints four landscape sheets', async ({ page, request }) => {
+test('planner previews, publishes, regenerates without changing the prefix, and prints landscape sheets', async ({ page, request }) => {
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Plan rounds');
-  await expect(page.getByText(/28 checked-in players/i)).toBeVisible();
-  await expect(page.getByText(/minimum round lower bound: 2/i)).toBeVisible();
+  await expect(page.getByText(/69 checked-in players/i)).toBeVisible();
+  await expect(page.getByText(/minimum round lower bound: 7/i)).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
@@ -647,7 +672,7 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await expect(page.locator('table caption', { hasText: 'schedule preview' })).toBeVisible();
-  await expect(page.locator('table.schedule-preview tbody tr')).toHaveCount(56);
+  await expect(page.locator('table.schedule-preview tbody tr')).toHaveCount(294);
   await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
@@ -667,12 +692,15 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(page.getByText(/Published revision 2/)).toBeVisible();
   await workspace(page).getByRole('link', { name: 'Print selector sheets' }).click();
-  await expect(page.locator('.sheet-preview .sheet')).toHaveCount(4);
+  await expect(page.locator('.sheet-preview .sheet')).toHaveCount(21);
   await expect(page.getByRole('button', { name: 'Print selector sheets' })).toBeVisible();
   const selectorText = await page.locator('.sheet-preview').innerText();
   for (const value of ['Team A', 'Team B', 'White', 'Black', 'Grey', 'Orange', 'Number', 'Choices', 'Rating', 'Notes/Feedback']) expect(selectorText).toContain(value);
-  const playerChoice = page.locator('.sheet-preview .sheet').locator('tr').filter({ hasText: 'Player1 Trial' }).first().locator('td').nth(2);
-  await expect(playerChoice).toHaveText('GS');
+  const firstSheetSlot = publishedBefore.slots.find((slot: { round: number; court: number }) => slot.round === 1 && slot.court === 1);
+  const firstSheetPlayer = publishedBefore.players.find((player: { registrationId: string }) => player.registrationId === firstSheetSlot.registrationId);
+  const expectedChoices = [firstSheetPlayer.rank1Position, firstSheetPlayer.rank2Position, firstSheetPlayer.rank3Position].filter(Boolean).join(', ');
+  const playerChoice = page.locator('.sheet-preview .sheet').locator('tr').filter({ hasText: firstSheetPlayer.playerName }).first().locator('td').nth(2);
+  await expect(playerChoice).toHaveText(expectedChoices);
   expect(selectorText).not.toMatch(/parent\d+@example\.test|amountCents|paymentIntentId/);
   await expectAccessible(page);
 
@@ -681,7 +709,7 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   expect(await page.locator('.sheets-page > header').evaluate((element) => getComputedStyle(element).display)).toBe('none');
   const selectorPdf = await page.pdf({ path: '/tmp/netball-e2e-selector-sheets.pdf', preferCSSPageSize: true, printBackground: true, displayHeaderFooter: false });
   const selectorPdfText = Buffer.from(selectorPdf).toString('latin1');
-  expect(selectorPdfText.match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(4);
+  expect(selectorPdfText.match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(21);
   const selectorMediaBox = selectorPdfText.match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/);
   expect(selectorMediaBox).not.toBeNull();
   expect(Number(selectorMediaBox?.[1])).toBeCloseTo(842, 0);

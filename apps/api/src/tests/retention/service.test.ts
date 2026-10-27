@@ -43,6 +43,10 @@ describe('anonymizeExpiredRegistrations', () => {
     const eventMessage = await prisma.emailLog.create({
       data: { eventId: old.id, batchId: 'event-message', idempotencyKey: 'event-message-key', to: 'parent@example.com', subject: 'Venue update', body: 'Details about Ada', kind: 'message', status: 'FAILED' },
     });
+    const scheduled = await prisma.scheduledMessage.create({ data: {
+      eventId: old.id, recipientIds: [reg.id], audience: 'participants', batchId: 'private-scheduled',
+      subject: 'Ada private notice', body: 'Contact Anne about Ada', scheduledAt: new Date('2025-09-10T00:00:00Z'),
+    } });
     const checkInSession = await prisma.checkInSession.create({
       data: { eventId: old.id, tokenHash: 'a'.repeat(64), expiresAt: new Date('2025-09-13T00:00:00Z') },
     });
@@ -62,6 +66,7 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(anonymisedLog).toMatchObject({ to: '', subject: '', body: '', registrationId: null, error: null, messagePayload: null, status: 'ANONYMIZED', kind: 'retention' });
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: eventMessage.id } })).toMatchObject({ to: '', subject: '', body: '', status: 'ANONYMIZED', kind: 'retention' });
     expect(await prisma.checkInSession.findUnique({ where: { id: checkInSession.id } })).toBeNull();
+    expect(await prisma.scheduledMessage.findUnique({ where: { id: scheduled.id } })).toBeNull();
     const player = await prisma.roundPlanPlayer.findUniqueOrThrow({ where: { planId_registrationId: { planId: plan.id, registrationId: anonymised.anonymizedRef! } } });
     expect(player).toMatchObject({ playerName: 'Former participant', bibNumber: null });
     const slots = await prisma.roundSlot.findMany({ where: { planId: plan.id } });

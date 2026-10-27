@@ -329,7 +329,7 @@ describe('FullGameListPage', () => {
     fireEvent.change(teamRound, { target: { value: 'all' } });
     expect(screen.getAllByRole('table')).toHaveLength(8);
     expect(screen.getByRole('group', { name: 'Jump to a round' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Position View' }));
     expect(screen.getByLabelText('Round for position view')).toHaveValue('2');
     const tables = await screen.findAllByRole('table', { name: /Round 2 by position/ });
     expect(tables).toHaveLength(2);
@@ -730,27 +730,29 @@ describe('FullGameListPage', () => {
   it('shows hand-checked game counts, ranked positions, other positions and resting/late players', async () => {
     renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(reportPlan), getGameRoster: vi.fn().mockResolvedValue(reportRoster) }));
     await screen.findByText('Active revision 2');
-    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'statistics' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Player Statistics' }));
 
     const table = await screen.findByRole('table', { name: 'Player Statistics' });
     const row = (name: string) => within(table).getByRole('row', { name: new RegExp(name) });
     const values = (name: string) => within(row(name)).getAllByRole('cell').map((cell) => cell.textContent);
     expect(within(table).getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
     expect(screen.getByText('Scroll horizontally to view all columns.')).toBeInTheDocument();
-    expect(values('Player One')).toEqual(['1', '2', '2', '0', '0', '0']);
-    expect(values('Player Two')).toEqual(['2', '2', '1', '1', '0', '0']);
-    expect(values('Position Mismatch')).toEqual(['3', '2', '0', '0', '0', '2']);
-    expect(values('Early Leaver')).toEqual(['4', '1', '1', '0', '0', '0']);
-    expect(values('Resting Player')).toEqual(['16', '0', '0', '0', '0', '0']);
-    expect(values('Late Arrival')).toEqual(['99', '0', '0', '0', '0', '0']);
-    expect(screen.getByText(/Other counts assignments outside the player's recorded choices/i)).toBeInTheDocument();
+    expect(values('Player One')).toEqual(['1', '2', '2', '0', '0', '0', '10', '4']);
+    expect(values('Player Two')).toEqual(['2', '2', '1', '1', '0', '0', '11', '3']);
+    expect(values('Position Mismatch')).toEqual(['3', '2', '0', '0', '0', '2', '10', '4']);
+    expect(values('Early Leaver')).toEqual(['4', '1', '1', '0', '0', '0', '7', '0']);
+    expect(values('Resting Player')).toEqual(['16', '0', '0', '0', '0', '0', '0', '0']);
+    expect(values('Late Arrival')).toEqual(['99', '0', '0', '0', '0', '0', '0', '0']);
+    expect(within(table).getByRole('columnheader', { name: 'Unique opponents' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Repeat meetings' })).toBeInTheDocument();
+    expect(screen.getByText(/unique opponents counts distinct opposing players/i)).toBeInTheDocument();
     expect(screen.queryByText(/anne@example.com|payment|\$35\.00/i)).not.toBeInTheDocument();
   });
 
   it('shows each player Number and per-round court, position, color, or Not playing', async () => {
     renderPage(makeClient({ getPublishedPlan: vi.fn().mockResolvedValue(reportPlan), getGameRoster: vi.fn().mockResolvedValue(reportRoster) }));
     await screen.findByText('Active revision 2');
-    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'reference' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Player Reference' }));
 
     const table = await screen.findByRole('table', { name: 'Player Reference' });
     expect(within(table).getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
@@ -768,10 +770,12 @@ describe('FullGameListPage', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
-    expect(screen.getByLabelText('Game view')).toBeVisible();
+    expect(screen.getByRole('navigation', { name: 'Game views' })).toBeVisible();
+    expect(screen.queryByLabelText('Game view')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Full Game List|Position View|Player Statistics|Player Reference/ })).toHaveLength(4);
     expect(screen.getByLabelText('Team view round')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Edit round 1' })).toBeVisible();
-    fireEvent.change(screen.getByLabelText('Game view'), { target: { value: 'position' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Position View' }));
     expect(screen.getByLabelText('Round for position view')).toBeVisible();
     expect(screen.getByLabelText('Round for position view').closest('.full-game-round-filter')).not.toBeNull();
   });

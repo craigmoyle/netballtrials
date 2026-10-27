@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, EmailLogDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, PublicAssociationDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -122,6 +122,9 @@ export function apiClient(baseUrl: string) {
         method: 'PATCH',
         body: JSON.stringify(patch),
       }),
+    uploadPolicyDocument: (id: string, input: { fileName: string; pdfBase64: string }) =>
+      request<{ policyDocumentName: string; policyUrl: string }>(baseUrl, `/api/admin/events/${id}/policy-document`, { method: 'PUT', body: JSON.stringify(input) }),
+    deletePolicyDocument: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/policy-document`, { method: 'DELETE' }),
     openEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/open`, { method: 'POST' }),
     closeEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/close`, { method: 'POST' }),
     deleteEvent: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}`, { method: 'DELETE' }),
@@ -149,9 +152,10 @@ export function apiClient(baseUrl: string) {
     setCourtColors: (eventId: string, court: number, pair: { teamAColorId: string; teamBColorId: string }) =>
       request<EventCourtColorDTO>(baseUrl, `/api/admin/events/${eventId}/court-colors/${court}`, { method: 'PUT', body: JSON.stringify(pair) }),
 
-    createAssociation: (name: string) => request<MemberAssociationDTO>(baseUrl, '/api/admin/associations', { method: 'POST', body: JSON.stringify({ name }) }),
+    createAssociation: (input: { name: string; primaryContactName?: string | null; primaryContactEmail?: string | null }) => request<MemberAssociationDTO>(baseUrl, '/api/admin/associations', { method: 'POST', body: JSON.stringify(input) }),
+    updateAssociation: (id: string, patch: { active?: boolean; primaryContactName?: string | null; primaryContactEmail?: string | null }) => request<MemberAssociationDTO>(baseUrl, `/api/admin/associations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     setAssociationActive: (id: string, active: boolean) => request<MemberAssociationDTO>(baseUrl, `/api/admin/associations/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
-    listPublicAssociations: () => request<MemberAssociationDTO[]>(baseUrl, '/api/public/associations'),
+    listPublicAssociations: () => request<PublicAssociationDTO[]>(baseUrl, '/api/public/associations'),
     listPublicEvents: () => request<PublicTrialDTO[]>(baseUrl, '/api/public/events'),
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),
@@ -267,6 +271,25 @@ export function apiClient(baseUrl: string) {
       ),
     listEmailLog: (eventId: string) =>
       request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/email-log`),
+    getCommunicationRecipients: (eventId: string) =>
+      request<{ participants: CommunicationRecipientDTO[]; associations: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/recipients`),
+    previewCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[] }) =>
+      request<{ count: number; recipients: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/preview`, { method: 'POST', body: JSON.stringify(input) }),
+    sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; batchId?: string }) =>
+      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(baseUrl, `/api/admin/events/${eventId}/communications/send`, { method: 'POST', body: JSON.stringify(input) }),
+    listCommunicationTemplates: () => request<EmailTemplateDTO[]>(baseUrl, '/api/admin/communications/templates'),
+    saveCommunicationTemplate: (input: { name: string; audience: 'participants' | 'associations'; subject: string; body: string }) =>
+      request<EmailTemplateDTO>(baseUrl, '/api/admin/communications/templates', { method: 'POST', body: JSON.stringify(input) }),
+    updateCommunicationTemplate: (id: string, input: { name: string; audience: 'participants' | 'associations'; subject: string; body: string }) =>
+      request<EmailTemplateDTO>(baseUrl, `/api/admin/communications/templates/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+    deleteCommunicationTemplate: (templateId: string) => request<unknown>(baseUrl, `/api/admin/communications/templates/${templateId}`, { method: 'DELETE' }),
+    listScheduledCommunications: (eventId: string) => request<ScheduledMessageDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled`),
+    scheduleCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string }) =>
+      request<ScheduledMessageDTO>(baseUrl, `/api/admin/events/${eventId}/communications/schedule`, { method: 'POST', body: JSON.stringify(input) }),
+    cancelScheduledCommunication: (eventId: string, id: string) => request<{ status: string }>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}/cancel`, { method: 'POST' }),
+    listCommunicationDeliveries: (eventId: string) => request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/deliveries`),
+    retryCommunication: (eventId: string, batchId: string, deliveryIds: string[], includeAmbiguous = false) =>
+      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number }>(baseUrl, `/api/admin/events/${eventId}/communications/${batchId}/retry`, { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) }),
   };
 }
 
