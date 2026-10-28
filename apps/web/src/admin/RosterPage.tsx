@@ -89,7 +89,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
       <p><button type="button" disabled={downloading} onClick={download}>{downloading ? 'Preparing CSV...' : 'Download roster CSV'}</button></p>
       {exportError ? <p role="alert">{exportError}</p> : null}
       {roster.registrations.length === 0 ? <p>No registrations for this event.</p> : (
-        <div className="table-scroll">
+        <div className="table-scroll" role="region" aria-label="Event roster" tabIndex={0}>
           <table>
             <caption>Registrations, payment status and trial-day attendance</caption>
             <thead>

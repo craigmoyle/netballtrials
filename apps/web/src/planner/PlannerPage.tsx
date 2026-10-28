@@ -138,7 +138,7 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
       ) : <p>No published revision yet.</p>}
       {plan && plan.id !== publishedPlan?.id ? <p>Draft revision {plan.revision} · {plan.rounds} rounds</p> : !plan ? <p>No draft plan yet.</p> : null}
       {plan && plan.slots.length > 0 ? (
-        <div className="table-scroll">
+        <div className="table-scroll" role="region" aria-label="Schedule preview" tabIndex={0}>
           <table className="schedule-preview">
             <caption>Schedule preview — {plan.status.toLowerCase()} revision {plan.revision}</caption>
             <thead><tr><th scope="col">Round</th><th scope="col">Court</th><th scope="col">Team</th><th scope="col">Position</th><th scope="col">Number</th><th scope="col">Player</th></tr></thead>

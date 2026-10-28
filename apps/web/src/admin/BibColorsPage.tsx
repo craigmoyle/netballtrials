@@ -115,7 +115,7 @@ export function BibColorsPage({ client }: { client: Client }) {
         <button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Add color'}</button>
       </form>
       {colors.length === 0 ? <p>No colors in the catalog yet.</p> : (
-        <div className="table-scroll">
+        <div className="table-scroll" role="region" aria-label="Club bib colors" tabIndex={0}>
           <table>
             <caption>Club bib colors</caption>
             <thead><tr><th scope="col">Swatch</th><th scope="col">Color</th><th scope="col">Hex</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>

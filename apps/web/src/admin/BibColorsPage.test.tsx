@@ -23,6 +23,7 @@ describe('BibColorsPage', () => {
     renderCatalog({ listBibColors: vi.fn().mockResolvedValue(colors), createBibColor });
 
     expect(await screen.findByRole('heading', { name: 'Bib colors' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Club bib colors' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByText('White')).toBeInTheDocument();
     expect(screen.getByText('#FFFFFF')).toBeInTheDocument();
     expect(screen.getByLabelText('White color swatch')).toHaveStyle({ backgroundColor: '#FFFFFF' });

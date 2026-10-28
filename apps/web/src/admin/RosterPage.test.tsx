@@ -33,6 +33,7 @@ describe('RosterPage', () => {
     renderPage({ getRoster: vi.fn().mockResolvedValue(roster), downloadRoster: vi.fn() });
     expect(await screen.findByRole('heading', { name: /roster/i })).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Event roster' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByText('anne@example.com')).toBeInTheDocument();
     expect(screen.getByText(/\$35\.00/)).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();

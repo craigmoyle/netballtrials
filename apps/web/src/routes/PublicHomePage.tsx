@@ -22,7 +22,7 @@ export function PublicHomePage({ client }: { client: Client }) {
   }, [client, retry]);
 
   return (
-    <main className="public-home-main" aria-labelledby="upcoming-trials-heading">
+    <main id="main-content" className="public-home-main" tabIndex={-1} aria-labelledby="upcoming-trials-heading">
       <div className="public-home-banner">
         <div className="public-home-banner-inner">
           <p className="public-home-club"><a href={CHISHOLM_HOME}>Chisholm Netball website</a></p>

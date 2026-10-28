@@ -1,7 +1,7 @@
 import { useRef, useState, type SyntheticEvent } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import type { ApiClient as Client } from './api/client';
-import { ClubLogoLink } from './SiteNavigation';
+import { ClubLogoLink, SkipToMainLink } from './SiteNavigation';
 import { CONFIRM_UNSAVED_SIGN_OUT } from './useUnsavedSignOut';
 
 export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: () => void }) {
@@ -34,6 +34,7 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
 
   return (
     <div className="app-shell" inert={signingOut} onClickCapture={blockWhileSigningOut} onChangeCapture={blockWhileSigningOut} onSubmitCapture={blockWhileSigningOut}>
+      <SkipToMainLink />
       <header className="app-header">
         <ClubLogoLink />
         <nav className="app-nav" aria-label="Administration">
@@ -52,7 +53,7 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
           Sign out
         </button>
       </header>
-      <main className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         {error ? <p role="alert">{error}</p> : null}
         <Outlet />
       </main>

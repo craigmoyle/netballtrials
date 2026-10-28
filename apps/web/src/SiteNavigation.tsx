@@ -19,11 +19,18 @@ export function PublicAccessNav(): ReactElement {
   );
 }
 
+export function SkipToMainLink(): ReactElement {
+  return <a className="skip-link" href="#main-content">Skip to main content</a>;
+}
+
 export function PublicSiteHeader(): ReactElement {
   return (
-    <header className="app-header public-site-header">
-      <ClubLogoLink />
-      <PublicAccessNav />
-    </header>
+    <>
+      <SkipToMainLink />
+      <header className="app-header public-site-header">
+        <ClubLogoLink />
+        <PublicAccessNav />
+      </header>
+    </>
   );
 }

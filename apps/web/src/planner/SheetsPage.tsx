@@ -55,7 +55,7 @@ export function SheetsPage({ client, eventId }: { client: Client; eventId: strin
         <Link to={`/admin/events/${eventId}/sheets/blank`}>Download Blank Sheet</Link>{' '}
         <button type="button" onClick={() => window.print()}>Print selector sheets</button>
       </header>
-      <div className="sheet-preview" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="sheet-preview" role="region" aria-label="Selector sheet preview" tabIndex={0} dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }

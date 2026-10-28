@@ -63,6 +63,7 @@ describe('PlannerPage', () => {
     renderPlanner(client);
     expect(await screen.findByText(/Draft revision 2 · 2 rounds/i)).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Schedule preview' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Bib' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /print selector sheets/i })).not.toBeInTheDocument();

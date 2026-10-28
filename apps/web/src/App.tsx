@@ -105,7 +105,7 @@ function PageContent({ children, showPublicHeader = true }: { children: ReactNod
   return (
     <>
       {showPublicHeader ? <PublicSiteHeader /> : null}
-      <main className="app-main">{children}</main>
+      <main id="main-content" className="app-main" tabIndex={-1}>{children}</main>
     </>
   );
 }

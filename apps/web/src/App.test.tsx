@@ -94,6 +94,8 @@ describe('Public home page', () => {
 
     const homeHeading = await screen.findByRole('heading', { name: 'Upcoming trials' });
     expect(homeHeading).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
+    expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
     const accessNav = screen.getByRole('navigation', { name: 'Staff and volunteer access' });
     expect(within(accessNav).getByText('Staff & volunteers')).toBeInTheDocument();

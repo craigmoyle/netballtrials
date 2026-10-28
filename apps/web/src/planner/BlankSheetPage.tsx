@@ -36,7 +36,7 @@ export function BlankSheetPage({ client, eventId }: { client: Client; eventId: s
         <Link to={`/admin/events/${eventId}/sheets`}>Back to selector sheets</Link>{' '}
         <button type="button" onClick={() => window.print()}>Print blank game sheet</button>
       </header>
-      <div className="sheet-preview" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="sheet-preview" role="region" aria-label="Blank game sheet preview" tabIndex={0} dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }

@@ -21,6 +21,7 @@ describe('BlankSheetPage', () => {
     expect(await screen.findByText('Round: ________')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Blank game sheet' })).toBeInTheDocument();
     expect(view.container.querySelectorAll('.sheet')).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'Blank game sheet preview' })).toHaveAttribute('tabindex', '0');
     expect(getBlankSheetHtml).toHaveBeenCalledWith('event-1');
     expect(screen.getByRole('link', { name: 'Back to selector sheets' })).toHaveAttribute('href', '/admin/events/event-1/sheets');
     fireEvent.click(screen.getByRole('button', { name: 'Print blank game sheet' }));

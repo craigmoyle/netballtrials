@@ -38,6 +38,7 @@ describe('SheetsPage', () => {
     const getSheetsHtml = vi.fn().mockResolvedValue('<main class="selector-print"><section class="sheet">Round 1 Court 1</section></main>');
     renderSheets({ getPublishedPlan: vi.fn().mockResolvedValue({ id: 'published-2', status: 'PUBLISHED' }), getSheetsHtml });
     expect(await screen.findByText('Round 1 Court 1')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Selector sheet preview' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('button', { name: /print selector sheets/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download Blank Sheet' })).toHaveAttribute('href', '/admin/events/e1/sheets/blank');
     fireEvent.click(screen.getByRole('button', { name: /print selector sheets/i }));

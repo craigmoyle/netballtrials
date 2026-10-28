@@ -16,6 +16,19 @@ const API_ORIGIN = `http://localhost:${API_PORT}`;
 const CONTROL_ORIGIN = `http://localhost:${process.env.E2E_CONTROL_PORT ?? '3001'}`;
 let fixtures: Fixtures;
 
+async function expectSkipNavigation(page: Page): Promise<void> {
+  const skipLink = page.getByRole('link', { name: 'Skip to main content' });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Tab');
+  await expect(skipLink).toBeFocused();
+  const box = await skipLink.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThan(80);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
+}
+
 async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.goto('/');
   await page.getByRole('link', { name: 'Staff sign-in' }).click();
@@ -34,6 +47,7 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.goto('/');
   await page.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
+  await expectSkipNavigation(page);
 }
 
 async function openEventTool(page: Page, name: string): Promise<void> {
@@ -114,6 +128,7 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Upcoming trials' })).toBeVisible();
+  await expectSkipNavigation(page);
   const logo = page.getByRole('link', { name: 'Trials home' });
   await expect(logo).toHaveAttribute('href', '/');
   await expect.poll(() => logo.locator('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
@@ -378,6 +393,7 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expect(page.getByText('69 of 70 arrived')).toBeVisible();
+  await expectSkipNavigation(page);
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Player1 Trial');
   await page.getByRole('button', { name: 'Check in' }).click();
