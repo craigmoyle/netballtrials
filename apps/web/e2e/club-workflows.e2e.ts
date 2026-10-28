@@ -128,6 +128,7 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Upcoming trials' })).toBeVisible();
+  await expectAccessible(page);
   await expectSkipNavigation(page);
   const logo = page.getByRole('link', { name: 'Trials home' });
   await expect(logo).toHaveAttribute('href', '/');
@@ -136,12 +137,15 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   await expect(signIn.getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
   await signIn.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(page.getByRole('heading', { name: 'Admin sign in' })).toBeVisible();
+  await expectAccessible(page);
   await expect(signIn.getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in');
   await signIn.getByRole('link', { name: 'Volunteer check-in' }).click();
   await expect(page).toHaveURL(/\/check-in$/);
   await expect(page.getByRole('heading', { name: 'Check-in' })).toBeVisible();
   await expect(page.getByLabel('Trial', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Event PIN')).toBeVisible();
+  await expectAccessible(page);
   expect(externalRequests).toEqual([]);
 });
 
@@ -240,6 +244,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(seededRoster.registrations.every((player: { rank1Position: string; rank2Position: string | null; rank3Position: string | null }) =>
     Boolean(player.rank1Position && player.rank2Position && player.rank3Position) &&
     new Set([player.rank1Position, player.rank2Position, player.rank3Position]).size === 3)).toBe(true);
+  await expectAccessible(page);
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expectAccessible(page);
@@ -264,12 +269,19 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await page.getByRole('button', { name: 'Add association' }).click();
   await expect(page.getByRole('heading', { name: 'Test Region Club — Active' })).toBeVisible();
   await expectAccessible(page);
-
-  await page.getByRole('link', { name: 'Events', exact: true }).click();
+  const adminNav = page.locator('nav[aria-label="Administration"]');
+  await adminNav.getByRole('link', { name: 'Bib colors' }).click();
+  await expect(page.getByRole('heading', { name: 'Bib colors' })).toBeVisible();
+  await expectAccessible(page);
+  await adminNav.getByRole('link', { name: 'Staff access' }).click();
+  await expect(page.getByRole('heading', { name: 'Staff access' })).toBeVisible();
+  await expectAccessible(page);
+  await adminNav.getByRole('link', { name: 'Events', exact: true }).click();
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await expect(page.getByLabel('Arrival time')).toHaveValue('08:30');
   await expect(page.getByLabel('Start time')).toHaveValue('09:00');
   await expect(page.getByLabel('Finish time')).toHaveValue('12:00');
+  await expectAccessible(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await openEventTool(page, 'Roster and export');
   await expect(page.getByRole('heading', { name: 'Event roster' })).toBeVisible();
@@ -403,6 +415,7 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expect(page.getByText('69 of 70 arrived')).toBeVisible();
+  await expectAccessible(page);
   await expectSkipNavigation(page);
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Player1 Trial');
