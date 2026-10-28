@@ -182,6 +182,7 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await page.getByLabel('Parent or guardian mobile').fill('0400000000');
   await page.getByLabel('Member association').selectOption({ label: 'MENA' });
   await page.getByLabel('First position').selectOption('WA');
+  await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
   const sessionId = await submitPublicRegistration(page);
   await expect(page.getByText(/no real payment will be taken/i)).toBeVisible();
@@ -282,8 +283,22 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText(/68 distinct email recipients will receive this message/i)).toBeVisible();
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Send now to 68' }).click();
-  await expect(page.getByRole('status')).toHaveText('68 sent, 0 failed.');
+  await expect(page.getByText('68 sent, 0 failed.')).toBeVisible();
   expect(pageErrors).toEqual([]);
+});
+
+test('Admin searches a player history without exposing parent or payment details', async ({ page, request }) => {
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'Player history' }).click();
+  await expect(page.getByRole('heading', { name: 'Player history' })).toBeVisible();
+  await page.getByLabel('Player full name').fill('Player1 Trial');
+  await page.getByLabel('Date of birth').fill('2012-04-02');
+  await page.getByRole('button', { name: 'Search history' }).click();
+  await expect(page.getByRole('heading', { name: 'Possible matching registrations' })).toBeVisible();
+  const history = page.getByRole('table', { name: 'Trial records for Player1 Trial' });
+  await expect(history.getByRole('row', { name: /2027-09-12.*E2E 15\/U Ladies/ })).toContainText('GS');
+  await expect(history).not.toContainText(/parent1@example\.test|paymentIntentId|amountCents/i);
+  await expectAccessible(page);
 });
 
 test('Admin opens event-scoped check-in without a PIN', async ({ page, request }) => {
@@ -325,6 +340,7 @@ test('Admin assists a family on a closed event day and sends hosted Checkout wit
   await page.getByLabel('Parent or guardian mobile').fill('0400000000');
   await page.getByLabel('Member association').selectOption({ label: 'MENA' });
   await page.getByLabel('First position').selectOption('C');
+  await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
   await page.getByRole('button', { name: 'Send payment link' }).click();
   await expect(page.getByRole('heading', { name: 'Checkout link sent' })).toBeVisible();
@@ -538,6 +554,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await page.getByLabel('Parent or guardian mobile').fill('0400000001');
   await page.getByLabel('Member association').selectOption({ label: 'MENA' });
   await page.getByLabel('First position').selectOption('GS');
+  await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
   const sessionId = await submitPublicRegistration(page);
   const pendingRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());

@@ -69,6 +69,7 @@ async function fillRegistrationForm() {
   fireEvent.change(screen.getByLabelText(/parent or guardian mobile/i), { target: { value: '0400000000' } });
   await screen.findByRole('option', { name: 'MENA' });
   fireEvent.change(screen.getByLabelText(/member association/i), { target: { value: 'MENA' } });
+  fireEvent.click(document.getElementById('parentAuthorityConfirmed')!);
   fireEvent.click(screen.getByLabelText(/I confirm the player meets these eligibility requirements/));
 }
 
@@ -89,7 +90,7 @@ describe('RegisterPage', () => {
     expect(emailHandoffUnload.defaultPrevented).toBe(false);
     expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
     expect(api.getPublicEvent).toHaveBeenCalledWith('e1');
-    expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ eligibilityConfirmed: true }));
+    expect(register).toHaveBeenCalledWith('e1', expect.objectContaining({ parentAuthorityConfirmed: true, eligibilityConfirmed: true }));
     expect(window.sessionStorage.getItem(publicDraftKey)).toBeNull();
   });
 
@@ -118,6 +119,7 @@ describe('RegisterPage', () => {
       ['parentMobile', 'Parent or guardian mobile'],
       ['memberAssociation', 'Member association'],
       ['rank1Position', 'First position'],
+      ['parentAuthorityConfirmed', 'I am authorised to provide these details and consent to their use as described in Privacy details'],
       ['eligibilityConfirmed', 'I confirm the player meets these eligibility requirements'],
     ];
     for (const [id, label] of requiredFields) {
@@ -227,7 +229,7 @@ describe('RegisterPage', () => {
       form: {
         playerFirstName: 'Ada', playerLastName: '', dateOfBirth: '', parentName: '', parentEmail: '',
         parentMobile: '', memberAssociation: '', rank1Position: '', rank2Position: '', rank3Position: '',
-        optInExtraPositions: false, eligibilityConfirmed: false,
+        optInExtraPositions: false, parentAuthorityConfirmed: false, eligibilityConfirmed: false,
       },
     }));
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
@@ -246,7 +248,7 @@ describe('RegisterPage', () => {
     const summary = await screen.findByRole('alert');
     for (const label of [
       'Player first name', 'Player last name', 'Player date of birth', 'Parent or guardian name',
-      'Parent or guardian email', 'Parent or guardian mobile', 'Member association', 'First position', 'Eligibility confirmation',
+      'Parent or guardian email', 'Parent or guardian mobile', 'Member association', 'First position', 'Authority to provide player details', 'Eligibility confirmation',
     ]) {
       expect(within(summary).getByRole('link', { name: label })).toBeInTheDocument();
     }
@@ -272,7 +274,7 @@ describe('RegisterPage', () => {
     const summary = await screen.findByRole('alert');
     for (const label of [
       'Player first name', 'Player last name', 'Player date of birth', 'Parent or guardian name',
-      'Parent or guardian email', 'Parent or guardian mobile', 'Member association', 'First position', 'Eligibility confirmation',
+      'Parent or guardian email', 'Parent or guardian mobile', 'Member association', 'First position', 'Authority to provide player details', 'Eligibility confirmation',
     ]) {
       expect(within(summary).getByRole('link', { name: label })).toBeInTheDocument();
     }
@@ -332,6 +334,16 @@ describe('RegisterPage', () => {
     expect(second).toHaveValue('GA');
     expect(third).toHaveValue('WA');
     expect(screen.getByText(/clear a lower-ranked choice before moving it higher/i)).toBeInTheDocument();
+  });
+
+  it('shows a collection notice before requesting player and parent details', async () => {
+    render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
+    const notice = await screen.findByRole('region', { name: 'How we use these details' });
+    expect(within(notice).getByText(/Stripe handles card details/i)).toBeInTheDocument();
+    expect(within(notice).getByText(/Google\/Gmail and Bluehost/i)).toBeInTheDocument();
+    expect(within(notice).getByRole('link', { name: 'chisholmnetball@gmail.com' })).toHaveAttribute('href', expect.stringContaining('Privacy%20request'));
+    const firstField = await screen.findByLabelText(/player first name/i);
+    expect(notice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows eligibility at a glance before data entry and links to the full criteria', async () => {
@@ -459,7 +471,7 @@ describe('RegisterPage', () => {
     expect(privacyDetails.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(privacyDetails);
     expect(screen.getByText(/parent contact details are not shown to volunteers/i)).toBeInTheDocument();
-    expect(screen.getByText(/12 calendar months after the event date.*Gmail Sent copies are outside this retention schedule/i)).toBeInTheDocument();
+    expect(screen.getByText(/four calendar years after the event date.*Payment\/tax records may be kept separately for longer.*Gmail Sent copies are outside this retention schedule/i)).toBeInTheDocument();
   });
 
   it('associates server field errors with controls and focuses the error summary', async () => {

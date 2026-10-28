@@ -30,6 +30,6 @@ describe('admin roster service', () => {
     expect(exportFile?.csv).toContain("'=SUM(1)");
     expect(exportFile?.csv).toContain("'@cmd");
     expect(exportFile?.csv).toContain('"Ng, Jr"');
-    expect(await exportRosterCsv(prisma, event.id, new Date('2027-10-10T13:00:00Z'))).toBeNull();
+    expect(await exportRosterCsv(prisma, event.id, new Date('2030-10-10T13:00:00Z'))).toBeNull();
   });
 });

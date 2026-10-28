@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, PublicAssociationDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -111,6 +111,8 @@ export function apiClient(baseUrl: string) {
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
     listEvents: () => request<EventDTO[]>(baseUrl, '/api/admin/events'),
+    searchPlayerHistory: (playerName: string, dateOfBirth: string) =>
+      request<PlayerHistoryEntryDTO[]>(baseUrl, `/api/admin/player-history?playerName=${encodeURIComponent(playerName)}&dateOfBirth=${encodeURIComponent(dateOfBirth)}`),
     getEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}`),
     createEvent: (input: EventInput) =>
       request<EventDTO>(baseUrl, '/api/admin/events', {

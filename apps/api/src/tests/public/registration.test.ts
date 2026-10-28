@@ -26,7 +26,7 @@ beforeEach(async () => {
 const payload = {
   playerFirstName: 'Ada', playerLastName: 'Lovelace', dateOfBirth: '2011-04-02',
   parentName: 'Anne', parentEmail: 'anne@example.com', parentMobile: '0400000000',
-  memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, eligibilityConfirmed: true,
+  memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, parentAuthorityConfirmed: true, eligibilityConfirmed: true,
 };
 
 describe('POST /api/public/events/:id/registrations', () => {
@@ -38,6 +38,7 @@ describe('POST /api/public/events/:id/registrations', () => {
     expect(Object.keys(acknowledgement).sort()).toEqual(['simulationToken', 'status']);
     expect(await prisma.registration.count({ where: { eventId, status: 'PENDING' } })).toBe(1);
     const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
+    expect(registration.parentAuthorityConfirmedAt).toBeInstanceOf(Date);
     expect(acknowledgement.simulationToken).toBe(registration.checkoutSessionId);
     expect(acknowledgement).not.toHaveProperty('registrationId');
     expect(acknowledgement).not.toHaveProperty('parentEmail');

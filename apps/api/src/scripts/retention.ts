@@ -11,7 +11,7 @@ async function main(): Promise<void> {
       console.error(`retention: wait for worker completion, or verify the original worker is stopped before using npm run mail:reconcile -w @netball-trials/api -- --delivery-id ${delivery.id} --expected-attempt ${delivery.attempts} --outcome unknown --acknowledge-worker-stopped; see README production operations, then rerun retention`);
     }
   });
-  console.log(`retention: anonymised ${count} registrations past the 12-calendar-month cutoff`);
+  console.log(`retention: anonymised ${count} registrations past the 4-calendar-year cutoff`);
   const buckets = await pruneRateLimitBuckets(prisma, now);
   console.log(`retention: deleted ${buckets} idle rate-limit buckets`);
 }

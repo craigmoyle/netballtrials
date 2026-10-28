@@ -291,6 +291,7 @@ describe('FullGameListPage', () => {
   it('groups rounds, courts, Team A/B and positions, showing color names and player Numbers', async () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Full Game List' });
+    await screen.findByRole('table', { name: 'Round 1, Court 1, Team A' });
 
     expect(screen.getAllByRole('table').slice(0, 4).map((table) => within(table).getByRole('caption').textContent)).toEqual([
       'Round 1, Court 1, Team A', 'Round 1, Court 1, Team B', 'Round 1, Court 2, Team A', 'Round 1, Court 2, Team B',

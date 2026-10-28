@@ -227,13 +227,15 @@ The app bar is Chisholm Blue with dark links, a plum lower rule and the club wor
 
 The four Full Game List views—Full Game List, Position View, Player Statistics and Player Reference—are navigation items, not a native select. Keep them visible and directly selectable on desktop and mobile, with a clear active state and keyboard operation. Do not hide these core views behind a dropdown. Player Statistics include Games, ranked-position and Other assignments, Unique opponents, and Repeat meetings; state the meaning of opponent metrics and show the total repeated-pair count for the schedule.
 
+Player History is a direct, Admin-only destination for cross-event history. Search exact player name and date of birth to list possible matching event registrations, but do not silently merge records, save identity links or create permanent player accounts. Clearly tell the Admin to verify a match before interpreting records as one child's progression. Show a chronological event timeline with season, division, association, position choices, attendance, event-specific Number, game/court/position history and opponent-variety measures. Do not show parent contacts, payment identifiers or safeguarding notes. Results are limited to registrations still within the four-year application-retention period.
+
 Expose Communications as a direct Admin destination and from the event workflow. Keep the workflow groups and their links visible when the tools menu is open on mobile; do not nest core destinations behind another disclosure.
 
 ### Lists and tables
 Public trial entries are separated by rules, not cards. Tables use a Light Blue header and plain ink text. The game list, statistics and reference views use captions and row/column headers; mobile tables scroll within their own region. Participant lists show the assigned Number next to the player's name wherever it exists; before check-in, show a clear unassigned state rather than implying a Number has been issued.
 
 ### Member associations
-Manage the association name and its primary contact name and email together. Keep contact details clearly labelled and restricted to the Admin workspace; they are not part of parent registration or volunteer check-in views.
+Manage the association name and its primary contact name and email together. Keep contact details clearly labelled and restricted to the Admin workspace; they are not part of parent registration or volunteer check-in views. Deactivating an association does not erase its contact; retain the contact until an Admin changes or clears it.
 
 ### Communications workspace
 Use one Communications workspace for event participants and member-association contacts. Make the audience choice explicit, then show searchable, filterable recipients in a readable list with a selection control. Participant rows include Number when assigned, player name, association and relevant registration/check-in context. Filters and individual include/exclude controls must let an Admin reach the intended audience without exposing one family's contacts to another.

@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. Hosting remains undecided. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com`.
+React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. The operating entity is Chisholm Netball Region Inc (ABN 41 649 079 458). Hosting is planned for Bluehost. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com`.
 
 ## Users
 
@@ -37,7 +37,8 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - Seven positions: GS, GA, WA, C, WD, GD, GK. Each court runs a full 7-a-side game of 14 players every round.
 - Players enter up to three distinct ranked position choices; the third is optional. An opt-in lets a player be used outside their choices, and those assignments are marked on selector sheets. Spread extra-position assignments fairly and vary opponents where feasible so the same players are not repeatedly overused to fill gaps. Player Statistics report each player's unique opponents and repeat meetings, plus the total number of repeated player-pair meetings in the schedule.
 - Every active player should play on every court. The planner enforces minimum games for each chosen rank; when position shortages require extra-position assignments, it balances appearances and explains any shortfall rather than silently relaxing requirements.
-- Duplicate registrations are detected by name and date of birth within an event; siblings can share a parent email.
+- A person submitting a player's details confirms they are authorised to do so and, for a player under 18, have permission from the parent, legal guardian or responsible person. Duplicate registrations are detected by name and date of birth within an event; siblings can share a parent email.
+- Admins can review a player's possible progression across annual trials through a purpose-built history search using exact player name and date of birth. Results are event-scoped registrations, not a permanent player profile; the interface warns that exact matches are candidates and must be manually verified before comparing. The feature does not save links or merge records. The history shows only trial-relevant data: event/season, division, association, position choices, attendance, event-specific Number, game/court/position appearances and opponent-variety measures. It excludes parent contacts, payment identifiers and safeguarding case notes. Results are available only while the underlying registrations remain within the four-year application retention period.
 - Each member association has a primary contact name and email for committee communications. These contact details are restricted to Admins and are not shown to parents or volunteers.
 - A Communications workspace sends email to selected association contacts or to parents/guardians of participants in an event. Participant recipients are filterable by relevant event, association, registration/payment status, check-in status and position choices; an Admin can include or exclude individual recipients. Preview the final recipient count and list before sending or scheduling. Participant rows show the player's Number when assigned, alongside their name.
 - Admins manage reusable email templates and schedule one-off communications. Scheduled messages use the Australia/Melbourne timezone, can be reviewed and cancelled before sending, and have delivery status and safe retry history. Scheduled sends revalidate recipient eligibility at send time.
@@ -46,8 +47,10 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - No refunds. Admins can make validated manual changes to an unfrozen round and rebuild future rounds; frozen rounds cannot be edited. Selector ratings and post-trial team selection are out of scope.
 - Internet access is assumed at check-in; there is no offline mode.
 - Card data is never stored; Stripe handles it. QR codes contain only a random token.
-- Personal data held by the application is deleted or anonymized 12 months after the event. Gmail Sent copies are outside this retention period.
-- Open decisions: hosting platform, final selector-sheet fields and layout, and how long current member-association contact records are retained between events.
+- Event registration and event communication personal data held by the application is deleted or anonymized four calendar years after the event. Financial records required for the incorporated association are maintained separately for at least seven years; the app's four-year cleanup is not the accounting record. Gmail Sent copies are outside this retention period.
+- Member-association primary contact details remain on file until an Admin changes or clears them; deactivating an association does not automatically erase its contact details.
+- Trial history supports operational continuity and player progression across age groups; it is not a selection outcome or ranking system.
+- Open decisions: hosting platform and final selector-sheet fields and layout.
 
 ## Brand Commitments
 

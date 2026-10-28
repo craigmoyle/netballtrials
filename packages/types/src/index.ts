@@ -308,6 +308,30 @@ export interface RosterDTO {
   };
 }
 
+export interface PlayerHistoryEntryDTO {
+  registrationId: string;
+  playerName: string;
+  eventId: string;
+  eventName: string;
+  eventDate: string;
+  competitionYear: number;
+  division: string;
+  section: string;
+  association: string;
+  rank1Position: Position;
+  rank2Position: Position | null;
+  rank3Position: Position | null;
+  registrationStatus: RegistrationStatus;
+  checkedIn: boolean;
+  number: number | null;
+  ageFlagged: boolean;
+  games: number;
+  courtsSeen: number[];
+  positionsPlayed: Partial<Record<Position, number>>;
+  uniqueOpponents: number;
+  repeatOpponentMeetings: number;
+}
+
 export interface CommunicationRecipientDTO {
   id: string;
   name: string;

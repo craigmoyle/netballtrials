@@ -13,7 +13,7 @@ const nowHeader = { 'x-test-now': now.toISOString() };
 const input = {
   playerFirstName: 'Ada', playerLastName: 'Lovelace', dateOfBirth: '2012-04-02',
   parentName: 'Anne', parentEmail: 'anne@example.com', parentMobile: '0400000000',
-  memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, eligibilityConfirmed: true,
+  memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, parentAuthorityConfirmed: true, eligibilityConfirmed: true,
 };
 const received = { status: 'received' };
 const fakeSessionIdPattern = /^fake_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

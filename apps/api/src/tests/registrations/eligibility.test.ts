@@ -28,7 +28,7 @@ describe('registrationInputSchema', () => {
   const base = {
     playerFirstName: 'Ada', playerLastName: 'Lovelace', dateOfBirth: '2011-04-02',
     parentName: 'Anne', parentEmail: 'anne@example.com', parentMobile: '0400000000',
-    memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, eligibilityConfirmed: true,
+    memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, parentAuthorityConfirmed: true, eligibilityConfirmed: true,
   };
   it('accepts one or two positions', () => {
     expect(registrationInputSchema.safeParse(base).success).toBe(true);
@@ -37,6 +37,7 @@ describe('registrationInputSchema', () => {
   it('rejects duplicate positions and a false eligibility confirmation', () => {
     expect(registrationInputSchema.safeParse({ ...base, rank2Position: 'GS' }).success).toBe(false);
     expect(registrationInputSchema.safeParse({ ...base, eligibilityConfirmed: false }).success).toBe(false);
+    expect(registrationInputSchema.safeParse({ ...base, parentAuthorityConfirmed: false }).success).toBe(false);
   });
   it('requires ranked choices to be sequential and dates to be real calendar dates', () => {
     expect(registrationInputSchema.safeParse({ ...base, rank3Position: 'WA' }).success).toBe(false);

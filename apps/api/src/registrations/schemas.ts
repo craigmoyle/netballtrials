@@ -35,6 +35,7 @@ export const registrationInputSchema = z
     rank2Position: positionSchema.optional(),
     rank3Position: positionSchema.optional(),
     optInExtraPositions: z.boolean().default(false),
+    parentAuthorityConfirmed: z.literal(true),
     eligibilityConfirmed: z.literal(true),
   })
   .refine(positionsAreDistinct, {

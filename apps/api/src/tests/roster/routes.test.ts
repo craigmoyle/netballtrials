@@ -55,7 +55,7 @@ describe('admin roster routes', () => {
   });
 
   it('stops exporting after the retention cutoff', async () => {
-    const old = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2024-01-01T00:00:00Z') }) });
+    const old = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-01-01T00:00:00Z') }) });
     const response = await app.inject({ method: 'GET', url: `/api/admin/events/${old.id}/roster/export`, cookies: { nt_session: cookie } });
     expect(response.statusCode).toBe(410);
     expect(response.json()).toEqual({ error: 'roster_retention_expired' });

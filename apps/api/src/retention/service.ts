@@ -5,8 +5,10 @@ import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
 
 const ANONYMIZED_DOB = new Date('1900-01-01T00:00:00.000Z');
 
+export const APPLICATION_RETENTION_YEARS = 4;
+
 export function retentionCutoff(eventDate: Date): Date {
-  const year = eventDate.getUTCFullYear() + 1;
+  const year = eventDate.getUTCFullYear() + APPLICATION_RETENTION_YEARS;
   const month = eventDate.getUTCMonth();
   const day = eventDate.getUTCDate();
   const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -65,6 +67,7 @@ export async function anonymizeExpiredRegistrations(
             playerLastName: '',
             playerNameNormalized: '',
             dateOfBirth: ANONYMIZED_DOB,
+            parentAuthorityConfirmedAt: null,
             parentName: '',
             parentEmail: '',
             parentMobile: '',

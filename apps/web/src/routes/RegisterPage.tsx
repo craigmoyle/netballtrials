@@ -17,6 +17,7 @@ const FIELD_LABELS: Record<string, string> = {
   rank1Position: 'First position',
   rank2Position: 'Second position',
   rank3Position: 'Third position',
+  parentAuthorityConfirmed: 'Authority to provide player details',
   eligibilityConfirmed: 'Eligibility confirmation',
 };
 
@@ -50,12 +51,13 @@ const EMPTY = {
   rank2Position: '',
   rank3Position: '',
   optInExtraPositions: false,
+  parentAuthorityConfirmed: false,
   eligibilityConfirmed: false,
 };
 
 const REQUIRED_FIELDS: readonly (keyof typeof EMPTY)[] = [
   'playerFirstName', 'playerLastName', 'dateOfBirth', 'parentName', 'parentEmail',
-  'parentMobile', 'memberAssociation', 'rank1Position', 'eligibilityConfirmed',
+  'parentMobile', 'memberAssociation', 'rank1Position', 'parentAuthorityConfirmed', 'eligibilityConfirmed',
 ];
 const REGISTRATION_DRAFT_TTL_MS = 60 * 60 * 1000;
 
@@ -73,7 +75,8 @@ function isRegistrationDraftForm(value: unknown): value is typeof EMPTY {
   return textFields.every((field) => typeof form[field] === 'string') &&
     positionFields.every((field) => typeof form[field] === 'string' &&
       (form[field] === '' || POSITIONS.includes(form[field] as (typeof POSITIONS)[number]))) &&
-    typeof form.optInExtraPositions === 'boolean' && typeof form.eligibilityConfirmed === 'boolean';
+    typeof form.optInExtraPositions === 'boolean' && typeof form.parentAuthorityConfirmed === 'boolean' &&
+    typeof form.eligibilityConfirmed === 'boolean';
 }
 
 function removeRegistrationDraft(eventId: string): boolean {
@@ -420,11 +423,12 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           <li>At least six association games in the date range published in the selection policy.</li>
         </ul>
       </section>
-      <p className="registration-privacy-note">
-        {adminAssisted
-          ? 'Volunteers do not see parent contact details.'
-          : 'Your draft is saved in this tab for up to 1 hour after your last change and restored if you reload. Anyone with access to this tab can see it; closing the tab clears it.'}
-      </p>
+      <section className="registration-privacy-notice" aria-labelledby="privacy-notice-heading">
+        <h2 id="privacy-notice-heading">How we use these details</h2>
+        <p>Chisholm Netball Region Inc (ABN 41 649 079 458) uses player and parent/guardian details to manage registration, eligibility, payment, tickets, check-in and event communications. Stripe handles card details; they are not stored in this app. Necessary information is processed by our payment, email and hosting providers (Stripe, Google/Gmail and Bluehost). Provider systems may process data outside Australia; contact the club for current hosting-region details.</p>
+        <p>Admin users can access registration details; volunteers cannot see parent contact details. Request access or correction, or raise a privacy concern, by emailing <a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20request">chisholmnetball@gmail.com</a>. Event registration details are removed or de-identified four calendar years after the event. Separate financial records and Gmail Sent copies are outside that app cleanup schedule.</p>
+        {!adminAssisted ? <p className="registration-privacy-note">Your draft is saved in this tab for up to 1 hour after your last change. Anyone with access to this tab can see it; closing the tab clears it.</p> : null}
+      </section>
       {draftRestored ? <p role="status">Draft restored from this tab.</p> : null}
       {draftStorageError ? <p role="alert">This browser could not save or clear a draft. Keep this tab open; closing or refreshing may lose your details.</p> : null}
       <nav className="registration-sections" aria-label="Registration sections">
@@ -499,6 +503,15 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
             <input id="parentMobile" required type="tel" autoComplete="tel" value={form.parentMobile} aria-invalid={invalid('parentMobile') || undefined} aria-describedby={describedBy('parentMobile')} onChange={(e) => set('parentMobile', e.target.value)} />
             {invalid('parentMobile') ? <span id="parentMobile-error">Enter a parent or guardian mobile number.</span> : null}
           </p>
+          {invalid('parentAuthorityConfirmed') ? <p id="parentAuthorityConfirmed-error">Confirm that you are authorised to provide these details for the player.</p> : null}
+          <p>
+            <label htmlFor="parentAuthorityConfirmed">
+              <input id="parentAuthorityConfirmed" required type="checkbox" checked={form.parentAuthorityConfirmed} aria-invalid={invalid('parentAuthorityConfirmed') || undefined} aria-describedby={describedBy('parentAuthorityConfirmed')} onChange={(e) => set('parentAuthorityConfirmed', e.target.checked)} />{' '}
+              {adminAssisted
+                ? 'The person authorised to act for the player has asked me to enter these details and agrees to the use described in Privacy details (required).'
+                : 'I am authorised to provide these details and consent to their use as described in Privacy details. If the player is under 18, I am their parent, guardian or responsible person, or have their permission to act on their behalf (required).'}
+            </label>
+          </p>
         </fieldset>
 
         <fieldset id="position-preferences" className="form-group">
@@ -555,7 +568,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           <summary>Privacy details</summary>
           <p>These details are used for registration, payment, check-in and event messages.</p>
           <p>Parent contact details are not shown to volunteers.</p>
-          <p>The app removes or anonymises personal details 12 calendar months after the event date. Gmail Sent copies are outside this retention schedule.</p>
+          <p>The app removes or anonymises personal details four calendar years after the event date. Payment/tax records may be kept separately for longer. Gmail Sent copies are outside this retention schedule.</p>
           <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
           {!adminAssisted && hasUnsavedDetails ? (
             <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p>

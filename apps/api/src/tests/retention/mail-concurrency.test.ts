@@ -8,12 +8,12 @@ import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
-const beforeCutoff = new Date('2026-10-10T12:59:00Z');
-const afterCutoff = new Date('2026-10-10T13:01:00Z');
+const beforeCutoff = new Date('2025-10-10T12:59:00Z');
+const afterCutoff = new Date('2025-10-10T13:01:00Z');
 const content = { subject: 'Private Ada details', text: 'Contact Anne', html: '<p>Private</p>' };
 
 async function setup(status: 'PAID' | 'PENDING' = 'PAID') {
-  const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2025-10-10T00:00:00Z') }) });
+  const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-10-10T00:00:00Z') }) });
   const registration = await prisma.registration.create({ data: registrationFixture(event.id, { status, expiresAt: new Date('2026-10-12T00:00:00Z') }) });
   return { event, registration };
 }

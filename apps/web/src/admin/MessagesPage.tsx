@@ -86,6 +86,9 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     }
     return true;
   }), [allRecipients, audience, associationFilter, positionFilter, search, statusFilter]);
+  const eligibleVisibleRecipients = filteredRecipients.filter((recipient) => Boolean(recipient.email.trim()) &&
+    (audience === 'associations' || recipient.registrationStatus === 'PAID'));
+  const selectedVisibleCount = filteredRecipients.filter((recipient) => selectedIds.includes(recipient.id)).length;
 
   function changeAudience(next: Audience) {
     setAudience(next);
@@ -265,13 +268,15 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
             <label>Position<select aria-label="Filter by position" value={positionFilter} onChange={(event) => { setPositionFilter(event.target.value); setPreviewRecipients(null); }}><option value="all">Any chosen position</option>{['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'].map((position) => <option key={position}>{position}</option>)}</select></label>
           </div>
         ) : null}
-        <p>
-          <button type="button" className="button-secondary" onClick={() => selectVisible(true)}>Select visible eligible</button>{' '}
-          <button type="button" className="button-secondary" onClick={() => selectVisible(false)}>Clear visible selection</button>
-          {' '}{selectedIds.length} selected
-        </p>
+        <div className="communication-recipient-actions">
+          <p className="communication-selected-count" role="status" aria-live="polite">
+            {selectedIds.length} selected total · {filteredRecipients.length} shown · {eligibleVisibleRecipients.length} visible eligible
+          </p>
+          <button type="button" className="button-secondary" disabled={eligibleVisibleRecipients.length === 0} onClick={() => selectVisible(true)}>Select visible eligible</button>{' '}
+          <button type="button" className="button-secondary" disabled={selectedVisibleCount === 0} onClick={() => selectVisible(false)}>Clear visible selection</button>
+        </div>
         {filteredRecipients.length === 0 ? <p>No recipients match these filters.</p> : (
-          <div className="table-scroll" role="region" aria-label="Selectable communication recipients" tabIndex={0}>
+          <div className="table-scroll communication-recipient-list" role="region" aria-label="Selectable communication recipients" tabIndex={0}>
             <table>
               <caption>{audience === 'participants' ? 'Event participant contacts' : 'Member association primary contacts'}</caption>
               <thead><tr><th scope="col">Include</th><th scope="col">Player / association</th><th scope="col">Number</th><th scope="col">Email</th><th scope="col">Association</th><th scope="col">Status</th><th scope="col">Positions</th></tr></thead>

@@ -218,6 +218,7 @@ model Registration {
   rank3Position          Position?
   optInExtraPositions    Boolean            @default(false)
   eligibilityConfirmedAt DateTime
+  parentAuthorityConfirmedAt DateTime?
   policyReference        String
   status                 RegistrationStatus @default(PENDING)
   statusBeforeAnonymization RegistrationStatus?

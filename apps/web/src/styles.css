@@ -361,6 +361,10 @@ thead { background: var(--blue-pale); }
 .communication-audience button[aria-pressed="true"] { color: var(--paper); background: var(--burgundy); }
 .communication-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 1rem; }
 .communication-filters label { display: grid; gap: 0.25rem; }
+.communication-recipient-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-block: 0.75rem; }
+.communication-selected-count { flex: 1 1 100%; margin: 0; font-weight: 650; }
+.communications-page .communication-recipient-list { max-height: min(65vh, 36rem); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.communication-recipient-list thead { position: sticky; top: 0; z-index: 1; }
 .communications-page table { min-width: 46rem; }
 .communications-page td:first-child { text-align: center; }
 .communications-page input[type="checkbox"] { min-width: 1.25rem; min-height: 1.25rem; }

@@ -9,8 +9,8 @@ import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
-const beforeCutoff = new Date('2021-01-01T12:59:00Z');
-const afterCutoff = new Date('2021-01-01T13:01:00Z');
+const beforeCutoff = new Date('2024-01-01T12:59:00Z');
+const afterCutoff = new Date('2024-01-01T13:01:00Z');
 const content = { subject: 'Private details', text: 'Contact Anne', html: '<p>Private</p>' };
 
 async function setup() {

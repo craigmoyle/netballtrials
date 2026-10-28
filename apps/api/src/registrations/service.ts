@@ -110,6 +110,7 @@ async function createPendingRegistrationWithPolicy(
           rank3Position: values.rank3Position ?? null,
           optInExtraPositions: values.optInExtraPositions,
           eligibilityConfirmedAt: now,
+          parentAuthorityConfirmedAt: now,
           policyReference: event.policyUrl ?? DEFAULT_POLICY_URL,
           status: 'PENDING',
           ageFlagged: !isAgeInRange(age, event.minAge, event.maxAge),

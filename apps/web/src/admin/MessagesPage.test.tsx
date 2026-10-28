@@ -44,6 +44,16 @@ describe('CommunicationsPage', () => {
     expect(screen.getByText(/Paid · Checked in/i)).toBeInTheDocument();
     const pending = screen.getByRole('checkbox', { name: 'Include Pending Player' });
     expect(pending).toBeDisabled();
+    expect(screen.getByText('0 selected total · 3 shown · 2 visible eligible')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Selectable communication recipients' })).toHaveClass('communication-recipient-list');
+    fireEvent.click(screen.getByRole('button', { name: 'Select visible eligible' }));
+    expect(screen.getByText('2 selected total · 3 shown · 2 visible eligible')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Filter by payment or attendance'), { target: { value: 'PENDING' } });
+    expect(screen.getByText('2 selected total · 1 shown · 0 visible eligible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear visible selection' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Filter by payment or attendance'), { target: { value: 'all' } });
+    expect(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Include Grace Hopper' })).toBeChecked();
     fireEvent.change(screen.getByLabelText('Filter by association'), { target: { value: 'MENA' } });
     fireEvent.change(screen.getByLabelText('Filter by position'), { target: { value: 'GS' } });
     fireEvent.change(screen.getByLabelText('Filter by payment or attendance'), { target: { value: 'checked-in' } });
@@ -70,7 +80,7 @@ describe('CommunicationsPage', () => {
     await waitFor(() => expect(client.sendCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({
       audience: 'participants', recipientIds: ['p1', 'p2'], subject: 'Trial update', text: 'Bring water.', batchId: expect.any(String),
     })));
-    expect(await screen.findByRole('status')).toHaveTextContent('2 sent, 0 failed');
+    expect(await screen.findByText('2 sent, 0 failed.')).toBeInTheDocument();
   });
 
   it('saves and applies audience-specific email templates', async () => {
@@ -86,7 +96,7 @@ describe('CommunicationsPage', () => {
     fireEvent.change(screen.getByLabelText('Save current message as template'), { target: { value: 'Another template' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
     await waitFor(() => expect(client.saveCommunicationTemplate).toHaveBeenCalledWith({ name: 'Another template', audience: 'participants', subject: 'Saved subject', body: 'Saved body' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Template saved.');
+    expect(await screen.findByText('Template saved.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Member associations' }));
     expect(screen.getByRole('option', { name: 'Choose a template' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Trial update' })).not.toBeInTheDocument();

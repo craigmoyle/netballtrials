@@ -20,6 +20,7 @@ import { registerCheckInRoutes } from './checkin/routes';
 import { registerPlannerRoutes } from './planner/routes';
 import { registerReviewRoutes } from './review/routes';
 import { registerCommunicationRoutes } from './messages/communications-routes';
+import { registerPlayerHistoryRoutes } from './history/routes';
 import { registerRosterRoutes } from './roster/routes';
 
 export type AppDeps = {
@@ -185,6 +186,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   registerPlannerRoutes(app, deps);
   registerReviewRoutes(app, deps);
   registerCommunicationRoutes(app, deps);
+  registerPlayerHistoryRoutes(app, deps);
   registerRosterRoutes(app, deps);
 
   return app;

@@ -16,7 +16,7 @@ beforeEach(async () => {
 const input = {
   playerFirstName: 'Ada', playerLastName: 'Lovelace', dateOfBirth: '2011-04-02',
   parentName: 'Anne', parentEmail: 'anne@example.com', parentMobile: '0400000000',
-  memberAssociation: 'MENA', rank1Position: 'GS' as const, optInExtraPositions: false, eligibilityConfirmed: true as const,
+  memberAssociation: 'MENA', rank1Position: 'GS' as const, optInExtraPositions: false, parentAuthorityConfirmed: true as const, eligibilityConfirmed: true as const,
 };
 
 describe('createPendingRegistration', () => {

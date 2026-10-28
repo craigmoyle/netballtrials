@@ -8,20 +8,21 @@ import { eventFixture, registrationFixture as regFixture } from '../helpers/fixt
 beforeEach(resetDb);
 
 describe('retentionCutoff', () => {
-  it('uses calendar months and clamps leap-day cutoffs to the target month', () => {
-    expect(retentionCutoff(new Date('2025-10-10T00:00:00Z')).toISOString()).toContain('2026-10-10');
-    expect(retentionCutoff(new Date('2024-02-29T00:00:00Z')).toISOString()).toContain('2025-02-28');
+  it('uses four calendar years and handles leap-day event dates', () => {
+    expect(retentionCutoff(new Date('2025-10-10T00:00:00Z')).toISOString()).toContain('2029-10-10');
+    expect(retentionCutoff(new Date('2024-02-29T00:00:00Z')).toISOString()).toContain('2028-02-29');
   });
 });
 
 describe('anonymizeExpiredRegistrations', () => {
   it('clears personal data across registration, email, review, check-in, and plan snapshots exactly once', async () => {
-    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2025-09-12T00:00:00Z') } });
+    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2021-09-12T00:00:00Z') } });
     const reg = await prisma.registration.create({
       data: {
         ...regFixture(old.id), status: 'PAID', qrToken: 'q'.repeat(43),
         checkoutSessionId: 'cs_personal', paymentIntentId: 'pi_personal',
-        checkedInAt: new Date('2025-09-12T23:00:00Z'), checkedInBy: 'Volunteer name', bibNumber: 7,
+        parentAuthorityConfirmedAt: new Date('2021-08-01T00:00:00Z'),
+        checkedInAt: new Date('2021-09-12T23:00:00Z'), checkedInBy: 'Volunteer name', bibNumber: 7,
       },
     });
     const plan = await prisma.roundPlan.create({
@@ -52,12 +53,12 @@ describe('anonymizeExpiredRegistrations', () => {
     });
     const review = await prisma.reviewItem.create({ data: { eventId: old.id, registrationId: reg.id, reason: 'age_out_of_range', note: 'Birth certificate seen' } });
 
-    const now = new Date('2026-10-10T00:00:00Z');
+    const now = new Date('2025-10-10T00:00:00Z');
     expect(await anonymizeExpiredRegistrations(prisma, now)).toBe(1);
     const anonymised = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } });
     expect(anonymised).toMatchObject({
       playerFirstName: '', playerLastName: '', playerNameNormalized: '', parentName: '', parentEmail: '', parentMobile: '',
-      checkedInBy: null, qrToken: null, checkoutSessionId: null, paymentIntentId: null,
+      checkedInBy: null, qrToken: null, checkoutSessionId: null, paymentIntentId: null, parentAuthorityConfirmedAt: null,
       status: 'WITHDRAWN', statusBeforeAnonymization: 'PAID', anonymizedAt: now,
     });
     expect(anonymised.dateOfBirth.toISOString()).toContain('1900-01-01');
@@ -85,9 +86,9 @@ describe('anonymizeExpiredRegistrations', () => {
   });
 
   it('claims each registration once when retention workers overlap', async () => {
-    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2025-09-12T00:00:00Z') } });
+    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2021-09-12T00:00:00Z') } });
     const reg = await prisma.registration.create({ data: { ...regFixture(old.id), status: 'PAID' } });
-    const now = new Date('2026-10-10T00:00:00Z');
+    const now = new Date('2025-10-10T00:00:00Z');
     const counts = await Promise.all([
       anonymizeExpiredRegistrations(prisma, now),
       anonymizeExpiredRegistrations(prisma, now),
@@ -96,15 +97,15 @@ describe('anonymizeExpiredRegistrations', () => {
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })).anonymizedAt).toEqual(now);
   });
 
-  it('does not anonymise an event exactly at the 12-calendar-month boundary', async () => {
-    const boundary = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2025-10-10T00:00:00Z') } });
+  it('does not anonymise an event on its four-calendar-year boundary date', async () => {
+    const boundary = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2021-10-10T00:00:00Z') } });
     await prisma.registration.create({ data: { ...regFixture(boundary.id), status: 'PAID' } });
-    expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T12:59:59Z'))).toBe(0);
-    expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T13:00:00Z'))).toBe(1);
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T12:59:59Z'))).toBe(0);
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T13:00:00Z'))).toBe(1);
   });
 
   it('anonymises member association and many email logs in one pass', async () => {
-    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2025-09-12T00:00:00Z') } });
+    const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2021-09-12T00:00:00Z') } });
     const reg = await prisma.registration.create({ data: { ...regFixture(old.id), status: 'PAID' } });
     await prisma.emailLog.createMany({
       data: Array.from({ length: 1500 }, (_, index) => ({
@@ -113,12 +114,12 @@ describe('anonymizeExpiredRegistrations', () => {
         messagePayload: { html: 'private' }, error: 'provider_rejected_403', kind: 'message', status: 'SENT' as const,
       })),
     });
-    const current = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z') } });
+    const current = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2025-09-12T00:00:00Z') } });
     const kept = await prisma.emailLog.create({
       data: { eventId: current.id, batchId: 'current', idempotencyKey: 'current-key', to: 'keep@example.com', subject: 'Keep', body: 'Keep', kind: 'message', status: 'SENT' },
     });
 
-    expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T00:00:00Z'))).toBe(1);
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T00:00:00Z'))).toBe(1);
 
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })).memberAssociation).toBe('');
     const logs = await prisma.emailLog.findMany({ where: { eventId: old.id } });
@@ -127,7 +128,7 @@ describe('anonymizeExpiredRegistrations', () => {
       && log.messagePayload === null && log.error === null && log.registrationId === null && log.kind === 'retention'
       && log.batchId === `retained:${log.id}` && log.idempotencyKey === `retained:${log.id}`)).toBe(true);
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: kept.id } })).toMatchObject({ to: 'keep@example.com', status: 'SENT' });
-    expect(await anonymizeExpiredRegistrations(prisma, new Date('2026-10-10T00:00:00Z'))).toBe(0);
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T00:00:00Z'))).toBe(0);
   });
 
   it('deletes rate-limit buckets idle for more than a day', async () => {
