@@ -22,6 +22,7 @@ import { registerReviewRoutes } from './review/routes';
 import { registerCommunicationRoutes } from './messages/communications-routes';
 import { registerPlayerHistoryRoutes } from './history/routes';
 import { registerRosterRoutes } from './roster/routes';
+import { registerParentAccessRoutes } from './parents/routes';
 
 export type AppDeps = {
   prisma: PrismaClient;
@@ -156,7 +157,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
 
   app.addHook('preHandler', async (request, reply) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
-    if (!request.cookies?.nt_session && !request.cookies?.nt_checkin) return;
+    if (!request.cookies?.nt_session && !request.cookies?.nt_checkin && !request.cookies?.nt_parent) return;
 
     const origin = request.headers.origin;
     const fetchSite = request.headers['sec-fetch-site'];
@@ -188,6 +189,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   registerCommunicationRoutes(app, deps);
   registerPlayerHistoryRoutes(app, deps);
   registerRosterRoutes(app, deps);
+  registerParentAccessRoutes(app, deps);
 
   return app;
 }

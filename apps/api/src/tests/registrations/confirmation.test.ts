@@ -106,6 +106,8 @@ describe('buildConfirmation', () => {
     });
     expect(email.subject).toContain('15/U Trials');
     expect(email.text).toContain('https://example.com/ticket/abc');
+    expect(email.text).toContain('Manage registrations: https://example.com/manage-registration');
+    expect(email.html).toContain('href="https://example.com/manage-registration"');
     expect(email.html).toContain('src="cid:ticket-qr"');
     expect(email.html).toContain('https://example.com/policy?x=1&amp;y=2');
   });

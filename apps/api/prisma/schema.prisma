@@ -201,6 +201,12 @@ enum RegistrationStatus {
   WITHDRAWN
 }
 
+enum ParentAccessTokenPurpose {
+  REGISTRATION_VERIFY
+  SIGN_IN
+  EMAIL_CHANGE
+}
+
 model Registration {
   id                     String             @id @default(cuid())
   eventId                String
@@ -219,6 +225,8 @@ model Registration {
   optInExtraPositions    Boolean            @default(false)
   eligibilityConfirmedAt DateTime
   parentAuthorityConfirmedAt DateTime?
+  parentEmailVerifiedAt   DateTime?
+  parentFollowUpSentAt    DateTime?
   policyReference        String
   status                 RegistrationStatus @default(PENDING)
   statusBeforeAnonymization RegistrationStatus?
@@ -241,8 +249,48 @@ model Registration {
 
   reviewItems            ReviewItem[]
   emailLogs              EmailLog[]
+  parentAccessTokens     ParentAccessToken[]
+  changeLog              RegistrationChangeLog[]
 
   @@index([eventId, status])
+  @@index([parentEmail, parentEmailVerifiedAt])
+}
+
+model ParentAccessToken {
+  id             String                   @id @default(cuid())
+  email          String
+  newEmail       String?
+  purpose        ParentAccessTokenPurpose
+  registrationId String?
+  registration   Registration?             @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  tokenHash      String                   @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime                 @default(now())
+
+  @@index([email, purpose, expiresAt])
+  @@index([registrationId])
+}
+
+model ParentAccessSession {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, expiresAt])
+}
+
+model RegistrationChangeLog {
+  id            String       @id @default(cuid())
+  registrationId String
+  registration  Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  actorType     String       @default("PARENT")
+  changedFields Json
+  createdAt     DateTime     @default(now())
+
+  @@index([registrationId, createdAt])
 }
 
 model ProcessedStripeEvent {

@@ -350,7 +350,7 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
                     aria-describedby={[invalid ? `${field.name}-error` : '', field.name === 'policyUrl' ? 'policyUrl-hint' : ''].filter(Boolean).join(' ') || undefined}
                   />
                   {field.name === 'division' ? <datalist id="trial-divisions"><option value="15/U" /><option value="17/U" /><option value="Open" /><option value="All Abilities" /></datalist> : null}
-                  {field.name === 'policyUrl' ? <span id="policyUrl-hint">Leave blank to use the club’s default selection policy.</span> : null}
+                  {field.name === 'policyUrl' ? <span id="policyUrl-hint" className="field-hint">Leave blank to use the club’s default selection policy.</span> : null}
                   {invalid ? <span id={`${field.name}-error`}>{field.label} is not valid.</span> : null}
                 </p>
               );

@@ -22,6 +22,8 @@ let fixtures: Record<string, string> = {};
 let adminSequence = 0;
 
 async function resetFixtures(): Promise<Record<string, string>> {
+  await prisma.parentAccessSession.deleteMany();
+  await prisma.parentAccessToken.deleteMany();
   await prisma.event.deleteMany();
   await prisma.memberAssociation.deleteMany();
   await prisma.processedStripeEvent.deleteMany();
@@ -37,7 +39,7 @@ async function resetFixtures(): Promise<Record<string, string>> {
   const mainEvent = await prisma.event.create({
     data: { ...eventFixture({
       name: 'E2E 15/U Ladies', status: 'OPEN', eventDate: new Date('2027-09-12T00:00:00Z'),
-      courts: 3, nextBibNumber: 70, rank1Min: 2, rank2Min: 1, rank3Min: 1,
+      courts: 3, nextBibNumber: 70, rank1Min: 2, rank2Min: 1, rank3Min: 0,
       checkInPinHash: await hashPin('482193'),
     }) },
   });
@@ -55,6 +57,9 @@ async function resetFixtures(): Promise<Record<string, string>> {
     const isWaiting = index === 0;
     const playerFirstName = isTicketPlayer ? 'Ada' : `Player${index + 1}`;
     const playerLastName = isTicketPlayer ? 'Ticket' : 'Trial';
+    const rank1Index = (index * 2 + Math.floor(index / 8)) % COURT_POSITIONS.length;
+    const rank2Index = (rank1Index + 1 + (index % 3)) % COURT_POSITIONS.length;
+    const rank3Index = (rank2Index + 1 + (index % 2)) % COURT_POSITIONS.length;
     await prisma.registration.create({
       data: registrationFixture(mainEvent.id, {
         playerFirstName,
@@ -62,12 +67,13 @@ async function resetFixtures(): Promise<Record<string, string>> {
         playerNameNormalized: `${playerFirstName} ${playerLastName}`.toLowerCase(),
         parentName: `Parent ${index + 1}`,
         parentEmail: isTicketPlayer ? 'PARENT1@example.test' : `parent${index + 1}@example.test`,
+        parentEmailVerifiedAt: new Date(),
         dateOfBirth: new Date('2012-04-02T00:00:00Z'),
         memberAssociation: 'MENA',
-        rank1Position: COURT_POSITIONS[index % COURT_POSITIONS.length],
-        rank2Position: COURT_POSITIONS[(index + 2) % COURT_POSITIONS.length],
-        rank3Position: COURT_POSITIONS[(index + 4) % COURT_POSITIONS.length],
-        optInExtraPositions: false,
+        rank1Position: COURT_POSITIONS[rank1Index],
+        rank2Position: COURT_POSITIONS[rank2Index],
+        rank3Position: index % 4 === 0 ? null : COURT_POSITIONS[rank3Index],
+        optInExtraPositions: index < 7,
         status: 'PAID',
         ageFlagged: index < 2,
         qrToken: isTicketPlayer ? ticketToken : `e2e-main-token-${index}-abcdefghijklmnopqrstuvwxyz`,

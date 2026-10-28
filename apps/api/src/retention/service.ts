@@ -6,6 +6,7 @@ import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
 const ANONYMIZED_DOB = new Date('1900-01-01T00:00:00.000Z');
 
 export const APPLICATION_RETENTION_YEARS = 4;
+export const INCOMPLETE_REGISTRATION_RETENTION_DAYS = 30;
 
 export function retentionCutoff(eventDate: Date): Date {
   const year = eventDate.getUTCFullYear() + APPLICATION_RETENTION_YEARS;
@@ -123,6 +124,126 @@ export async function anonymizeExpiredRegistrations(
     if (deferred) onDeferred?.(deferred);
   }
   return anonymized;
+}
+
+export async function anonymizeIncompleteRegistrations(
+  prisma: PrismaClient,
+  now: Date,
+  onDeferred?: (deferral: RetentionDeferral) => void,
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - INCOMPLETE_REGISTRATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const candidates = await prisma.registration.findMany({
+    where: {
+      createdAt: { lt: cutoff },
+      status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
+      anonymizedAt: null,
+    },
+    select: { id: true, eventId: true, status: true, parentEmail: true },
+    orderBy: [{ eventId: 'asc' }, { id: 'asc' }],
+  });
+  if (candidates.length === 0) return 0;
+
+  const byEvent = new Map<string, typeof candidates>();
+  for (const candidate of candidates) byEvent.set(candidate.eventId, [...(byEvent.get(candidate.eventId) ?? []), candidate]);
+
+  let anonymized = 0;
+  for (const [eventId, rows] of byEvent) {
+    let deferred: RetentionDeferral | undefined;
+    anonymized += await prisma.$transaction(async (tx) => {
+      const event = await lockMailEvent(tx, eventId);
+      if (!event) return 0;
+      const ids = rows.map((row) => row.id);
+      const active = await tx.emailLog.findMany({
+        where: {
+          eventId,
+          registrationId: { in: ids },
+          OR: [{ status: 'SENDING' }, { status: 'AMBIGUOUS', error: INTERRUPTED_SEND }],
+        },
+        select: { id: true, attempts: true, status: true },
+        orderBy: { id: 'asc' },
+      });
+      if (active.length > 0) {
+        deferred = { eventId, deliveries: active };
+        return 0;
+      }
+
+      const expired = await tx.registration.findMany({
+        where: { id: { in: ids }, status: { in: ['PENDING', 'EXPIRED', 'FAILED'] }, anonymizedAt: null },
+        select: { id: true, status: true, parentEmail: true },
+      });
+      let count = 0;
+      for (const registration of expired) {
+        const anonymizedRef = `anon_${randomUUID()}`;
+        const claimed = await tx.registration.updateMany({
+          where: { id: registration.id, status: { in: ['PENDING', 'EXPIRED', 'FAILED'] }, anonymizedAt: null },
+          data: {
+            playerFirstName: '',
+            playerLastName: '',
+            playerNameNormalized: '',
+            dateOfBirth: ANONYMIZED_DOB,
+            parentAuthorityConfirmedAt: null,
+            parentEmailVerifiedAt: null,
+            parentFollowUpSentAt: null,
+            parentName: '',
+            parentEmail: '',
+            parentMobile: '',
+            memberAssociation: '',
+            qrToken: null,
+            checkoutSessionId: null,
+            paymentIntentId: null,
+            legacyPaymentRef: null,
+            checkedInBy: null,
+            bibNumber: null,
+            ageFlagged: false,
+            statusBeforeAnonymization: registration.status,
+            status: 'WITHDRAWN',
+            anonymizedAt: now,
+            anonymizedRef,
+          },
+        });
+        if (claimed.count !== 1) continue;
+        await tx.parentAccessToken.deleteMany({ where: { registrationId: registration.id } });
+        await tx.registrationChangeLog.deleteMany({ where: { registrationId: registration.id } });
+        await tx.reviewItem.deleteMany({ where: { registrationId: registration.id } });
+        await tx.roundPlanPlayer.updateMany({
+          where: { registrationId: registration.id },
+          data: { registrationId: anonymizedRef, playerName: 'Former participant', bibNumber: null },
+        });
+        await tx.roundSlot.updateMany({ where: { registrationId: registration.id }, data: { registrationId: anonymizedRef } });
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE "EmailLog"
+          SET "registrationId" = NULL,
+              "batchId" = 'retained:' || "id",
+              "idempotencyKey" = 'retained:' || "id",
+              "to" = '', "subject" = '', "body" = '', "messagePayload" = NULL,
+              "error" = NULL, "kind" = 'retention', "status" = 'ANONYMIZED', "updatedAt" = ${now}
+          WHERE "registrationId" = ${registration.id} AND "status" <> 'ANONYMIZED'
+        `);
+        count += 1;
+      }
+      const affectedEmails = [...new Set(expired.map((registration) => registration.parentEmail.trim().toLowerCase()).filter(Boolean))];
+      for (const email of affectedEmails) {
+        const remaining = await tx.registration.findFirst({
+          where: { parentEmail: { equals: email, mode: 'insensitive' }, anonymizedAt: null },
+          select: { id: true },
+        });
+        if (remaining) continue;
+        await tx.parentAccessSession.deleteMany({ where: { email: { equals: email, mode: 'insensitive' } } });
+        await tx.parentAccessToken.deleteMany({ where: { email: { equals: email, mode: 'insensitive' } } });
+      }
+      return count;
+    }, { timeout: 60_000 });
+    if (deferred) onDeferred?.(deferred);
+  }
+  return anonymized;
+}
+
+export async function pruneParentAccessArtifacts(prisma: PrismaClient, now: Date): Promise<{ tokens: number; sessions: number }> {
+  const [tokens, sessions] = await Promise.all([
+    prisma.parentAccessToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+    prisma.parentAccessSession.deleteMany({ where: { expiresAt: { lt: now } } }),
+  ]);
+  return { tokens: tokens.count, sessions: sessions.count };
 }
 
 const RATE_LIMIT_BUCKET_TTL_MS = 24 * 60 * 60 * 1000;

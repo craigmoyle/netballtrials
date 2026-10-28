@@ -15,7 +15,7 @@ const input = {
   parentName: 'Anne', parentEmail: 'anne@example.com', parentMobile: '0400000000',
   memberAssociation: 'MENA', rank1Position: 'GS', optInExtraPositions: false, parentAuthorityConfirmed: true, eligibilityConfirmed: true,
 };
-const received = { status: 'received' };
+const received = { status: 'received', nextStep: 'verify-email' };
 const fakeSessionIdPattern = /^fake_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let app: ReturnType<typeof createApp>;
@@ -46,18 +46,16 @@ beforeEach(async () => {
 });
 
 describe('POST /api/admin/events/:id/day-of-registration', () => {
-  it('accepts a CLOSED event on its Melbourne date and leaves checkout pending', async () => {
+  it('accepts a CLOSED event on its Melbourne date and requires email verification before Checkout', async () => {
     const response = await submit();
 
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual(received);
     const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
-    expect(registration).toMatchObject({ status: 'PENDING', parentEmail: 'anne@example.com' });
-    expect(registration.checkoutSessionId).toMatch(fakeSessionIdPattern);
-    expect(payment.checkouts).toHaveLength(1);
-    const checkoutEmail = mailer.sent.find((message) => message.subject === 'Continue your Netball Trials registration');
-    expect(checkoutEmail?.to).toBe('anne@example.com');
-    expect(checkoutEmail?.text).toContain(`https://checkout.test/${registration.checkoutSessionId}`);
+    expect(registration).toMatchObject({ status: 'PENDING', parentEmail: 'anne@example.com', parentEmailVerifiedAt: null, checkoutSessionId: null });
+    expect(payment.checkouts).toHaveLength(0);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]).toMatchObject({ to: 'anne@example.com', subject: 'Confirm your Netball Trials email' });
 
     const opened = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`,
@@ -112,8 +110,9 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(first.statusCode).toBe(202);
     expect(retry.statusCode).toBe(202);
     expect(first.json()).toEqual(retry.json());
-    expect(payment.checkouts).toHaveLength(1);
-    expect(checkoutEmails.map((message) => message.to)).toEqual(['anne@example.com', 'anne@example.com']);
+    expect(payment.checkouts).toHaveLength(0);
+    expect(checkoutEmails).toHaveLength(0);
+    expect(mailer.sent.filter((message) => message.subject === 'Confirm your Netball Trials email').map((message) => message.to)).toEqual(['anne@example.com', 'anne@example.com']);
     expect(await prisma.registration.count({ where: { eventId } })).toBe(1);
   });
 
@@ -134,29 +133,55 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(mailer.sent).toHaveLength(0);
   });
 
-  it('keeps a failed Checkout PENDING and allows the same request to retry', async () => {
+  it('keeps a failed email-verification send pending and allows the same request to retry', async () => {
+    vi.spyOn(mailer, 'send').mockRejectedValueOnce(new Error('mail unavailable'));
+    const failed = await submit();
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toEqual({ error: 'email_verification_unavailable' });
+    const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
+    expect(registration).toMatchObject({ status: 'PENDING', parentEmailVerifiedAt: null, checkoutSessionId: null });
+    const retried = await submit();
+    expect(retried.statusCode).toBe(202);
+    expect(retried.json()).toEqual(received);
+    expect(payment.checkouts).toHaveLength(0);
+    expect(mailer.sent.some((message) => message.subject === 'Confirm your Netball Trials email')).toBe(true);
+  });
+
+  it('retries Checkout for an already-verified pending registration', async () => {
+    await prisma.registration.create({
+      data: registrationFixture(eventId, {
+        playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
+        dateOfBirth: new Date('2012-04-02T00:00:00.000Z'), parentEmail: 'anne@example.com',
+        parentEmailVerifiedAt: new Date(), status: 'PENDING',
+      }),
+    });
     vi.spyOn(payment, 'createCheckout').mockRejectedValueOnce(new Error('provider unavailable'));
     const failed = await submit();
     expect(failed.statusCode).toBe(503);
     expect(failed.json()).toEqual({ error: 'checkout_unavailable' });
-    const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
     const retried = await submit();
-    expect(registration).toMatchObject({ status: 'PENDING', checkoutSessionId: null });
     expect(retried.statusCode).toBe(202);
-    expect(await prisma.registration.count({ where: { eventId, status: 'PENDING' } })).toBe(1);
+    expect(retried.json()).toEqual({ status: 'received', nextStep: 'checkout' });
+    expect(payment.checkouts).toHaveLength(1);
     expect(mailer.sent.some((message) => message.subject === 'Continue your Netball Trials registration')).toBe(true);
   });
 
-  it('keeps a failed Checkout email PENDING and allows its continuation to retry', async () => {
+  it('retries Checkout email delivery for an already-verified pending registration', async () => {
+    await prisma.registration.create({
+      data: registrationFixture(eventId, {
+        playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
+        dateOfBirth: new Date('2012-04-02T00:00:00.000Z'), parentEmail: 'anne@example.com',
+        parentEmailVerifiedAt: new Date(), status: 'PENDING',
+      }),
+    });
     vi.spyOn(mailer, 'send').mockRejectedValueOnce(new Error('mail unavailable'));
     const failed = await submit();
     expect(failed.statusCode).toBe(503);
     expect(failed.json()).toEqual({ error: 'checkout_unavailable' });
     const registration = await prisma.registration.findFirstOrThrow({ where: { eventId } });
     const retried = await submit();
-    expect(registration).toMatchObject({ status: 'PENDING' });
-    expect(registration.checkoutSessionId).toMatch(fakeSessionIdPattern);
     expect(retried.statusCode).toBe(202);
+    expect(registration.checkoutSessionId).toMatch(fakeSessionIdPattern);
     expect(await prisma.registration.count({ where: { eventId, status: 'PENDING' } })).toBe(1);
     const checkoutEmail = mailer.sent.find((message) => message.subject === 'Continue your Netball Trials registration');
     expect(checkoutEmail?.text).toContain(`https://checkout.test/${registration.checkoutSessionId}`);

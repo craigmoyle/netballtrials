@@ -119,10 +119,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { hash } = useLocation();
   const [submitted, setSubmitted] = useState(false);
-  const [simulationToken, setSimulationToken] = useState<string | null>(null);
-  const [simulationError, setSimulationError] = useState<string | null>(null);
-  const [simulationBusy, setSimulationBusy] = useState(false);
-  const [simulationCompleted, setSimulationCompleted] = useState(false);
+  const [submittedNextStep, setSubmittedNextStep] = useState<'verify-email' | 'checkout'>('verify-email');
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [eventRetry, setEventRetry] = useState(0);
@@ -136,12 +133,11 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const [draftStorageError, setDraftStorageError] = useState(initialDraft.storageError);
   const [activeSection, setActiveSection] = useState<RegistrationSectionId>('player-details');
   const errorSummary = useRef<HTMLDivElement>(null);
-  const simulationHeading = useRef<HTMLHeadingElement>(null);
   const completionHeading = useRef<HTMLHeadingElement>(null);
   const promptedLocation = useRef<string | null>(null);
   const hasUnsavedDetails = (Object.keys(EMPTY) as (keyof typeof EMPTY)[])
     .some((key) => form[key] !== EMPTY[key]);
-  const shouldWarnBeforeLeaving = hasUnsavedDetails && !submitted && !simulationCompleted;
+  const shouldWarnBeforeLeaving = hasUnsavedDetails && !submitted;
   useUnsavedSignOut(adminAssisted && shouldWarnBeforeLeaving, 'Day-of registration details are only held while this page is open. Leave and lose them?');
   const blocker = useBlocker(({ currentLocation, nextLocation }) => shouldWarnBeforeLeaving &&
     (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
@@ -177,16 +173,14 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     const destination = `${blocker.location.pathname}${blocker.location.search}${blocker.location.hash}`;
     if (promptedLocation.current === destination) return;
     promptedLocation.current = destination;
-    const message = simulationToken && !simulationCompleted
-      ? 'The test payment simulation is not complete. Leave this page?'
-      : adminAssisted
-        ? 'Day-of registration details are only held while this page is open. Leave and lose them?'
-        : draftStorageError
-          ? 'Your browser could not save the draft. Leave and lose the details?'
-          : 'A draft is saved in this tab for up to 1 hour after your last change. Closing this tab clears it. Leave this page?';
+    const message = adminAssisted
+      ? 'Day-of registration details are only held while this page is open. Leave and lose them?'
+      : draftStorageError
+        ? 'Your browser could not save the draft. Leave and lose the details?'
+        : 'A draft is saved in this tab for up to 1 hour after your last change. Closing this tab clears it. Leave this page?';
     if (window.confirm(message)) blocker.proceed();
     else blocker.reset();
-  }, [adminAssisted, blocker, draftStorageError, simulationToken, simulationCompleted]);
+  }, [adminAssisted, blocker, draftStorageError]);
 
   useEffect(() => {
     if (!shouldWarnBeforeLeaving) return;
@@ -200,7 +194,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
 
   useEffect(() => {
     if (adminAssisted) return;
-    if (!hasUnsavedDetails || submitted || simulationToken) {
+    if (!hasUnsavedDetails || submitted) {
       setDraftStorageError(!removeRegistrationDraft(eventId));
       return;
     }
@@ -217,10 +211,10 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       removeRegistrationDraft(eventId);
       setDraftStorageError(true);
     }
-  }, [adminAssisted, eventId, form, hasUnsavedDetails, submitted, simulationToken]);
+  }, [adminAssisted, eventId, form, hasUnsavedDetails, submitted]);
 
   useEffect(() => {
-    if (!event || eventError || submitted || simulationToken || typeof IntersectionObserver === 'undefined') return;
+    if (!event || eventError || submitted || typeof IntersectionObserver === 'undefined') return;
     const sections = REGISTRATION_SECTIONS
       .map(([id]) => document.getElementById(id))
       .filter((section): section is HTMLElement => section !== null);
@@ -250,21 +244,17 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
     }, { rootMargin: '-10% 0px -70% 0px' });
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
-  }, [event, eventError, submitted, simulationToken, hash]);
+  }, [event, eventError, submitted, hash]);
 
   useEffect(() => {
-    if (!event || !hash || eventError || submitted || simulationToken) return;
+    if (!event || !hash || eventError || submitted) return;
     const targetId = hash.slice(1);
     const sectionId = REGISTRATION_SECTIONS.find(([id]) => id === targetId)?.[0] ??
       (targetId === 'eligibility-confirmation-summary' ? 'eligibility-confirmation' : null);
     if (!sectionId) return;
     setActiveSection(sectionId);
     document.getElementById(targetId)?.scrollIntoView?.({ block: 'start' });
-  }, [event, eventError, hash, submitted, simulationToken]);
-
-  useEffect(() => {
-    if (simulationToken) simulationHeading.current?.focus();
-  }, [simulationToken]);
+  }, [event, eventError, hash, submitted]);
 
   useEffect(() => {
     if (submitted) completionHeading.current?.focus();
@@ -313,12 +303,12 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         rank3Position: form.rank3Position || undefined,
       };
       if (adminAssisted) {
-        await client.dayOfRegistration(eventId, registration);
+        const result = await client.dayOfRegistration(eventId, registration);
+        setSubmittedNextStep(result.nextStep);
         setSubmitted(true);
       } else {
-        const acknowledgement = await client.register(eventId, registration);
-        if (acknowledgement.simulationToken) setSimulationToken(acknowledgement.simulationToken);
-        else setSubmitted(true);
+        await client.register(eventId, registration);
+        setSubmitted(true);
       }
     } catch (err) {
       const status = (err as { status?: number }).status;
@@ -329,6 +319,8 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         setSubmitError('Day-of registration is available only on the event date while check-in is open. Your details are still here.');
       } else if (adminAssisted && status === 503 && message === 'checkout_unavailable') {
         setSubmitError('Could not prepare or send the secure Checkout link. No payment has been taken. Your details are still here; try again.');
+      } else if (status === 503 && message === 'email_verification_unavailable') {
+        setSubmitError('We could not send the email confirmation link. Your details are still here; retry, and do not start a second registration.');
       } else if (!adminAssisted && status === 503 && message === 'registration_follow_up_unavailable') {
         setSubmitError('We could not prepare or send the next-step email. Retry your request; it will not create a second registration or charge a payment. If the problem continues, contact the club.');
       } else if (status === 429) {
@@ -340,21 +332,6 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       }
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function simulateFakePayment() {
-    if (!simulationToken) return;
-    setSimulationError(null);
-    setSimulationBusy(true);
-    try {
-      const result = await client.completeFakePayment(simulationToken);
-      if (result.status === 'paid') setSimulationCompleted(true);
-      else setSimulationError('Could not complete this test payment. No payment was taken. Contact the club if you need help.');
-    } catch {
-      setSimulationError('Could not complete this test payment. No payment was taken. Contact the club if you need help.');
-    } finally {
-      setSimulationBusy(false);
     }
   }
 
@@ -371,38 +348,18 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   const currency = 'currency' in event ? event.currency : 'aud';
   const fee = formatFee(event.registrationFeeCents, currency);
 
-  if (simulationToken) {
-    return (
-      <section className="public-page">
-        <h1 ref={simulationHeading} tabIndex={-1}>Test payment simulation</h1>
-        {draftStorageError ? <p role="alert">This browser could not save or clear a draft. Keep this tab open; closing or refreshing may lose your details.</p> : null}
-        <p>Registration fee: {fee}</p>
-        <p>No real payment will be taken. Do not enter card details.</p>
-        {simulationCompleted ? (
-          <>
-            <p role="status">Test payment simulated. No payment was taken.</p>
-            <p><a href={`/register/${encodeURIComponent(eventId)}/pending?session=${encodeURIComponent(simulationToken)}`}>View test ticket</a></p>
-          </>
-        ) : (
-          <>
-            {simulationError ? <p role="alert">{simulationError}</p> : null}
-            <button type="button" onClick={() => void simulateFakePayment()} disabled={simulationBusy}>
-              {simulationBusy ? 'Simulating payment...' : 'Simulate successful payment'}
-            </button>
-          </>
-        )}
-      </section>
-    );
-  }
-
   if (submitted) {
     return (
       <section className="public-page">
-        <h1 ref={completionHeading} tabIndex={-1}>{adminAssisted ? 'Checkout link sent' : 'Request received'}</h1>
-        {!adminAssisted && draftStorageError ? <p role="alert">This browser could not confirm the draft was cleared. Close this tab to clear any saved details.</p> : null}
-        {adminAssisted
-          ? <p>A secure Checkout link was sent to the parent or guardian. The registration remains pending; the player is not eligible for check-in or game planning until payment is confirmed.</p>
-          : <p>Check the parent or guardian email for the secure Checkout link. If no message arrives, check junk mail or contact the club.</p>}
+        <h1 ref={completionHeading} tabIndex={-1}>{adminAssisted && submittedNextStep === 'checkout' ? 'Checkout link sent' : 'Confirm your email'}</h1>
+        {!adminAssisted && draftStorageError ? <p role="alert">This browser could not confirm that the draft was cleared. Close this tab to clear any saved details.</p> : null}
+        {adminAssisted && submittedNextStep === 'checkout'
+          ? <p>A secure Checkout link was sent to the parent or guardian. The registration remains pending until payment is confirmed.</p>
+          : <>
+            <p>Check the parent or guardian email for a secure confirmation link. A new registration is not complete until the email is verified and payment is confirmed.</p>
+            <p>If the player may already be registered, use the link in the original email or contact the club.</p>
+            <p><Link to="/manage-registration">Manage registrations</Link></p>
+          </>}
       </section>
     );
   }
@@ -571,7 +528,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p>
         ) : null}
         <button type="submit" disabled={busy || !associations || associations.length === 0}>
-          {busy ? (adminAssisted ? 'Sending payment link...' : 'Submitting...') : adminAssisted ? 'Send payment link' : 'Submit registration'}
+          {busy ? (adminAssisted ? 'Sending email link...' : 'Submitting...') : adminAssisted ? 'Send next-step link' : 'Submit registration'}
         </button>
       </form>
     </section>

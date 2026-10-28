@@ -375,7 +375,7 @@ export async function sendEventMessage(
 
 export async function sendEmailToRecipient(
   deps: DeliveryDeps,
-  delivery: { eventId: string; registrationId: string; to: string; kind: string; batchId: string },
+  delivery: { eventId: string; registrationId: string; to: string; kind: string; batchId: string; senderUserId?: string },
   message: OutboundContent,
   now: Date,
 ): Promise<DeliverySummary> {
@@ -386,7 +386,7 @@ export async function sendEmailToRecipient(
     message,
     now,
     delivery.kind,
-    { batchId: delivery.batchId },
+    { batchId: delivery.batchId, senderUserId: delivery.senderUserId },
   );
 }
 

@@ -14,7 +14,7 @@ export function PublicAccessNav(): ReactElement {
     <nav className="app-nav public-access-nav" aria-label="Staff and volunteer access">
       <span className="public-access-label">Staff &amp; volunteers</span>
       <Link to="/admin">Staff sign-in</Link>
-      <Link to="/check-in">Volunteer check-in</Link>
+      <Link to="/check-in">Check-in login</Link>
     </nav>
   );
 }

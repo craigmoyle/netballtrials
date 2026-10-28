@@ -27,7 +27,9 @@ import { AssociationsPage } from './admin/AssociationsPage';
 import { BibColorsPage } from './admin/BibColorsPage';
 import { StaffAccessPage } from './admin/StaffAccessPage';
 import { PlayerHistoryPage } from './admin/PlayerHistoryPage';
+import { IncompleteRegistrationsPage } from './admin/IncompleteRegistrationsPage';
 import { PublicHomePage } from './routes/PublicHomePage';
+import { ParentAccessPage } from './routes/ParentAccessPage';
 import { PublicSiteHeader } from './SiteNavigation';
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? '');
@@ -37,6 +39,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/register\/[^/]+\/pending$/, 'Complete registration'],
   [/^\/register\//, 'Register for trials'],
   [/^\/ticket\//, 'Your trial ticket'],
+  [/^\/manage-registration(?:\/verify)?$/, 'Manage registrations'],
   [/^\/check-in\/scan$/, 'Check-in scanner'],
   [/^\/check-in\/lookup$/, 'Find a player'],
   [/^\/check-in$/, 'Volunteer check-in'],
@@ -47,6 +50,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/day-of-registration$/, 'Admin-assisted registration'],
   [/^\/admin\/events\/new$/, 'New event'],
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
+  [/^\/admin\/events\/[^/]+\/incomplete$/, 'Incomplete registrations'],
   [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/bib-colors$/, 'Bib colors'],
   [/^\/admin\/staff$/, 'Staff access'],
@@ -158,6 +162,12 @@ function RosterRoute({ client }: { client: Client }) {
   return <RosterPage client={client} eventId={id} />;
 }
 
+function IncompleteRegistrationsRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <IncompleteRegistrationsPage client={client} eventId={id} />;
+}
+
 function EventOperationsRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -188,6 +198,8 @@ export function App() {
       <Route path="/register/:eventId" element={<PageContent><RegisterRoute client={client} /></PageContent>} />
       <Route path="/register/:eventId/pending" element={<PageContent><PendingRoute client={client} /></PageContent>} />
       <Route path="/ticket/:token" element={<PageContent><TicketRoute client={client} /></PageContent>} />
+      <Route path="/manage-registration" element={<PageContent><ParentAccessPage client={client} /></PageContent>} />
+      <Route path="/manage-registration/verify" element={<PageContent><ParentAccessPage client={client} /></PageContent>} />
       <Route path="/check-in" element={<PageContent><CheckInPage client={client} /></PageContent>} />
       <Route
         path="/check-in/scan"
@@ -207,6 +219,7 @@ export function App() {
           <Route index element={<EventFormPage client={client} />} />
           <Route path="operations" element={<EventOperationsRoute client={client} />} />
           <Route path="roster" element={<RosterRoute client={client} />} />
+          <Route path="incomplete" element={<IncompleteRegistrationsRoute client={client} />} />
           <Route path="check-in" element={<AdminCheckInRoute client={client} />} />
           <Route path="day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
           <Route path="plan" element={<PlannerRoute client={client} />} />

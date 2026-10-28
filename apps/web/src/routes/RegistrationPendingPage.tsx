@@ -65,6 +65,7 @@ export function RegistrationPendingPage({
           <p>Check your email for the QR ticket and calendar invite.</p>
         )}
         <p>Keep the QR code available for check-in. Do not share it with anyone else.</p>
+        <p><Link to="/manage-registration">Manage registrations</Link></p>
       </section>
     );
   }
@@ -90,9 +91,10 @@ export function RegistrationPendingPage({
   return (
     <section className="public-page">
       <h1>Confirming your payment</h1>
-      <p>This page updates automatically. Do not start another payment while the status is pending.</p>
+      <p>Registration is not complete until email verification and payment are confirmed. This page updates automatically; do not start another payment while the status is pending.</p>
       {error ? <p role="alert">{error}</p> : null}
       <button type="button" onClick={() => { setError(null); setRetry((count) => count + 1); }}>Check payment again</button>
+      <p><Link to="/manage-registration">Manage registrations</Link></p>
     </section>
   );
 }

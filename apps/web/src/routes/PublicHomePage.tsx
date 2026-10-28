@@ -70,7 +70,7 @@ export function PublicHomePage({ client }: { client: Client }) {
           )}
           <section aria-labelledby="registration-next-steps-heading">
             <h2 id="registration-next-steps-heading">After you register</h2>
-            <p>After you submit, check the parent or guardian email for a secure Checkout link. Once payment is confirmed, keep the player’s ticket QR code ready for check-in on trial day.</p>
+            <p>After you submit, confirm the parent or guardian email, then complete secure Checkout. Registration is complete only after payment is confirmed. Use <Link to="/manage-registration">Manage registrations</Link> to return to sibling registrations or continue a pending payment.</p>
           </section>
         </div>
       </div>

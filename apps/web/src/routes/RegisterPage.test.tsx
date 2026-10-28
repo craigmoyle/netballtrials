@@ -82,8 +82,9 @@ describe('RegisterPage', () => {
     await fillRegistrationForm();
     expect(screen.getByRole('button', { name: 'Submit registration' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
-    const receiptHeading = await screen.findByRole('heading', { name: /request received/i });
-    expect(screen.getByText(/check the parent or guardian email for the secure checkout link/i)).toBeInTheDocument();
+    const receiptHeading = await screen.findByRole('heading', { name: 'Confirm your email' });
+    expect(screen.getByText(/check the parent or guardian email for a secure confirmation link/i)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Test payment simulation' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.activeElement).toBe(receiptHeading));
     const emailHandoffUnload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(emailHandoffUnload);
@@ -203,8 +204,8 @@ describe('RegisterPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
 
-    expect(await screen.findByRole('heading', { name: 'Request received' })).toBeInTheDocument();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not confirm the draft was cleared/i);
+    expect(await screen.findByRole('heading', { name: 'Confirm your email' })).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not confirm that the draft was cleared/i);
   });
 
   it('keeps the form usable when this browser blocks session storage', async () => {
@@ -267,7 +268,7 @@ describe('RegisterPage', () => {
     const dayOfRegistration = vi.fn();
     const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()), dayOfRegistration });
     render(<RegisterPage client={api} eventId="e1" adminAssisted />);
-    const sendPaymentLink = await screen.findByRole('button', { name: 'Send payment link' });
+    const sendPaymentLink = await screen.findByRole('button', { name: 'Send next-step link' });
     await waitFor(() => expect(sendPaymentLink).toBeEnabled());
     fireEvent.click(sendPaymentLink);
 
@@ -409,7 +410,7 @@ describe('RegisterPage', () => {
 
   it('uses the Admin event and day-of endpoint, and explains payment is still pending', async () => {
     const register = vi.fn();
-    const dayOfRegistration = vi.fn().mockResolvedValue({ status: 'received' });
+    const dayOfRegistration = vi.fn().mockResolvedValue({ status: 'received', nextStep: 'verify-email' });
     const getPublicEvent = vi.fn();
     const getEvent = vi.fn().mockResolvedValue(adminEvent());
     const api = client(register, { getPublicEvent, getEvent, dayOfRegistration });
@@ -417,12 +418,12 @@ describe('RegisterPage', () => {
 
     expect(await screen.findByRole('heading', { name: '15/U Ladies' })).toBeInTheDocument();
     await fillRegistrationForm();
-    expect(screen.getByRole('button', { name: 'Send payment link' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
+    expect(screen.getByRole('button', { name: 'Send next-step link' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send next-step link' }));
 
-    const checkoutHeading = await screen.findByRole('heading', { name: 'Checkout link sent' });
-    expect(screen.getByText(/not eligible for check-in or game planning until payment is confirmed/i)).toBeInTheDocument();
-    await waitFor(() => expect(document.activeElement).toBe(checkoutHeading));
+    const confirmationHeading = await screen.findByRole('heading', { name: 'Confirm your email' });
+    expect(screen.getByText(/not complete until the email is verified and payment is confirmed/i)).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(confirmationHeading));
     expect(getEvent).toHaveBeenCalledWith('e1');
     expect(getPublicEvent).not.toHaveBeenCalled();
     expect(dayOfRegistration).toHaveBeenCalledWith('e1', expect.objectContaining({
@@ -431,19 +432,19 @@ describe('RegisterPage', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
-  it('retains Admin form details after Checkout fails so the family can retry', async () => {
-    const dayOfRegistration = vi.fn().mockRejectedValueOnce({ status: 503, message: 'checkout_unavailable' })
-      .mockResolvedValueOnce({ status: 'received' });
+  it('retains Admin form details after the email confirmation send fails', async () => {
+    const dayOfRegistration = vi.fn().mockRejectedValueOnce({ status: 503, message: 'email_verification_unavailable' })
+      .mockResolvedValueOnce({ status: 'received', nextStep: 'verify-email' });
     const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()), dayOfRegistration });
     render(<RegisterPage client={api} eventId="e1" adminAssisted />);
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send next-step link' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not prepare or send the secure checkout link/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not send the email confirmation link/i);
     expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
     expect(screen.getByLabelText(/parent or guardian email/i)).toHaveValue('anne@example.com');
-    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
-    expect(await screen.findByRole('heading', { name: 'Checkout link sent' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send next-step link' }));
+    expect(await screen.findByRole('heading', { name: 'Confirm your email' })).toBeInTheDocument();
     expect(dayOfRegistration).toHaveBeenCalledTimes(2);
   });
 
@@ -452,7 +453,7 @@ describe('RegisterPage', () => {
     const api = client(vi.fn(), { getEvent: vi.fn().mockResolvedValue(adminEvent()), dayOfRegistration });
     render(<RegisterPage client={api} eventId="e1" adminAssisted />);
     await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: 'Send payment link' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send next-step link' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/this player is already registered/i);
@@ -580,49 +581,8 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
     expect(screen.getByLabelText(/parent or guardian email/i)).toHaveValue('anne@example.com');
     fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
-    expect(await screen.findByRole('heading', { name: /request received/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Confirm your email' })).toBeInTheDocument();
     expect(register).toHaveBeenCalledTimes(2);
   });
 
-  it('shows a card-free test simulation and links to the pending ticket after success', async () => {
-    const simulationToken = 'fake_session_opaque';
-    const register = vi.fn().mockResolvedValue({ status: 'received', simulationToken });
-    const completeFakePayment = vi.fn().mockResolvedValue({ status: 'paid' });
-    render(<RegisterPage client={client(register, { completeFakePayment })} eventId="e1" />);
-    await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
-
-    const simulationHeading = await screen.findByRole('heading', { name: 'Test payment simulation' });
-    expect(await screen.findByRole('heading', { name: 'Test payment simulation' })).toBeInTheDocument();
-    await waitFor(() => expect(document.activeElement).toBe(simulationHeading));
-    const pendingUnload = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(pendingUnload);
-    expect(pendingUnload.defaultPrevented).toBe(true);
-    expect(screen.getByText(/no real payment/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/card number|card expiry|security code|cvc/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Simulate successful payment' }));
-
-    expect(await screen.findByRole('link', { name: 'View test ticket' })).toHaveAttribute(
-      'href',
-      `/register/e1/pending?session=${encodeURIComponent(simulationToken)}`,
-    );
-    expect(completeFakePayment).toHaveBeenCalledWith(simulationToken);
-    const completedUnload = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(completedUnload);
-    expect(completedUnload.defaultPrevented).toBe(false);
-  });
-
-  it('shows generic recovery copy when fake payment cannot be completed', async () => {
-    const register = vi.fn().mockResolvedValue({ status: 'received', simulationToken: 'fake_unbound' });
-    const completeFakePayment = vi.fn().mockResolvedValue({ status: 'not_completed' });
-    render(<RegisterPage client={client(register, { completeFakePayment })} eventId="e1" />);
-    await fillRegistrationForm();
-    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Simulate successful payment' }));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/could not complete this test payment/i);
-    expect(alert).not.toHaveTextContent(/duplicate|already registered|parent email/i);
-    expect(screen.queryByRole('link', { name: 'View test ticket' })).not.toBeInTheDocument();
-  });
 });

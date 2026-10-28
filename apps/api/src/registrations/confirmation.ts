@@ -35,6 +35,7 @@ function escapeHtml(value: string): string {
 
 export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
   const { playerName, event, ticketUrl, qrCid, policyUrl } = input;
+  const manageUrl = new URL('/manage-registration', ticketUrl).toString();
   const when = `${event.eventDate} at ${event.gameStartTime}`;
   const subject = `Trial registration confirmed: ${playerName} (${event.name})`;
   const text = [
@@ -43,6 +44,7 @@ export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
     `Where: ${event.venue}`,
     '',
     `Your QR ticket: ${ticketUrl}`,
+    `Manage registrations: ${manageUrl}`,
     `Selection policy: ${policyUrl}`,
     '',
     'A calendar file is attached so you can add the trial to your calendar.',
@@ -55,6 +57,7 @@ export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
     <p>When: ${escapeHtml(when)}<br />Where: ${escapeHtml(event.venue)}</p>
     <p><img src="cid:${escapeHtml(qrCid)}" alt="Check-in QR code" width="240" height="240" /></p>
     <p><a href="${escapeHtml(ticketUrl)}">Your QR ticket</a></p>
+    <p><a href="${escapeHtml(manageUrl)}">Manage registrations</a></p>
     <p><a href="${escapeHtml(policyUrl)}">Selection policy</a></p>
     <p>A calendar file is attached so you can add the trial to your calendar.</p>
   </body>

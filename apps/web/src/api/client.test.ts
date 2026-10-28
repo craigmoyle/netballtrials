@@ -53,15 +53,15 @@ describe('apiClient', () => {
     }));
   });
 
-  it('preserves the optional fake simulation token from public registration', async () => {
-    const response = { status: 'received', simulationToken: 'fake_session_opaque' };
+  it('keeps the public registration acknowledgement separate from Checkout', async () => {
+    const response = { status: 'received' };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(response), { status: 202 }));
     const client = apiClient('http://api.test');
 
     const receipt = await client.register('event-1', { playerFirstName: 'Ada' });
 
     expect(receipt).toEqual(response);
-    expect(receipt.simulationToken).toBe('fake_session_opaque');
+    expect(receipt).not.toHaveProperty('simulationToken');
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/public/events/event-1/registrations', expect.objectContaining({
       method: 'POST', credentials: 'include', body: JSON.stringify({ playerFirstName: 'Ada' }),
     }));

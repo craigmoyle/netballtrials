@@ -61,6 +61,7 @@ export async function sendCheckoutContinuation(
   deps: AppDeps,
   registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
   now = new Date(),
+  options: { batchId?: string; senderUserId?: string } = {},
 ): Promise<boolean> {
   const checkout = await createRegistrationCheckout(deps, registration);
   if (!checkout) return false;
@@ -73,7 +74,8 @@ export async function sendCheckoutContinuation(
         registrationId: registration.id,
         to: registration.parentEmail,
         kind: 'checkout',
-        batchId: `checkout:${registration.id}:${randomUUID()}`,
+        batchId: options.batchId ?? `checkout:${registration.id}:${randomUUID()}`,
+        senderUserId: options.senderUserId,
       },
       {
         subject: 'Continue your Netball Trials registration',

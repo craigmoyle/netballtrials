@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app';
-import { createRegistrationCheckout, sendCheckoutContinuation } from '../registrations/checkout';
+import { sendCheckoutContinuation } from '../registrations/checkout';
 import { sendConfirmation } from '../registrations/confirmation';
 import {
   RegistrationConflictError,
@@ -9,6 +9,7 @@ import {
   createPendingRegistration,
 } from '../registrations/service';
 import type { RegistrationInput } from '../registrations/schemas';
+import { sendRegistrationEmailVerification } from '../parents/service';
 import { consumeRateLimit } from '../security/rate-limit';
 import { processPaymentEvent, registerStripeWebhookRoute } from '../payments/webhook';
 import type { WebhookEvent } from '../payments/provider';
@@ -17,10 +18,6 @@ import { getPublicEvent, getTicket, getTicketCalendar, listPublicEvents } from '
 const REGISTRATION_LIMIT = 10;
 const REGISTRATION_WINDOW_MS = 15 * 60_000;
 const NEUTRAL_ACKNOWLEDGEMENT = { status: 'received' } as const;
-
-function fakeSimulationAcknowledgement(simulationToken: string) {
-  return { ...NEUTRAL_ACKNOWLEDGEMENT, simulationToken };
-}
 
 function registrationRateKey(eventId: string, clientIp: string): string {
   return createHash('sha256')
@@ -159,7 +156,6 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       return reply.code(429).send({ error: 'try_again_later' });
     }
 
-    const fakeSimulationEnabled = deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.NODE_ENV !== 'production';
     try {
       const registration = await createPendingRegistration(
         deps.prisma,
@@ -167,26 +163,8 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
         req.body as RegistrationInput,
         now,
       );
-      if (fakeSimulationEnabled) {
-        const checkout = await createRegistrationCheckout(deps, registration);
-        let simulationToken = checkout?.sessionId;
-        if (!simulationToken) {
-          const fallbackSessionId = `fake_sim_${randomUUID()}`;
-          const saved = await deps.prisma.registration.updateMany({
-            where: {
-              id: registration.id,
-              status: 'PENDING',
-              checkoutSessionId: registration.checkoutSessionId,
-              expiresAt: { gt: now },
-            },
-            data: { checkoutSessionId: fallbackSessionId },
-          });
-          simulationToken = saved.count === 1 ? fallbackSessionId : `fake_${randomUUID()}`;
-        }
-        return reply.code(202).send(fakeSimulationAcknowledgement(simulationToken));
-      }
-      if (!(await sendCheckoutContinuation(deps, registration))) {
-        return reply.code(503).send({ error: 'registration_follow_up_unavailable' });
+      if (!(await sendRegistrationEmailVerification(deps, registration, now))) {
+        return reply.code(503).send({ error: 'email_verification_unavailable' });
       }
       return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);
     } catch (error) {
@@ -196,15 +174,12 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (error instanceof RegistrationConflictError) {
         if (error.reason === 'duplicate') {
           if (error.existing?.status === 'PENDING') {
-            const followUpSent = await sendCheckoutContinuation(deps, error.existing);
-            if (!followUpSent && !fakeSimulationEnabled) {
-              return reply.code(503).send({ error: 'registration_follow_up_unavailable' });
-            }
+            const sent = error.existing.parentEmailVerifiedAt
+              ? await sendCheckoutContinuation(deps, error.existing, now)
+              : await sendRegistrationEmailVerification(deps, error.existing, now);
+            if (!sent) return reply.code(503).send({ error: error.existing.parentEmailVerifiedAt ? 'registration_follow_up_unavailable' : 'email_verification_unavailable' });
           } else if (error.existing?.status === 'PAID') {
             await sendDuplicateGuidance(deps, error.existing);
-          }
-          if (fakeSimulationEnabled) {
-            return reply.code(202).send(fakeSimulationAcknowledgement(`fake_${randomUUID()}`));
           }
           return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);
         }

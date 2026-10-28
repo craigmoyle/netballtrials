@@ -308,6 +308,70 @@ export interface RosterDTO {
   };
 }
 
+export interface ParentRegistrationUpdateDTO {
+  playerFirstName?: string;
+  playerLastName?: string;
+  parentName?: string;
+  parentMobile?: string;
+  rank1Position?: Position;
+  rank2Position?: Position | null;
+  rank3Position?: Position | null;
+  optInExtraPositions?: boolean;
+}
+
+export type ParentCheckoutDTO = { checkoutUrl: string } | { simulationToken: string };
+
+export interface ParentRegistrationDTO {
+  id: string;
+  playerFirstName: string;
+  playerLastName: string;
+  playerName: string;
+  dateOfBirth: string;
+  parentName: string;
+  parentEmail: string;
+  parentMobile: string;
+  memberAssociation: string;
+  rank1Position: Position;
+  rank2Position: Position | null;
+  rank3Position: Position | null;
+  optInExtraPositions: boolean;
+  status: RegistrationStatus;
+  amountCents: number;
+  currency: string;
+  number: number | null;
+  checkedInAt: string | null;
+  ageFlagged: boolean;
+  createdAt: string;
+  expiresAt: string;
+  parentEmailVerifiedAt: string | null;
+  parentFollowUpSentAt: string | null;
+  canEdit: boolean;
+  canWithdraw: boolean;
+  canContinueCheckout: boolean;
+  ticketPath: string | null;
+  event: {
+    id: string;
+    name: string;
+    eventDate: string;
+    venue: string;
+    startTime: string;
+    gameStartTime: string;
+    status: EventStatus;
+  };
+}
+
+export interface IncompleteRegistrationDTO {
+  id: string;
+  playerName: string;
+  parentEmail: string;
+  status: RegistrationStatus;
+  parentEmailVerified: boolean;
+  startedAt: string;
+  checkoutExpiresAt: string;
+  followUpSentAt: string | null;
+  stage: 'EMAIL_CONFIRMATION' | 'PAYMENT' | 'PAYMENT_EXPIRED';
+}
+
 export interface PlayerHistoryEntryDTO {
   registrationId: string;
   playerName: string;

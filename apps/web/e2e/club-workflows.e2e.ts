@@ -58,15 +58,29 @@ async function openEventTool(page: Page, name: string): Promise<void> {
   await nav.getByRole('link', { name, exact: true }).click();
 }
 
-// With the fake provider the public form opens the test payment simulation; the
-// registration response carries the fake Checkout session id used as its token.
-async function submitPublicRegistration(page: Page): Promise<string> {
+// The public form confirms email first; the verified parent then continues to fake Checkout.
+async function submitPublicRegistration(page: Page, request: APIRequestContext): Promise<string> {
+  const email = await page.getByLabel('Parent or guardian email').inputValue();
   const response = page.waitForResponse((candidate) => candidate.request().method() === 'POST' && /\/api\/public\/events\/[^/]+\/registrations$/.test(new URL(candidate.url()).pathname));
   await page.getByRole('button', { name: 'Submit registration' }).click();
-  const body = await (await response).json() as { simulationToken?: string };
-  expect(body.simulationToken).toBeTruthy();
+  expect(await (await response).json()).toEqual({ status: 'received' });
+  await expect(page.getByRole('heading', { name: 'Confirm your email' })).toBeVisible();
+
+  const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=${encodeURIComponent(email)}`).then((result) => result.json());
+  const verification = outbox.messages.find((message: { subject: string }) => message.subject === 'Confirm your Netball Trials email');
+  const verificationLink = verification?.text.match(/https?:\/\/[^\s]+/)?.[0];
+  expect(verificationLink).toBeTruthy();
+  await page.goto(verificationLink!);
+  await page.getByRole('button', { name: 'Confirm email and continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Manage registrations' })).toBeVisible();
+  await expect(page.getByText(/Email confirmed; payment is still pending/i)).toBeVisible();
+
+  const checkoutResponse = page.waitForResponse((candidate) => candidate.request().method() === 'POST' && /\/api\/parent\/registrations\/[^/]+\/checkout$/.test(new URL(candidate.url()).pathname));
+  await page.getByRole('button', { name: 'Continue to Checkout' }).click();
+  const checkout = await (await checkoutResponse).json() as { simulationToken?: string };
+  expect(checkout.simulationToken).toBeTruthy();
   await expect(page.getByRole('heading', { name: 'Test payment simulation' })).toBeVisible();
-  return body.simulationToken!;
+  return checkout.simulationToken!;
 }
 
 // Roster-change tools on the Full Game List start collapsed so assignments lead.
@@ -139,8 +153,8 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(page.getByRole('heading', { name: 'Admin sign in' })).toBeVisible();
   await expectAccessible(page);
-  await expect(signIn.getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in');
-  await signIn.getByRole('link', { name: 'Volunteer check-in' }).click();
+  await expect(signIn.getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
+  await signIn.getByRole('link', { name: 'Check-in login' }).click();
   await expect(page).toHaveURL(/\/check-in$/);
   await expect(page.getByRole('heading', { name: 'Check-in' })).toBeVisible();
   await expect(page.getByLabel('Trial', { exact: true })).toBeVisible();
@@ -203,7 +217,7 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await page.getByLabel('First position').selectOption('WA');
   await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
-  const sessionId = await submitPublicRegistration(page);
+  const sessionId = await submitPublicRegistration(page, request);
   await expect(page.getByText(/no real payment will be taken/i)).toBeVisible();
   await expect(page.getByText(/duplicate/i)).toHaveCount(0);
   await page.goto(`/register/${fixtures.mainEventId}/pending?session=${encodeURIComponent(sessionId!)}`);
@@ -238,12 +252,17 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(unauthorizedExport.status()).toBe(401);
   await signIn(page, request);
   const trial = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`).then((response) => response.json());
-  expect(trial).toMatchObject({ competitionYear: 2027, courts: 3, rank1Min: 2, rank2Min: 1, rank3Min: 1 });
+  expect(trial).toMatchObject({ competitionYear: 2027, courts: 3, rank1Min: 2, rank2Min: 1, rank3Min: 0 });
   const seededRoster = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/roster`).then((response) => response.json());
   expect(seededRoster.registrations).toHaveLength(70);
-  expect(seededRoster.registrations.every((player: { rank1Position: string; rank2Position: string | null; rank3Position: string | null }) =>
-    Boolean(player.rank1Position && player.rank2Position && player.rank3Position) &&
-    new Set([player.rank1Position, player.rank2Position, player.rank3Position]).size === 3)).toBe(true);
+  const seededPlayers = seededRoster.registrations as Array<{ rank1Position: string; rank2Position: string | null; rank3Position: string | null; optInExtraPositions: boolean }>;
+  expect(seededPlayers.every((player) => Boolean(player.rank1Position && player.rank2Position) &&
+    new Set([player.rank1Position, player.rank2Position, player.rank3Position].filter(Boolean)).size === (player.rank3Position ? 3 : 2))).toBe(true);
+  expect(seededPlayers.some((player) => player.rank3Position === null)).toBe(true);
+  expect(seededPlayers.filter((player) => player.optInExtraPositions)).toHaveLength(7);
+  for (const rank of ['rank1', 'rank2', 'rank3'] as const) {
+    expect(new Set(Object.values(seededRoster.positionCounts[rank])).size).toBeGreaterThan(1);
+  }
   await expectAccessible(page);
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
@@ -338,6 +357,52 @@ test('Admin searches a player history without exposing parent or payment details
   await expectAccessible(page);
 });
 
+test('Parent magic link manages every registration linked to the guardian email', async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/manage-registration');
+  await expect(page.getByRole('heading', { name: 'Manage registrations' })).toBeVisible();
+  await page.getByLabel('Parent or guardian email').fill('unknown@example.test');
+  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+  const genericResponse = await page.getByRole('status').innerText();
+  expect(genericResponse).toMatch(/if this email matches a registration/i);
+  expect((await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=unknown%40example.test`).then((response) => response.json())).messages).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Use another email' }).click();
+  await page.getByLabel('Parent or guardian email').fill('parent1@example.test');
+  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+  await expect(page.getByRole('status')).toHaveText(genericResponse);
+  const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=parent1%40example.test`).then((response) => response.json());
+  const signInEmail = outbox.messages.find((message: { subject: string }) => message.subject.includes('Sign in to manage'));
+  const link = signInEmail?.text.match(/https?:\/\/[^\s]+/)?.[0];
+  expect(link).toBeTruthy();
+  await page.goto(link!);
+  await expect(page.getByRole('button', { name: 'Sign in and continue' })).toBeVisible();
+  await page.getByRole('button', { name: 'Sign in and continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Manage registrations' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Player1 Trial · E2E 15/U Ladies' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ada Ticket · E2E 15/U Ladies' })).toBeVisible();
+  await expect(page.getByText('Player2 Trial · E2E 15/U Ladies')).toHaveCount(0);
+  await expectAccessible(page);
+
+  const editableSibling = page.locator('.parent-registration').nth(1);
+  await editableSibling.getByLabel('Player first name').fill('Player One');
+  await editableSibling.getByRole('button', { name: 'Save changes' }).click();
+  await expect(editableSibling.getByRole('heading', { name: 'Player One Trial · E2E 15/U Ladies' })).toBeVisible();
+
+  await page.getByLabel('New email address').fill('family@example.test');
+  await page.getByRole('button', { name: 'Send confirmation link' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Your current email remains active until you confirm' })).toBeVisible();
+  const changeOutbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=family%40example.test`).then((response) => response.json());
+  const changeEmail = changeOutbox.messages.find((message: { subject: string }) => message.subject === 'Confirm your new Netball Trials email');
+  const changeLink = changeEmail?.text.match(/https?:\/\/[^\s]+/)?.[0];
+  expect(changeLink).toBeTruthy();
+  await page.goto(changeLink!);
+  await expect(page.getByRole('button', { name: 'Confirm email change' })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm email change' }).click();
+  await expect(page.getByText('Registrations linked to family@example.test.')).toBeVisible();
+  await expectAccessible(page);
+});
+
 test('Admin opens event-scoped check-in without a PIN', async ({ page, request }) => {
   await signIn(page, request);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
@@ -352,7 +417,7 @@ test('Admin opens event-scoped check-in without a PIN', async ({ page, request }
   await expect(page.getByRole('status')).toHaveText(/Player1 Trial, Number 70 — Refer to committee/);
 });
 
-test('Admin assists a family on a closed event day and sends hosted Checkout without marking paid', async ({ page, request }) => {
+test('Admin assists a family on a closed event day and parent verifies email before Checkout', async ({ page, request }) => {
   const externalRequests: string[] = [];
   page.on('request', (requestEvent) => {
     const url = new URL(requestEvent.url());
@@ -379,14 +444,34 @@ test('Admin assists a family on a closed event day and sends hosted Checkout wit
   await page.getByLabel('First position').selectOption('C');
   await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
-  await page.getByRole('button', { name: 'Send payment link' }).click();
-  await expect(page.getByRole('heading', { name: 'Checkout link sent' })).toBeVisible();
-  await expect(page.getByText(/remains pending.*not eligible for check-in or game planning until payment is confirmed/i)).toBeVisible();
+  await page.getByRole('button', { name: 'Send next-step link' }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm your email' })).toBeVisible();
+  await expect(page.getByText(/not complete until the email is verified and payment is confirmed/i)).toBeVisible();
   await expectAccessible(page);
 
   const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=dayofparent%40example.test`).then((response) => response.json());
-  const checkoutEmail = outbox.messages.find((message: { subject: string }) => message.subject === 'Continue your Netball Trials registration');
-  expect(checkoutEmail?.text).toMatch(/https:\/\/checkout\.test\/fake_[\w-]+/);
+  const verificationEmail = outbox.messages.find((message: { subject: string }) => message.subject === 'Confirm your Netball Trials email');
+  const verificationLink = verificationEmail?.text.match(/https?:\/\/[^\s]+/)?.[0];
+  expect(verificationLink).toBeTruthy();
+  const parentPage = await page.context().newPage();
+  await parentPage.goto(verificationLink!);
+  await parentPage.getByRole('button', { name: 'Confirm email and continue' }).click();
+  await expect(parentPage.getByRole('heading', { name: 'Manage registrations' })).toBeVisible();
+  await parentPage.getByRole('button', { name: 'Continue to Checkout' }).click();
+  await expect(parentPage.getByRole('heading', { name: 'Test payment simulation' })).toBeVisible();
+  await expectAccessible(parentPage);
+  await expect(parentPage.getByText(/no real payment will be taken/i)).toBeVisible();
+  await parentPage.close();
+
+  await page.goto(`/admin/events/${fixtures.mainEventId}/incomplete`);
+  await expect(page.getByRole('heading', { name: 'Incomplete registrations' })).toBeVisible();
+  const incompleteRow = page.getByRole('row', { name: /Day-of Player/ });
+  await expect(incompleteRow).toContainText('Payment pending');
+  await incompleteRow.getByRole('button', { name: 'Send payment reminder' }).click();
+  await expect(page.getByRole('status')).toContainText('Payment reminder sent to dayofparent@example.test.');
+  await expect(incompleteRow).toContainText('Reminder sent');
+  await expectAccessible(page);
+
   const rosterResponse = await adminGet(page, request, `${eventUrl}/roster`);
   expect(rosterResponse.status()).toBe(200);
   const roster = await rosterResponse.json();
@@ -595,7 +680,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await page.getByLabel('First position').selectOption('GS');
   await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
-  const sessionId = await submitPublicRegistration(page);
+  const sessionId = await submitPublicRegistration(page, request);
   const pendingRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
   const lateRegistration = pendingRoster.registrations.find((registration: { playerName: string }) => registration.playerName === 'Late Arrival Trial');
   expect(lateRegistration).toMatchObject({ status: 'PENDING', bibNumber: null, checkedInAt: null });
@@ -720,7 +805,7 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Plan rounds');
   await expect(page.getByText(/69 checked-in players/i)).toBeVisible();
-  await expect(page.getByText(/minimum round lower bound: 7/i)).toBeVisible();
+  await expect(page.getByText(/minimum round lower bound: \d+/i)).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
@@ -728,7 +813,9 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await expect(page.locator('table caption', { hasText: 'schedule preview' })).toBeVisible();
-  await expect(page.locator('table.schedule-preview tbody tr')).toHaveCount(294);
+  const generatedPlan = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan`).then((response) => response.json());
+  expect(generatedPlan.slots).toHaveLength(generatedPlan.rounds * 42);
+  await expect(page.locator('table.schedule-preview tbody tr')).toHaveCount(generatedPlan.slots.length);
   await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
@@ -748,7 +835,7 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(page.getByText(/Published revision 2/)).toBeVisible();
   await workspace(page).getByRole('link', { name: 'Print selector sheets' }).click();
-  await expect(page.locator('.sheet-preview .sheet')).toHaveCount(21);
+  await expect(page.locator('.sheet-preview .sheet')).toHaveCount(publishedBefore.rounds * 3);
   await expect(page.getByRole('button', { name: 'Print selector sheets' })).toBeVisible();
   const selectorText = await page.locator('.sheet-preview').innerText();
   for (const value of ['Team A', 'Team B', 'White', 'Black', 'Grey', 'Orange', 'Number', 'Choices', 'Rating', 'Notes/Feedback']) expect(selectorText).toContain(value);

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { sendCheckoutContinuation } from './checkout';
+import { sendRegistrationEmailVerification } from '../parents/service';
 import type { RegistrationInput } from './schemas';
 import {
   createAdminPendingRegistration,
@@ -17,10 +18,9 @@ function nowFrom(request: FastifyRequest): Date {
   return new Date();
 }
 
-function sendReceivedOrRetry(reply: FastifyReply, sent: boolean) {
-  return sent
-    ? reply.code(202).send({ status: 'received' })
-    : reply.code(503).send({ error: 'checkout_unavailable' });
+function sendReceivedOrRetry(reply: FastifyReply, sent: boolean, nextStep: 'verify-email' | 'checkout') {
+  if (!sent) return reply.code(503).send({ error: nextStep === 'verify-email' ? 'email_verification_unavailable' : 'checkout_unavailable' });
+  return reply.code(202).send({ status: 'received', nextStep });
 }
 
 export function registerAdminRegistrationRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -34,7 +34,11 @@ export function registerAdminRegistrationRoutes(app: FastifyInstance, deps: AppD
         req.body as RegistrationInput,
         now,
       );
-      return sendReceivedOrRetry(reply, await sendCheckoutContinuation(deps, registration, now));
+      const nextStep = registration.parentEmailVerifiedAt ? 'checkout' : 'verify-email';
+      const sent = nextStep === 'checkout'
+        ? await sendCheckoutContinuation(deps, registration, now)
+        : await sendRegistrationEmailVerification(deps, registration, now);
+      return sendReceivedOrRetry(reply, sent, nextStep);
     } catch (error) {
       if (error instanceof RegistrationValidationError) {
         return reply.code(400).send({ error: 'validation_failed', fields: error.fields });
@@ -43,7 +47,11 @@ export function registerAdminRegistrationRoutes(app: FastifyInstance, deps: AppD
         if (error.reason === 'closed') return reply.code(409).send({ error: 'event_unavailable' });
         if (error.existing?.status === 'PAID') return reply.code(409).send({ error: 'already_registered' });
         if (error.existing?.status === 'PENDING') {
-          return sendReceivedOrRetry(reply, await sendCheckoutContinuation(deps, error.existing, now));
+          const nextStep = error.existing.parentEmailVerifiedAt ? 'checkout' : 'verify-email';
+          const sent = nextStep === 'checkout'
+            ? await sendCheckoutContinuation(deps, error.existing, now)
+            : await sendRegistrationEmailVerification(deps, error.existing, now);
+          return sendReceivedOrRetry(reply, sent, nextStep);
         }
         return reply.code(409).send({ error: 'registration_conflict' });
       }

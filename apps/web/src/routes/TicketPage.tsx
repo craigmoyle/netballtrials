@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { TicketDTO } from '@netball-trials/types';
 import type { ApiClient as Client } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
@@ -31,6 +32,7 @@ export function TicketPage({ client, token }: { client: Client; token: string })
       <img className="ticket-qr" src={ticket.qrCode} alt={`Check-in QR code for ${ticket.playerName}`} />
       <p>Show this QR code to a volunteer at check-in.</p>
       <p><a href={client.ticketCalendarUrl(token)} download>Download calendar invite</a></p>
+      <p><Link to="/manage-registration">Manage registrations</Link></p>
     </section>
   );
 }

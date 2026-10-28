@@ -18,7 +18,7 @@ describe('EventWorkflowNav', () => {
     expect(within(nav).getByRole('button', { name: `Event tools: ${label}` })).toBeInTheDocument();
   });
 
-  it('groups event, planning, and trial-day workflows and marks the current route', () => {
+  it('groups event, registration, planning, and trial-day workflows and marks the current route', () => {
     render(
       <MemoryRouter initialEntries={['/admin/events/e1/operations']}>
         <EventWorkflowNav eventId="e1" />
@@ -26,12 +26,15 @@ describe('EventWorkflowNav', () => {
     );
     const nav = screen.getByRole('navigation', { name: 'Event workflows' });
     const eventGroup = within(nav).getByRole('group', { name: 'Event' });
+    const registrationGroup = within(nav).getByRole('group', { name: 'Registration' });
     const planningGroup = within(nav).getByRole('group', { name: 'Planning' });
     const trialDayGroup = within(nav).getByRole('group', { name: 'Trial day' });
 
     expect(within(eventGroup).getByRole('link', { name: 'Event settings' })).toHaveAttribute('href', '/admin/events/e1');
     expect(within(eventGroup).getByRole('link', { name: 'Event operations' })).toHaveAttribute('aria-current', 'page');
-    expect(within(eventGroup).getByRole('link', { name: 'Roster and export' })).toBeInTheDocument();
+    expect(within(registrationGroup).getByRole('link', { name: 'Roster and export' })).toBeInTheDocument();
+    expect(within(registrationGroup).getByRole('link', { name: 'Review queue' })).toBeInTheDocument();
+    expect(within(registrationGroup).getByRole('link', { name: 'Incomplete registrations' })).toHaveAttribute('href', '/admin/events/e1/incomplete');
     expect(within(planningGroup).getByRole('link', { name: 'Plan rounds' })).toBeInTheDocument();
     expect(within(planningGroup).getByRole('link', { name: 'Print selector sheets' })).toBeInTheDocument();
     expect(within(trialDayGroup).getByRole('link', { name: 'Communications' })).toBeInTheDocument();
@@ -44,7 +47,7 @@ describe('EventWorkflowNav', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(links).toHaveClass('is-open');
-    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Communications', 'Volunteer check-in']) {
+    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Incomplete registrations', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Communications', 'Volunteer check-in']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });

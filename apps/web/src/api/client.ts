@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -97,6 +97,26 @@ async function planAction(
 
 export function apiClient(baseUrl: string) {
   return {
+    requestParentAccessLink: (email: string) =>
+      request<{ status: string }>(baseUrl, '/api/public/parent-access/request-link', { method: 'POST', body: JSON.stringify({ email }) }),
+    verifyParentAccessToken: (token: string) =>
+      request<{ status: 'signed_in' }>(baseUrl, '/api/public/parent-access/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+    listParentRegistrations: () => request<ParentRegistrationDTO[]>(baseUrl, '/api/parent/registrations'),
+    logoutParent: () => request<unknown>(baseUrl, '/api/parent/logout', { method: 'POST' }),
+    updateParentRegistration: (id: string, patch: ParentRegistrationUpdateDTO) =>
+      request<ParentRegistrationDTO>(baseUrl, `/api/parent/registrations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    withdrawParentRegistration: (id: string) =>
+      request<ParentRegistrationDTO>(baseUrl, `/api/parent/registrations/${id}/withdraw`, { method: 'POST' }),
+    continueParentCheckout: (id: string) =>
+      request<ParentCheckoutDTO>(baseUrl, `/api/parent/registrations/${id}/checkout`, { method: 'POST' }),
+    requestParentEmailChange: (email: string) =>
+      request<{ status: 'sent' }>(baseUrl, '/api/parent/email-change', { method: 'POST', body: JSON.stringify({ email }) }),
+    confirmParentEmailChange: (token: string) =>
+      request<{ status: 'email_updated'; email: string }>(baseUrl, '/api/parent/email-change/confirm', { method: 'POST', body: JSON.stringify({ token }) }),
+    listIncompleteRegistrations: (eventId: string) =>
+      request<IncompleteRegistrationDTO[]>(baseUrl, `/api/admin/events/${eventId}/incomplete-registrations`),
+    sendIncompleteRegistrationReminder: (eventId: string, registrationId: string) =>
+      request<{ status: 'sent' }>(baseUrl, `/api/admin/events/${eventId}/incomplete-registrations/${registrationId}/reminder`, { method: 'POST' }),
     requestLink: (email: string) =>
       request<{ status: string }>(baseUrl, '/api/auth/request-link', {
         method: 'POST',
@@ -162,7 +182,7 @@ export function apiClient(baseUrl: string) {
     getPublicEvent: (id: string) =>
       request<PublicEventDTO>(baseUrl, `/api/public/events/${id}`),
     register: (id: string, input: Record<string, unknown>) =>
-      request<{ status: 'received'; simulationToken?: string }>(
+      request<{ status: 'received' }>(
         baseUrl,
         `/api/public/events/${id}/registrations`,
         { method: 'POST', body: JSON.stringify(input) },
@@ -173,7 +193,7 @@ export function apiClient(baseUrl: string) {
         body: JSON.stringify({ simulationToken }),
       }),
     dayOfRegistration: (id: string, input: Record<string, unknown>) =>
-      request<{ status: 'received' }>(baseUrl, `/api/admin/events/${id}/day-of-registration`, {
+      request<{ status: 'received'; nextStep: 'verify-email' | 'checkout' }>(baseUrl, `/api/admin/events/${id}/day-of-registration`, {
         method: 'POST',
         body: JSON.stringify(input),
       }),

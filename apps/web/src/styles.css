@@ -364,6 +364,17 @@ thead { background: var(--blue-pale); }
 .game-view-nav button:hover:not(:disabled) { color: var(--burgundy-dark); background: transparent; text-decoration-thickness: 2px; }
 .game-view-nav button[aria-pressed="true"] { font-weight: 700; text-decoration-thickness: 2px; }
 .game-view-nav button:disabled { color: var(--placeholder-ink); }
+.parent-access-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.parent-access-heading h1, .parent-access-heading p { margin-block: 0 0.35rem; }
+.parent-registration { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--line); }
+.parent-registration h3 { margin-block: 0 0.5rem; }
+
+.parent-access-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.parent-access-heading h1, .parent-access-heading p { margin-block: 0 0.35rem; }
+.parent-registration { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--line); }
+.parent-registration h3 { margin-block: 0 0.5rem; }
+.incomplete-registrations-table { min-width: 52rem; }
+
 .association-list { padding-left: 1.25rem; }
 .association-list > li { padding-block: 0.75rem; border-bottom: 1px solid var(--line); }
 .association-list h2 { margin: 0 0 0.5rem; font-size: 1.25rem; }

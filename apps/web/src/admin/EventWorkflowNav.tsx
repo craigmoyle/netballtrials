@@ -10,8 +10,14 @@ const workflowGroups: WorkflowGroup[] = [
     workflows: [
       { id: 'settings', label: 'Event settings', path: '' },
       { id: 'operations', label: 'Event operations', path: '/operations' },
+    ],
+  },
+  {
+    label: 'Registration',
+    workflows: [
       { id: 'roster', label: 'Roster and export', path: '/roster' },
       { id: 'review', label: 'Review queue', path: '/review' },
+      { id: 'incomplete', label: 'Incomplete registrations', path: '/incomplete' },
     ],
   },
   {

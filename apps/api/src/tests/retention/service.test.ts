@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { anonymizeExpiredRegistrations, pruneRateLimitBuckets, retentionCutoff } from '../../retention/service';
+import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, pruneParentAccessArtifacts, pruneRateLimitBuckets, retentionCutoff } from '../../retention/service';
 import { verifyPlan } from '../../planner/verify';
 import { eventFixture, registrationFixture as regFixture } from '../helpers/fixtures';
 
@@ -85,6 +85,35 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(await anonymizeExpiredRegistrations(prisma, now)).toBe(0);
   });
 
+  it('anonymizes unpaid incomplete registrations after 30 days but preserves paid and recent records', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
+    const now = new Date('2026-10-28T00:00:00Z');
+    const staleCreatedAt = new Date(now.getTime() - 31 * 24 * 60 * 60_000);
+    const staleUnverified = await prisma.registration.create({
+      data: { ...regFixture(event.id), status: 'PENDING', createdAt: staleCreatedAt, expiresAt: new Date(staleCreatedAt.getTime() + 24 * 60 * 60_000) },
+    });
+    const staleVerified = await prisma.registration.create({
+      data: { ...regFixture(event.id, { playerFirstName: 'Grace', playerNameNormalized: 'grace lovelace', parentEmail: 'grace@example.test' }), status: 'EXPIRED', parentEmailVerifiedAt: staleCreatedAt, createdAt: staleCreatedAt, expiresAt: new Date(staleCreatedAt.getTime() + 24 * 60 * 60_000) },
+    });
+    const paid = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'Paid', playerNameNormalized: 'paid lovelace' }), status: 'PAID', createdAt: staleCreatedAt } });
+    const recent = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'Recent', playerNameNormalized: 'recent lovelace' }), status: 'PENDING', createdAt: new Date(now.getTime() - 29 * 24 * 60 * 60_000) } });
+    await prisma.parentAccessSession.create({ data: { email: 'grace@example.test', tokenHash: 'parent-session-stale'.padEnd(64, 'x'), expiresAt: new Date(now.getTime() + 60 * 60_000) } });
+    await prisma.parentAccessToken.create({ data: { email: 'grace@example.test', purpose: 'SIGN_IN', tokenHash: 'parent-token-stale'.padEnd(64, 'y'), expiresAt: new Date(now.getTime() + 15 * 60_000) } });
+    const log = await prisma.emailLog.create({
+      data: { eventId: event.id, registrationId: staleUnverified.id, batchId: 'unverified', idempotencyKey: 'unverified-key', to: staleUnverified.parentEmail, subject: 'Confirm email', body: 'Private confirmation link', kind: 'email-verification', status: 'SENT' },
+    });
+
+    expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(2);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: staleUnverified.id } })).toMatchObject({ status: 'WITHDRAWN', parentEmail: '', anonymizedAt: now });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: staleVerified.id } })).toMatchObject({ status: 'WITHDRAWN', parentEmail: '', anonymizedAt: now });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: paid.id } })).toMatchObject({ status: 'PAID', anonymizedAt: null });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ status: 'PENDING', anonymizedAt: null });
+    expect(await prisma.parentAccessSession.findFirst({ where: { email: 'grace@example.test' } })).toBeNull();
+    expect(await prisma.parentAccessToken.findFirst({ where: { email: 'grace@example.test' } })).toBeNull();
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: log.id } })).toMatchObject({ to: '', subject: '', body: '', registrationId: null, status: 'ANONYMIZED' });
+    expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(0);
+  });
+
   it('claims each registration once when retention workers overlap', async () => {
     const old = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2021-09-12T00:00:00Z') } });
     const reg = await prisma.registration.create({ data: { ...regFixture(old.id), status: 'PAID' } });
@@ -129,6 +158,28 @@ describe('anonymizeExpiredRegistrations', () => {
       && log.batchId === `retained:${log.id}` && log.idempotencyKey === `retained:${log.id}`)).toBe(true);
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: kept.id } })).toMatchObject({ to: 'keep@example.com', status: 'SENT' });
     expect(await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T00:00:00Z'))).toBe(0);
+  });
+
+  it('prunes expired parent-access tokens and sessions while preserving live ones', async () => {
+    const now = new Date('2026-10-10T00:00:00Z');
+    await prisma.parentAccessToken.createMany({
+      data: [
+        { email: 'expired@example.test', purpose: 'SIGN_IN', tokenHash: 'a'.repeat(64), expiresAt: new Date(now.getTime() - 1), createdAt: new Date(now.getTime() - 60_000) },
+        { email: 'active@example.test', purpose: 'SIGN_IN', tokenHash: 'b'.repeat(64), expiresAt: new Date(now.getTime() + 60_000), createdAt: now },
+      ],
+    });
+    await prisma.parentAccessSession.createMany({
+      data: [
+        { email: 'expired@example.test', tokenHash: 'c'.repeat(64), expiresAt: new Date(now.getTime() - 1), createdAt: new Date(now.getTime() - 60_000) },
+        { email: 'active@example.test', tokenHash: 'd'.repeat(64), expiresAt: new Date(now.getTime() + 60_000), createdAt: now },
+      ],
+    });
+
+    expect(await pruneParentAccessArtifacts(prisma, now)).toEqual({ tokens: 1, sessions: 1 });
+    expect(await prisma.parentAccessToken.findUnique({ where: { tokenHash: 'a'.repeat(64) } })).toBeNull();
+    expect(await prisma.parentAccessToken.findUnique({ where: { tokenHash: 'b'.repeat(64) } })).not.toBeNull();
+    expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'c'.repeat(64) } })).toBeNull();
+    expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'd'.repeat(64) } })).not.toBeNull();
   });
 
   it('deletes rate-limit buckets idle for more than a day', async () => {

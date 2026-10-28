@@ -26,7 +26,7 @@ describe('site navigation', () => {
 
     expect(within(nav).getByText('Staff & volunteers')).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
-    expect(within(nav).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in');
+    expect(within(nav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
     expect(within(nav).getAllByRole('link')).toHaveLength(2);
   });
 });

@@ -93,6 +93,8 @@ describe('EventFormPage', () => {
     expect(screen.queryByLabelText(/whistle/i)).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Trial format' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Selection settings' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Selection policy URL')).toHaveAttribute('aria-describedby', expect.stringContaining('policyUrl-hint'));
+    expect(screen.getByText('Leave blank to use the club’s default selection policy.')).toHaveClass('field-hint');
     expect(screen.queryByRole('heading', { name: 'Event controls' })).not.toBeInTheDocument();
     const venue = screen.getByLabelText('Venue');
     const deleteHeading = screen.getByRole('heading', { name: 'Delete event' });
