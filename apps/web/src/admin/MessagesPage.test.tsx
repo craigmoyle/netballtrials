@@ -45,6 +45,7 @@ describe('CommunicationsPage', () => {
     const pending = screen.getByRole('checkbox', { name: 'Include Pending Player' });
     expect(pending).toBeDisabled();
     expect(screen.getByText('0 selected total · 3 shown · 2 visible eligible')).toBeInTheDocument();
+    expect(screen.getByText('Scroll horizontally to review all recipient details.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Selectable communication recipients' })).toHaveClass('communication-recipient-list');
     fireEvent.click(screen.getByRole('button', { name: 'Select visible eligible' }));
     expect(screen.getByText('2 selected total · 3 shown · 2 visible eligible')).toBeInTheDocument();

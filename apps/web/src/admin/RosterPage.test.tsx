@@ -34,6 +34,7 @@ describe('RosterPage', () => {
     expect(await screen.findByRole('heading', { name: /roster/i })).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Event roster' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByText('Scroll horizontally to view all roster details.')).toBeInTheDocument();
     expect(screen.getByText('anne@example.com')).toBeInTheDocument();
     expect(screen.getByText(/\$35\.00/)).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();

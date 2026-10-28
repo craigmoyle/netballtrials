@@ -275,6 +275,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
           <button type="button" className="button-secondary" disabled={eligibleVisibleRecipients.length === 0} onClick={() => selectVisible(true)}>Select visible eligible</button>{' '}
           <button type="button" className="button-secondary" disabled={selectedVisibleCount === 0} onClick={() => selectVisible(false)}>Clear visible selection</button>
         </div>
+        {filteredRecipients.length > 0 ? <p className="scroll-region-note">Scroll horizontally to review all recipient details.</p> : null}
         {filteredRecipients.length === 0 ? <p>No recipients match these filters.</p> : (
           <div className="table-scroll communication-recipient-list" role="region" aria-label="Selectable communication recipients" tabIndex={0}>
             <table>

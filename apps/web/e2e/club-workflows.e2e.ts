@@ -270,15 +270,19 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByLabel('Arrival time')).toHaveValue('08:30');
   await expect(page.getByLabel('Start time')).toHaveValue('09:00');
   await expect(page.getByLabel('Finish time')).toHaveValue('12:00');
+  await page.setViewportSize({ width: 390, height: 844 });
   await openEventTool(page, 'Roster and export');
   await expect(page.getByRole('heading', { name: 'Event roster' })).toBeVisible();
   await expect(page.getByText(/Player1 Trial/)).toBeVisible();
+  await expect(page.getByText('Scroll horizontally to view all roster details.')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expectAccessible(page);
   const [csv] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download roster CSV' }).click(),
   ]);
   expect(csv.suggestedFilename()).toBe(`roster-${fixtures.mainEventId}.csv`);
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   await openEventTool(page, 'Review queue');
   await expect(page.getByRole('heading', { name: 'Review queue' })).toBeVisible();
@@ -290,7 +294,10 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await page.getByRole('button', { name: /withdraw/i }).click();
   await expect(page.getByText('Nothing to review.')).toBeVisible();
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await openEventTool(page, 'Communications');
+  await expect(page.getByText('Scroll horizontally to review all recipient details.')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.getByRole('button', { name: 'Select visible eligible' }).click();
   await page.getByLabel('Subject').fill('Trial day update');
   await page.getByLabel('Message', { exact: true }).fill('Please arrive at the usual time.');
@@ -304,6 +311,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
 
 test('Admin searches a player history without exposing parent or payment details', async ({ page, request }) => {
   await signIn(page, request);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('link', { name: 'Player history' }).click();
   await expect(page.getByRole('heading', { name: 'Player history' })).toBeVisible();
   await page.getByLabel('Player full name').fill('Player1 Trial');
@@ -312,6 +320,8 @@ test('Admin searches a player history without exposing parent or payment details
   await expect(page.getByRole('heading', { name: 'Possible matching registrations' })).toBeVisible();
   const history = page.getByRole('table', { name: 'Trial records for Player1 Trial' });
   await expect(history.getByRole('row', { name: /2027-09-12.*E2E 15\/U Ladies/ })).toContainText('GS');
+  await expect(page.getByText('Scroll horizontally to compare all trial details.')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expect(history).not.toContainText(/parent1@example\.test|paymentIntentId|amountCents/i);
   await expectAccessible(page);
 });

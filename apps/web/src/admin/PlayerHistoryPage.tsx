@@ -39,8 +39,9 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
         <section aria-labelledby="history-results-heading">
           <h2 id="history-results-heading">Possible matching registrations</h2>
           <p role="note">Confirm these records are for the same player before relying on this history. A matching name and date of birth is not proof of identity.</p>
+          <p className="scroll-region-note">Scroll horizontally to compare all trial details.</p>
           <div className="table-scroll" role="region" aria-label="Player trial history" tabIndex={0}>
-            <table>
+            <table className="player-history-table">
               <caption>Trial records for {history[0]?.playerName}</caption>
               <thead><tr><th scope="col">Event</th><th scope="col">Association</th><th scope="col">Position choices</th><th scope="col">Attendance</th><th scope="col">Games</th><th scope="col">Courts seen</th><th scope="col">Positions played</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th></tr></thead>
               <tbody>{history.map((entry) => (

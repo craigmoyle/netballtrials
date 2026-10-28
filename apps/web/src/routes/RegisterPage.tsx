@@ -425,9 +425,15 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       </section>
       <section className="registration-privacy-notice" aria-labelledby="privacy-notice-heading">
         <h2 id="privacy-notice-heading">How we use these details</h2>
-        <p>Chisholm Netball Region Inc (ABN 41 649 079 458) uses player and parent/guardian details to manage registration, eligibility, payment, tickets, check-in and event communications. Stripe handles card details; they are not stored in this app. Necessary information is processed by our payment, email and hosting providers (Stripe, Google/Gmail and Bluehost). Provider systems may process data outside Australia; contact the club for current hosting-region details.</p>
-        <p>Admin users can access registration details; volunteers cannot see parent contact details. Request access or correction, or raise a privacy concern, by emailing <a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20request">chisholmnetball@gmail.com</a>. Event registration details are removed or de-identified four calendar years after the event. Separate financial records and Gmail Sent copies are outside that app cleanup schedule.</p>
+        <p>Chisholm Netball Region Inc (ABN 41 649 079 458) uses these details to manage registration, eligibility, payment, check-in and event communications. Stripe handles card details; they are not stored in this app. Some provider systems may process information outside Australia; see Privacy details for provider, access and retention information.</p>
         {!adminAssisted ? <p className="registration-privacy-note">Your draft is saved in this tab for up to 1 hour after your last change. Anyone with access to this tab can see it; closing the tab clears it.</p> : null}
+        <details id="privacy-information" className="registration-privacy">
+          <summary>Privacy details</summary>
+          <p>Necessary information is processed by our payment, email and hosting providers (Stripe, Google/Gmail and Bluehost). Provider systems may process data outside Australia; contact the club for current hosting-region details.</p>
+          <p>Admin users can access registration details; parent contact details are not shown to volunteers. Request access or correction, or raise a privacy concern, by emailing <a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20request">chisholmnetball@gmail.com</a>.</p>
+          <p>The app removes or anonymises personal details four calendar years after the event date. Payment/tax records may be kept separately for longer. Gmail Sent copies are outside this retention schedule.</p>
+          {!adminAssisted && hasUnsavedDetails ? <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p> : null}
+        </details>
       </section>
       {draftRestored ? <p role="status">Draft restored from this tab.</p> : null}
       {draftStorageError ? <p role="alert">This browser could not save or clear a draft. Keep this tab open; closing or refreshing may lose your details.</p> : null}
@@ -564,16 +570,6 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         {event.policyUrl ? (
           <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p>
         ) : null}
-        <details id="privacy-information" className="registration-privacy">
-          <summary>Privacy details</summary>
-          <p>These details are used for registration, payment, check-in and event messages.</p>
-          <p>Parent contact details are not shown to volunteers.</p>
-          <p>The app removes or anonymises personal details four calendar years after the event date. Payment/tax records may be kept separately for longer. Gmail Sent copies are outside this retention schedule.</p>
-          <p><a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20question">Contact the club with privacy questions</a>.</p>
-          {!adminAssisted && hasUnsavedDetails ? (
-            <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p>
-          ) : null}
-        </details>
         <button type="submit" disabled={busy || !associations || associations.length === 0}>
           {busy ? (adminAssisted ? 'Sending payment link...' : 'Submitting...') : adminAssisted ? 'Send payment link' : 'Submit registration'}
         </button>

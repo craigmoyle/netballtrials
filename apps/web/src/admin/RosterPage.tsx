@@ -75,7 +75,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
   if (!roster) return null;
 
   return (
-    <section>
+    <section className="roster-page">
       <h1>Event roster</h1>
       <section aria-labelledby="position-counts-heading">
         <h2 id="position-counts-heading">Position choices</h2>
@@ -89,34 +89,37 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
       <p><button type="button" disabled={downloading} onClick={download}>{downloading ? 'Preparing CSV...' : 'Download roster CSV'}</button></p>
       {exportError ? <p role="alert">{exportError}</p> : null}
       {roster.registrations.length === 0 ? <p>No registrations for this event.</p> : (
-        <div className="table-scroll" role="region" aria-label="Event roster" tabIndex={0}>
-          <table>
-            <caption>Registrations, payment status and trial-day attendance</caption>
-            <thead>
-              <tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Parent or guardian</th><th scope="col">Association</th><th scope="col">Positions</th><th scope="col">Payment</th><th scope="col">Check-in</th></tr>
-            </thead>
-            <tbody>
-              {roster.registrations.map((registration) => {
-                const amount = formatFee(registration.amountCents, registration.currency);
-                const positions = [registration.rank1Position, registration.rank2Position, registration.rank3Position].filter(Boolean).join(', ');
-                const attendance = registration.checkedInAt ? 'Checked in'
-                  : registration.bibNumber !== null ? 'Check-in undone'
-                    : registration.status === 'PAID' ? 'No-show' : 'Not checked in';
-                return (
-                  <tr key={registration.id}>
-                    <th scope="row">{registration.playerName}{registration.ageFlagged ? <span> · review flagged</span> : null}</th>
-                    <td>{registration.bibNumber ?? 'Not assigned'}</td>
-                    <td>{registration.parentName}<br /><a href={`mailto:${registration.parentEmail}`}>{registration.parentEmail}</a><br />{registration.parentMobile}</td>
-                    <td>{registration.memberAssociation}</td>
-                    <td>{positions}{registration.optInExtraPositions ? ' · extra positions opted in' : ''}</td>
-                    <td>{registration.status}<br />{amount}</td>
-                    <td>{attendance}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <p className="scroll-region-note">Scroll horizontally to view all roster details.</p>
+          <div className="table-scroll" role="region" aria-label="Event roster" tabIndex={0}>
+            <table className="roster-table">
+              <caption>Registrations, payment status and trial-day attendance</caption>
+              <thead>
+                <tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Parent or guardian</th><th scope="col">Association</th><th scope="col">Positions</th><th scope="col">Payment</th><th scope="col">Check-in</th></tr>
+              </thead>
+              <tbody>
+                {roster.registrations.map((registration) => {
+                  const amount = formatFee(registration.amountCents, registration.currency);
+                  const positions = [registration.rank1Position, registration.rank2Position, registration.rank3Position].filter(Boolean).join(', ');
+                  const attendance = registration.checkedInAt ? 'Checked in'
+                    : registration.bibNumber !== null ? 'Check-in undone'
+                      : registration.status === 'PAID' ? 'No-show' : 'Not checked in';
+                  return (
+                    <tr key={registration.id}>
+                      <th scope="row">{registration.playerName}{registration.ageFlagged ? <span> · review flagged</span> : null}</th>
+                      <td>{registration.bibNumber ?? 'Not assigned'}</td>
+                      <td>{registration.parentName}<br /><a href={`mailto:${registration.parentEmail}`}>{registration.parentEmail}</a><br />{registration.parentMobile}</td>
+                      <td>{registration.memberAssociation}</td>
+                      <td>{positions}{registration.optInExtraPositions ? ' · extra positions opted in' : ''}</td>
+                      <td>{registration.status}<br />{amount}</td>
+                      <td>{attendance}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </section>
   );

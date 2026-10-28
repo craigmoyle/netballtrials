@@ -336,12 +336,15 @@ describe('RegisterPage', () => {
     expect(screen.getByText(/clear a lower-ranked choice before moving it higher/i)).toBeInTheDocument();
   });
 
-  it('shows a collection notice before requesting player and parent details', async () => {
+  it('keeps a concise collection notice before player and parent details and preserves full privacy information', async () => {
     render(<RegisterPage client={client(vi.fn())} eventId="e1" />);
     const notice = await screen.findByRole('region', { name: 'How we use these details' });
     expect(within(notice).getByText(/Stripe handles card details/i)).toBeInTheDocument();
-    expect(within(notice).getByText(/Google\/Gmail and Bluehost/i)).toBeInTheDocument();
-    expect(within(notice).getByRole('link', { name: 'chisholmnetball@gmail.com' })).toHaveAttribute('href', expect.stringContaining('Privacy%20request'));
+    const privacySummary = within(notice).getByText('Privacy details');
+    const privacyDetails = privacySummary.closest('details')!;
+    expect(privacyDetails).not.toHaveAttribute('open');
+    expect(within(privacyDetails).getByText(/Google\/Gmail and Bluehost/i)).toBeInTheDocument();
+    expect(privacyDetails.querySelector('a[href^="mailto:"]')).toHaveAttribute('href', expect.stringContaining('Privacy%20request'));
     const firstField = await screen.findByLabelText(/player first name/i);
     expect(notice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -359,7 +362,9 @@ describe('RegisterPage', () => {
     expect(summary.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const draftNotice = screen.getByText(/your draft is saved in this tab.*anyone with access.*closing the tab clears it/i);
     expect(draftNotice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(firstField.compareDocumentPosition(screen.getByText('Privacy details')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const privacySummary = screen.getByText('Privacy details');
+    expect(privacySummary.closest('details')).not.toHaveAttribute('open');
+    expect(privacySummary.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(firstField.compareDocumentPosition(screen.getByRole('link', { name: 'Selection policy (new tab)' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const eligibility = screen.getByRole('group', { name: 'Eligibility confirmation' });
     expect(within(eligibility).getAllByRole('listitem')).toHaveLength(3);

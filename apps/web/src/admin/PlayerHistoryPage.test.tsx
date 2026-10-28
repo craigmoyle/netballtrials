@@ -34,6 +34,8 @@ describe('PlayerHistoryPage', () => {
     expect(screen.getByRole('row', { name: /2025-09-12.*15\/U Ladies/ })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /2026-09-12.*17\/U Ladies/ })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /2025-09-12/ })).toHaveTextContent('Number 12');
+    expect(screen.getByText('Scroll horizontally to compare all trial details.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Player trial history' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByText(/28/)).toBeInTheDocument();
     expect(screen.getByText(/confirm these records are for the same player/i)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/parent@example|paymentIntentId|amountCents/i);
