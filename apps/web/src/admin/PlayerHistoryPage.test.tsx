@@ -14,7 +14,7 @@ const entries: PlayerHistoryEntryDTO[] = [
     positionsPlayed: { GS: 2, GA: 1, WA: 1 }, uniqueOpponents: 28, repeatOpponentMeetings: 4,
   },
   {
-    registrationId: 'reg-17u', playerName: 'Ada Lovelace', eventId: 'e17', eventName: '17/U Ladies', eventDate: '2026-09-12',
+    registrationId: 'reg-17u', playerName: 'Ada Lovelace', eventId: 'e17', eventName: 'National Selection Trial', eventDate: '2026-09-12',
     competitionYear: 2026, division: '17/U', section: 'Ladies', association: 'MENA', rank1Position: 'C', rank2Position: 'WD', rank3Position: null,
     registrationStatus: 'PAID', checkedIn: false, number: null, ageFlagged: false, games: 0, courtsSeen: [],
     positionsPlayed: {}, uniqueOpponents: 0, repeatOpponentMeetings: 0,
@@ -31,8 +31,10 @@ describe('PlayerHistoryPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Possible matching registrations' })).toBeInTheDocument();
     expect(searchPlayerHistory).toHaveBeenCalledWith('Ada Lovelace', '2011-04-02');
-    expect(screen.getByRole('row', { name: /2025-09-12.*15\/U Ladies/ })).toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /2026-09-12.*17\/U Ladies/ })).toBeInTheDocument();
+    const under15Row = screen.getByRole('row', { name: /2025-09-12/ });
+    expect(under15Row).toHaveTextContent('2025-09-12 · 15/U Ladies');
+    expect(under15Row).not.toHaveTextContent('15/U Ladies — 15/U Ladies');
+    expect(screen.getByRole('row', { name: /2026-09-12.*17\/U Ladies — National Selection Trial/ })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /2025-09-12/ })).toHaveTextContent('Number 12');
     expect(screen.getByText('Scroll horizontally to compare all trial details.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Player trial history' })).toHaveAttribute('tabindex', '0');

@@ -44,19 +44,25 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
             <table className="player-history-table">
               <caption>Trial records for {history[0]?.playerName}</caption>
               <thead><tr><th scope="col">Event</th><th scope="col">Association</th><th scope="col">Position choices</th><th scope="col">Attendance</th><th scope="col">Games</th><th scope="col">Courts seen</th><th scope="col">Positions played</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th></tr></thead>
-              <tbody>{history.map((entry) => (
-                <tr key={entry.registrationId}>
-                  <th scope="row">{entry.eventDate} · {entry.division} {entry.section} — {entry.eventName}<br />Number {entry.number ?? 'Not assigned'}{entry.ageFlagged ? ' · review flagged' : ''}</th>
-                  <td>{entry.association || '—'}</td>
-                  <td>{[entry.rank1Position, entry.rank2Position, entry.rank3Position].filter(Boolean).join(', ')}</td>
-                  <td>{entry.checkedIn ? 'Checked in' : entry.registrationStatus === 'PAID' ? 'No-show' : entry.registrationStatus}</td>
-                  <td>{entry.games}</td>
-                  <td>{entry.courtsSeen.length ? entry.courtsSeen.join(', ') : '—'}</td>
-                  <td>{Object.entries(entry.positionsPlayed).map(([position, count]) => `${position}: ${count}`).join(', ') || '—'}</td>
-                  <td>{entry.uniqueOpponents}</td>
-                  <td>{entry.repeatOpponentMeetings}</td>
-                </tr>
-              ))}</tbody>
+              <tbody>{history.map((entry) => {
+                const eventContext = [entry.division, entry.section].filter(Boolean).join(' ');
+                const eventLabel = eventContext && entry.eventName.toLocaleLowerCase().includes(eventContext.toLocaleLowerCase())
+                  ? entry.eventName
+                  : [eventContext, entry.eventName].filter(Boolean).join(' — ');
+                return (
+                  <tr key={entry.registrationId}>
+                    <th scope="row">{entry.eventDate} · {eventLabel}<br />Number {entry.number ?? 'Not assigned'}{entry.ageFlagged ? ' · review flagged' : ''}</th>
+                    <td>{entry.association || '—'}</td>
+                    <td>{[entry.rank1Position, entry.rank2Position, entry.rank3Position].filter(Boolean).join(', ')}</td>
+                    <td>{entry.checkedIn ? 'Checked in' : entry.registrationStatus === 'PAID' ? 'No-show' : entry.registrationStatus}</td>
+                    <td>{entry.games}</td>
+                    <td>{entry.courtsSeen.length ? entry.courtsSeen.join(', ') : '—'}</td>
+                    <td>{Object.entries(entry.positionsPlayed).map(([position, count]) => `${position}: ${count}`).join(', ') || '—'}</td>
+                    <td>{entry.uniqueOpponents}</td>
+                    <td>{entry.repeatOpponentMeetings}</td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
           </div>
         </section>
