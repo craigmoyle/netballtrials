@@ -18,10 +18,12 @@ export async function retryPendingCheckouts(
       createdAt: { lt: new Date(now.getTime() - 2 * 60_000) },
       registration: { is: mailRegistrationEligibility('checkout', now) },
     },
-    include: { event: { select: { eventDate: true } } },
+    include: { event: { select: { eventDate: true } }, registration: { select: { parentEmail: true } } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
-  const rows = candidates.filter((row) => !isPastRetentionCutoff(row.event.eventDate, now));
+  const rows = candidates.filter((row) =>
+    row.registration?.parentEmail.toLowerCase() === row.to.toLowerCase() && !isPastRetentionCutoff(row.event.eventDate, now),
+  );
   const result = { due: rows.length, sent: 0, failed: 0, ambiguous: 0, errors: 0 };
   if (options.dryRun) return result;
 

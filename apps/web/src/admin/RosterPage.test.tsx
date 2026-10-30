@@ -40,6 +40,7 @@ describe('RosterPage', () => {
     expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByText('Checked in')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View changes' })).toHaveAttribute('href', '/admin/events/event-1/roster/reg-1/changes');
     expect(screen.queryByText(/bib 4/i)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'First choice' })).toBeInTheDocument();
     expect(screen.getByText('GS: 2')).toBeInTheDocument();

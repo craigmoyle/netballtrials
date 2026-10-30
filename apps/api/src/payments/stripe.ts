@@ -6,6 +6,26 @@ import type {
   WebhookEvent,
 } from './provider';
 
+type StripeCheckoutSessionOperations = {
+  expire(sessionId: string): Promise<{ status: string | null }>;
+  retrieve(sessionId: string): Promise<{ status: string | null }>;
+};
+
+export async function expireStripeCheckout(
+  sessions: StripeCheckoutSessionOperations,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const expired = await sessions.expire(sessionId);
+    return expired.status === 'expired';
+  } catch (error) {
+    const current = await sessions.retrieve(sessionId);
+    if (current.status === 'expired') return true;
+    if (current.status === 'complete') return false;
+    throw error;
+  }
+}
+
 export function createStripePaymentProvider(config: {
   secretKey: string;
   webhookSecret: string;
@@ -37,6 +57,7 @@ export function createStripePaymentProvider(config: {
 
       return { url: session.url ?? '', sessionId: session.id };
     },
+    expireCheckout: (sessionId) => expireStripeCheckout(stripe.checkout.sessions, sessionId),
     parseWebhook(rawBody: Buffer, signature: string): WebhookEvent {
       const event = stripe.webhooks.constructEvent(
         rawBody,

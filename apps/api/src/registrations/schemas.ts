@@ -5,7 +5,7 @@ import { isCalendarDate } from '../validation/date';
 export const positionSchema = z.enum(POSITIONS);
 export type RegistrationPosition = z.infer<typeof positionSchema>;
 
-function positionsAreDistinct(data: {
+export function positionsAreDistinct(data: {
   rank1Position: string;
   rank2Position?: string;
   rank3Position?: string;

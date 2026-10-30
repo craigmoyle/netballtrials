@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { POSITIONS, type Position, type RosterDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatFee } from '../formatFee';
@@ -95,7 +96,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
             <table className="roster-table">
               <caption>Registrations, payment status and trial-day attendance</caption>
               <thead>
-                <tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Parent or guardian</th><th scope="col">Association</th><th scope="col">Positions</th><th scope="col">Payment</th><th scope="col">Check-in</th></tr>
+                <tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Parent or guardian</th><th scope="col">Association</th><th scope="col">Positions</th><th scope="col">Payment</th><th scope="col">Check-in</th><th scope="col">History</th></tr>
               </thead>
               <tbody>
                 {roster.registrations.map((registration) => {
@@ -113,6 +114,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
                       <td>{positions}{registration.optInExtraPositions ? ' · extra positions opted in' : ''}</td>
                       <td>{registration.status}<br />{amount}</td>
                       <td>{attendance}</td>
+                      <td><Link to={`/admin/events/${eventId}/roster/${registration.id}/changes`}>View changes</Link></td>
                     </tr>
                   );
                 })}

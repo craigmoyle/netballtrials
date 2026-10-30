@@ -11,6 +11,7 @@ import { eventFixture, registrationFixture } from '../helpers/fixtures';
 let app: ReturnType<typeof createApp>;
 let eventId: string;
 let mailer: ReturnType<typeof createDevMailer>;
+let payment: ReturnType<typeof createFakePaymentProvider>;
 
 const env = {
   DATABASE_URL: '', NODE_ENV: 'test' as const, PAYMENT_PROVIDER: 'fake' as const,
@@ -26,7 +27,8 @@ beforeEach(async () => {
   eventId = event.id;
   await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
   mailer = createDevMailer([]);
-  app = createApp({ payment: createFakePaymentProvider(), mailer, env });
+  payment = createFakePaymentProvider();
+  app = createApp({ payment, mailer, env });
 });
 
 afterEach(async () => {
@@ -65,6 +67,7 @@ function rawToken(text: string): string {
 async function parentSession(email: string): Promise<string> {
   const requested = await app.inject({ method: 'POST', url: '/api/public/parent-access/request-link', payload: { email } });
   expect(requested.statusCode).toBe(202);
+  await vi.waitFor(() => expect(mailer.sent.some((message) => message.subject.includes('Sign in to manage'))).toBe(true));
   const signIn = [...mailer.sent].reverse().find((message) => message.subject.includes('Sign in to manage'));
   expect(signIn).toBeDefined();
   const token = rawToken(signIn!.text);
@@ -86,7 +89,7 @@ describe('parent registration access', () => {
 
     const known = await app.inject({ method: 'POST', url: '/api/public/parent-access/request-link', payload: { email: 'parent@example.test' } });
     expect(known.statusCode).toBe(202);
-    expect(mailer.sent).toHaveLength(1);
+    await vi.waitFor(() => expect(mailer.sent).toHaveLength(1));
     const signIn = mailer.sent[0];
     expect(signIn.subject).toContain('Sign in to manage');
     expect(signIn.text).not.toContain('Ada Lovelace');
@@ -106,9 +109,21 @@ describe('parent registration access', () => {
     expect((await app.inject({ method: 'GET', url: '/api/parent/registrations' })).statusCode).toBe(401);
   });
 
+  it('returns the neutral access-link response without waiting on the mail provider', async () => {
+    await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const send = vi.spyOn(mailer, 'send').mockImplementation(() => new Promise<void>(() => {}));
+
+    const response = await app.inject({ method: 'POST', url: '/api/public/parent-access/request-link', payload: { email: 'parent@example.test' } });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ status: 'sent' });
+    await vi.waitFor(() => expect(send).toHaveBeenCalled());
+  });
+
   it('rejects expired links', async () => {
     await addRegistration('Ada', 'Lovelace', 'parent@example.test');
     await app.inject({ method: 'POST', url: '/api/public/parent-access/request-link', payload: { email: 'parent@example.test' } });
+    await vi.waitFor(() => expect(mailer.sent).toHaveLength(1));
     const token = rawToken(mailer.sent[0].text);
     await prisma.parentAccessToken.update({ where: { tokenHash: hashToken(token) }, data: { expiresAt: new Date(Date.now() - 1) } });
 
@@ -124,10 +139,17 @@ describe('parent registration access', () => {
     const cookie = await parentSession('parent@example.test');
     const cookies = { nt_parent: cookie };
 
+    const repeatedPosition = await app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies, payload: { rank2Position: 'GS' } });
+    expect(repeatedPosition.statusCode).toBe(400);
+    const thirdWithoutSecond = await app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies, payload: { rank3Position: 'GA' } });
+    expect(thirdWithoutSecond.statusCode).toBe(400);
+
     const updated = await app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies, payload: { playerFirstName: 'Augusta' } });
     expect(updated.statusCode).toBe(200);
     expect(updated.json()).toMatchObject({ playerName: 'Augusta Lovelace' });
-    expect(await prisma.registrationChangeLog.findMany({ where: { registrationId: ada.id } })).toHaveLength(1);
+    const auditRows = await prisma.registrationChangeLog.findMany({ where: { registrationId: ada.id } });
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0].changeData).toEqual({ playerFirstName: { from: 'Ada', to: 'Augusta' } });
 
     const siblingCollision = await app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies, payload: { playerFirstName: 'Grace', playerLastName: 'Hopper' } });
     expect(siblingCollision.statusCode).toBe(409);
@@ -137,6 +159,34 @@ describe('parent registration access', () => {
     await prisma.event.update({ where: { id: eventId }, data: { status: 'CLOSED' } });
     const locked = await app.inject({ method: 'PATCH', url: `/api/parent/registrations/${grace.id}`, cookies, payload: { playerFirstName: 'Closed' } });
     expect(locked.statusCode).toBe(409);
+  });
+
+  it('expires an open Checkout before withdrawing an unpaid registration', async () => {
+    const pending = await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const cookie = await parentSession('parent@example.test');
+    const cookies = { nt_parent: cookie };
+    const checkout = await app.inject({ method: 'POST', url: `/api/parent/registrations/${pending.id}/checkout`, cookies });
+    const simulationToken = checkout.json().simulationToken as string;
+
+    const withdrawn = await app.inject({ method: 'POST', url: `/api/parent/registrations/${pending.id}/withdraw`, cookies });
+    expect(withdrawn.statusCode).toBe(200);
+    expect(payment.expiredCheckouts).toContain(simulationToken);
+    const completion = await app.inject({ method: 'POST', url: '/api/public/fake-checkouts/complete', payload: { simulationToken } });
+    expect(completion.json()).toEqual({ status: 'not_completed' });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('WITHDRAWN');
+  });
+
+  it('does not withdraw when Checkout has already completed or cannot be expired', async () => {
+    const pending = await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const cookie = await parentSession('parent@example.test');
+    const cookies = { nt_parent: cookie };
+    await app.inject({ method: 'POST', url: `/api/parent/registrations/${pending.id}/checkout`, cookies });
+    vi.spyOn(payment, 'expireCheckout').mockResolvedValueOnce(false);
+
+    const withdrawn = await app.inject({ method: 'POST', url: `/api/parent/registrations/${pending.id}/withdraw`, cookies });
+    expect(withdrawn.statusCode).toBe(409);
+    expect(withdrawn.json()).toEqual({ error: 'checkout_in_progress' });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('PENDING');
   });
 
   it('withdraws a registration without issuing a refund', async () => {
@@ -169,10 +219,102 @@ describe('parent registration access', () => {
     const changes = await prisma.registrationChangeLog.findMany({ where: { registrationId: { in: [ada.id, grace.id] } } });
     expect(changes).toHaveLength(2);
     expect(changes.every((change) => Array.isArray(change.changedFields) && change.changedFields.includes('parentEmail'))).toBe(true);
+    expect(changes[0].changeData).toEqual({ parentEmail: { from: 'parent@example.test', to: 'family@example.test' } });
     const listed = await app.inject({ method: 'GET', url: '/api/parent/registrations', cookies });
     expect(listed.statusCode).toBe(200);
     expect(listed.json()).toHaveLength(2);
     expect(mailer.sent.some((message) => message.to === 'parent@example.test' && message.subject === 'Your Netball Trials email was changed')).toBe(true);
+  });
+
+  it('returns a retryable response when email-change requests are rate limited', async () => {
+    await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const cookie = await parentSession('parent@example.test');
+    const cookies = { nt_parent: cookie };
+    await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family-one@example.test' } });
+    await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family-two@example.test' } });
+
+    const limited = await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family-three@example.test' } });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({ error: 'try_again_later' });
+  });
+
+  it('reports an email-change delivery failure instead of claiming the link was sent', async () => {
+    await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const cookie = await parentSession('parent@example.test');
+    vi.spyOn(mailer, 'send').mockRejectedValueOnce(new Error('mail unavailable'));
+
+    const response = await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies: { nt_parent: cookie }, payload: { email: 'family@example.test' } });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: 'email_change_unavailable' });
+  });
+
+  it('lets an Admin correct an unverified typo only after the new address confirms', async () => {
+    const registration = await addRegistration('Ada', 'Lovelace', 'typo@example.test', { parentEmailVerifiedAt: null });
+    const sibling = await addRegistration('Grace', 'Hopper', 'typo@example.test', { parentEmailVerifiedAt: null });
+    const adminCookie = await signInAsNewAdmin(app, 'correction-admin@example.test');
+    const unconfirmed = await app.inject({
+      method: 'POST',
+      url: `/api/admin/events/${eventId}/incomplete-registrations/${registration.id}/email-correction`,
+      cookies: { nt_session: adminCookie },
+      payload: { email: 'correct@example.test' },
+    });
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(mailer.sent.some((message) => message.to === 'correct@example.test')).toBe(false);
+    const corrected = await app.inject({
+      method: 'POST',
+      url: `/api/admin/events/${eventId}/incomplete-registrations/${registration.id}/email-correction`,
+      cookies: { nt_session: adminCookie },
+      payload: { email: 'correct@example.test', familyConfirmed: true },
+    });
+    expect(corrected.statusCode).toBe(202);
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).parentEmail).toBe('typo@example.test');
+    const email = mailer.sent.find((message) => message.subject === 'Confirm your Netball Trials email' && message.to === 'correct@example.test');
+    expect(email).toBeDefined();
+    const token = rawToken(email!.text);
+
+    const verified = await app.inject({ method: 'POST', url: '/api/public/parent-access/verify', payload: { token } });
+    expect(verified.statusCode).toBe(200);
+    const updated = await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(updated).toMatchObject({ parentEmail: 'correct@example.test', parentEmailVerifiedAt: expect.any(Date) });
+
+    const siblingCorrection = await app.inject({
+      method: 'POST',
+      url: `/api/admin/events/${eventId}/incomplete-registrations/${sibling.id}/email-correction`,
+      cookies: { nt_session: adminCookie },
+      payload: { email: 'correct@example.test', familyConfirmed: true },
+    });
+    expect(siblingCorrection.statusCode).toBe(202);
+    const siblingEmail = [...mailer.sent].reverse().find((message) => message.subject === 'Confirm your Netball Trials email' && message.to === 'correct@example.test');
+    const siblingToken = rawToken(siblingEmail!.text);
+    const siblingVerified = await app.inject({ method: 'POST', url: '/api/public/parent-access/verify', payload: { token: siblingToken } });
+    expect(siblingVerified.statusCode).toBe(200);
+    const siblingSession = siblingVerified.cookies.find((cookie) => cookie.name === 'nt_parent')!.value;
+    const listed = await app.inject({ method: 'GET', url: '/api/parent/registrations', cookies: { nt_parent: siblingSession } });
+    expect(listed.json()).toHaveLength(2);
+
+    const audit = await prisma.registrationChangeLog.findFirstOrThrow({ where: { registrationId: registration.id } });
+    expect(audit).toMatchObject({ actorType: 'ADMIN', changeData: { parentEmail: { from: 'typo@example.test', to: 'correct@example.test' } } });
+  });
+
+  it('waits for an in-flight message before changing the parent email', async () => {
+    const registration = await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const cookie = await parentSession('parent@example.test');
+    const cookies = { nt_parent: cookie };
+    await prisma.emailLog.create({
+      data: {
+        eventId, registrationId: registration.id, batchId: 'sending-old-address', idempotencyKey: 'sending-old-address-key',
+        to: 'parent@example.test', subject: 'Checkout', body: 'Checkout link', kind: 'checkout', status: 'SENDING', attempts: 1,
+      },
+    });
+    await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family@example.test' } });
+    const confirmation = mailer.sent.find((message) => message.subject === 'Confirm your new Netball Trials email');
+    const token = rawToken(confirmation!.text);
+
+    const changed = await app.inject({ method: 'POST', url: '/api/parent/email-change/confirm', cookies, payload: { token } });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json()).toEqual({ error: 'email_change_busy' });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).parentEmail).toBe('parent@example.test');
+    expect((await prisma.parentAccessToken.findUniqueOrThrow({ where: { tokenHash: hashToken(token) } })).usedAt).toBeNull();
   });
 
   it('refuses to merge a parent group into an email already linked to another registration', async () => {
@@ -190,6 +332,24 @@ describe('parent registration access', () => {
     expect(await prisma.registration.findUniqueOrThrow({ where: { id: ada.id } })).toMatchObject({ parentEmail: 'parent@example.test' });
     expect(await prisma.registration.findUniqueOrThrow({ where: { id: existing.id } })).toMatchObject({ parentEmail: 'family@example.test' });
     expect((await app.inject({ method: 'GET', url: '/api/parent/registrations', cookies })).json()).toHaveLength(1);
+  });
+
+  it('lets Admins inspect the recorded before-and-after values', async () => {
+    const ada = await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const parentCookie = await parentSession('parent@example.test');
+    await app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies: { nt_parent: parentCookie }, payload: { parentMobile: '0411111111' } });
+    const adminCookie = await signInAsNewAdmin(app, 'audit-admin@example.test');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/admin/events/${eventId}/registrations/${ada.id}/changes`,
+      cookies: { nt_session: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([expect.objectContaining({
+      actorType: 'PARENT', changedFields: ['parentMobile'],
+      changes: [{ field: 'parentMobile', before: '0400000000', after: '0411111111' }],
+    })]);
   });
 
   it('reports incomplete stages and only sends payment reminders to verified, pending registrations', async () => {

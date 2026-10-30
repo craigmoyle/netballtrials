@@ -3,7 +3,7 @@ import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { GmailDeliveryError } from '../../mail/gmail-mailer';
-import { reconcileStaleDeliveries, sendEventMessage, retryFailedDeliveries } from '../../messages/service';
+import { reconcileStaleDeliveries, sendEmailToRecipient, sendEventMessage, retryFailedDeliveries } from '../../messages/service';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
@@ -80,6 +80,30 @@ describe('sendEventMessage delivery batches', () => {
     expect(sentTo.sort()).toEqual(['ok@example.com', 'retry@example.com', 'retry@example.com']);
     expect(await prisma.emailLog.count({ where: { batchId: 'batch-retry', status: 'SENT' } })).toBe(2);
     expect((await prisma.emailLog.findFirstOrThrow({ where: { batchId: 'batch-retry', to: 'retry@example.com' } })).attempts).toBe(2);
+  });
+
+  it('does not retry a registration email to the old address after the parent email changes', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const registration = await prisma.registration.create({
+      data: registrationFixture(event.id, { parentEmail: 'old@example.test', parentEmailVerifiedAt: new Date(), checkoutSessionId: 'cs_old' }),
+    });
+    const failedMailer = { send: vi.fn().mockRejectedValue(new GmailDeliveryError('rejected', 403)) };
+    await sendEmailToRecipient(
+      { prisma, mailer: failedMailer },
+      { eventId: event.id, registrationId: registration.id, to: 'old@example.test', kind: 'checkout', batchId: 'old-address-checkout' },
+      { subject: 'Continue', text: 'Checkout link' },
+      new Date(),
+    );
+    const delivery = await prisma.emailLog.findFirstOrThrow({ where: { batchId: 'old-address-checkout' } });
+    expect(delivery.status).toBe('FAILED');
+    await prisma.registration.update({ where: { id: registration.id }, data: { parentEmail: 'new@example.test' } });
+    const retryMailer = { send: vi.fn().mockResolvedValue(undefined) };
+
+    const retry = await retryFailedDeliveries({ prisma, mailer: retryMailer }, event.id, delivery.batchId, [delivery.id], new Date());
+
+    expect(retryMailer.send).not.toHaveBeenCalled();
+    expect(retry.sentThisRun).toBe(0);
+    expect((await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe('FAILED');
   });
 
   it('still retries a paid household when the batch representative withdraws but a sibling remains paid', async () => {

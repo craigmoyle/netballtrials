@@ -17,7 +17,7 @@ beforeEach(async () => {
   const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
   eventId = event.id;
   const reg = await prisma.registration.create({
-    data: { ...registrationFixture(event.id), policyReference: 'x', checkoutSessionId: 'cs_1' },
+    data: { ...registrationFixture(event.id), policyReference: 'x', parentEmailVerifiedAt: new Date(), checkoutSessionId: 'cs_1' },
   });
   registrationId = reg.id;
   app = createApp({ payment: createFakePaymentProvider() });

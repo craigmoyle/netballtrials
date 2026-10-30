@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import { Prisma, type ParentAccessTokenPurpose, type PrismaClient, type Registration } from '@prisma/client';
-import type { IncompleteRegistrationDTO, ParentRegistrationDTO, Position } from '@netball-trials/types';
+import type { IncompleteRegistrationDTO, ParentRegistrationDTO, Position, RegistrationChangeDTO } from '@netball-trials/types';
 import type { AppDeps } from '../app';
 import { normalizeEmail } from '../auth/service';
 import { generateToken, hashToken, LOGIN_TOKEN_TTL_MINUTES } from '../auth/tokens';
 import { normalizePlayerName } from '../registrations/eligibility';
+import { positionsAreDistinct } from '../registrations/schemas';
 import { createRegistrationCheckout, sendCheckoutContinuation } from '../registrations/checkout';
+import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
 import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
 
@@ -17,7 +19,7 @@ const PARENT_EMAIL_LIMIT = 3;
 const PARENT_EMAIL_WINDOW_MS = LOGIN_TOKEN_TTL_MINUTES * 60_000;
 
 export class ParentAccessError extends Error {
-  constructor(readonly code: 'not_found' | 'registration_locked' | 'duplicate_player' | 'email_change_conflict' | 'checkout_unavailable') {
+  constructor(readonly code: 'not_found' | 'registration_locked' | 'duplicate_player' | 'email_change_conflict' | 'checkout_unavailable' | 'checkout_in_progress' | 'invalid_positions' | 'email_change_busy' | 'email_rate_limited') {
     super(code);
     this.name = 'ParentAccessError';
   }
@@ -48,18 +50,24 @@ async function sendParentToken(
     },
   });
 
-  const action = purpose === 'EMAIL_CHANGE' ? 'email-change' : purpose === 'SIGN_IN' ? 'sign-in' : null;
-  const link = `${deps.env.WEB_ORIGIN}/manage-registration/verify#token=${token}${action ? `&action=${action}` : ''}`;
+  const registrationEmailChange = purpose === 'REGISTRATION_EMAIL_CHANGE';
   const emailChange = purpose === 'EMAIL_CHANGE';
   const signIn = purpose === 'SIGN_IN';
+  const action = emailChange ? 'email-change' : registrationEmailChange ? 'registration-email-change' : signIn ? 'sign-in' : null;
+  const link = `${deps.env.WEB_ORIGIN}/manage-registration/verify#token=${token}${action ? `&action=${action}` : ''}`;
+  const changesEmail = emailChange || registrationEmailChange;
   await deps.mailer.send({
-    to: emailChange && newEmail ? normalizeEmail(newEmail) : normalizeEmail(email),
-    subject: emailChange ? 'Confirm your new Netball Trials email' : signIn ? 'Sign in to manage your Netball Trials registrations' : 'Confirm your Netball Trials email',
+    to: changesEmail && newEmail ? normalizeEmail(newEmail) : normalizeEmail(email),
+    subject: emailChange ? 'Confirm your new Netball Trials email'
+      : registrationEmailChange ? 'Confirm your Netball Trials email'
+        : signIn ? 'Sign in to manage your Netball Trials registrations' : 'Confirm your Netball Trials email',
     text: emailChange
       ? `Confirm this email to update the address used for your Netball Trials registrations: ${link}\n\nYour existing email address must also be signed in to complete this change. This link expires in ${LOGIN_TOKEN_TTL_MINUTES} minutes. If you did not request this, ignore this email.`
-      : signIn
-        ? `Use this one-time link to manage registrations associated with this email: ${link}\n\nThis link expires in ${LOGIN_TOKEN_TTL_MINUTES} minutes. If you did not request this, ignore this email.`
-        : `Confirm your email to continue your Netball Trials registration or sign in to manage registrations: ${link}\n\nYour registration is not complete until this email is verified and payment is confirmed. This link expires in ${LOGIN_TOKEN_TTL_MINUTES} minutes. If you did not request this, ignore this email.`,
+      : registrationEmailChange
+        ? `Confirm this email address to continue managing your Netball Trials registration: ${link}\n\nThis one-time link expires in ${LOGIN_TOKEN_TTL_MINUTES} minutes. If you did not ask the club to correct your email, contact the club.`
+        : signIn
+          ? `Use this one-time link to manage registrations associated with this email: ${link}\n\nThis link expires in ${LOGIN_TOKEN_TTL_MINUTES} minutes. If you did not request this, ignore this email.`
+          : `Confirm your email to continue your Netball Trials registration or sign in to manage registrations: ${link}\n\nYour registration is not complete until this email is verified and payment is confirmed. This link expires in ${LOGIN_TOKEN_TTL_MINUTES} minutes. If you did not request this, ignore this email.`,
   });
 }
 
@@ -89,25 +97,92 @@ export async function requestParentAccessLink(
   if (!(await consumeRateLimit(deps.prisma, ipKey, now, PARENT_LINK_LIMIT, PARENT_LINK_WINDOW_MS))) return;
   if (!(await consumeRateLimit(deps.prisma, parentEmailRateKey(email), now, PARENT_EMAIL_LIMIT, PARENT_EMAIL_WINDOW_MS))) return;
 
-  const registrations = await deps.prisma.registration.findMany({
-    where: { parentEmail: { equals: email, mode: 'insensitive' }, anonymizedAt: null },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: { id: true, parentEmail: true, parentEmailVerifiedAt: true },
-  });
-  if (!registrations.length) return;
+  setImmediate(() => {
+    void (async () => {
+      const registrations = await deps.prisma.registration.findMany({
+        where: { parentEmail: { equals: email, mode: 'insensitive' }, anonymizedAt: null },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        select: { id: true, parentEmail: true, parentEmailVerifiedAt: true },
+      });
+      if (!registrations.length) return;
 
-  const verified = registrations.some((registration) => registration.parentEmailVerifiedAt !== null);
-  const target = registrations.find((registration) => registration.parentEmailVerifiedAt === null) ?? registrations[0];
+      const verified = registrations.some((registration) => registration.parentEmailVerifiedAt !== null);
+      const target = registrations.find((registration) => registration.parentEmailVerifiedAt === null) ?? registrations[0];
+      await sendParentToken(
+        deps,
+        target.parentEmail,
+        verified ? 'SIGN_IN' : 'REGISTRATION_VERIFY',
+        now,
+        verified ? undefined : target.id,
+      );
+    })().catch(() => deps.log?.warn({ code: 'parent_access_link_failed' }, 'parent_access_link_failed'));
+  });
+}
+
+type ParentSessionResult = { email: string; sessionToken: string; sessionId: string; expiresAt: Date };
+
+async function consumeRegistrationEmailCorrection(
+  prisma: PrismaClient,
+  token: Prisma.ParentAccessTokenGetPayload<{}>,
+  now: Date,
+): Promise<ParentSessionResult | null> {
+  if (!token.registrationId || !token.newEmail) return null;
+  const currentEmail = normalizeEmail(token.email);
+  const newEmail = normalizeEmail(token.newEmail);
+  const cutoff = new Date(now.getTime() - INCOMPLETE_REGISTRATION_RETENTION_DAYS * 24 * 60 * 60_000);
   try {
-    await sendParentToken(
-      deps,
-      target.parentEmail,
-      verified ? 'SIGN_IN' : 'REGISTRATION_VERIFY',
-      now,
-      verified ? undefined : target.id,
-    );
-  } catch {
-    // The response remains generic for known, unknown, and undeliverable addresses.
+    return await prisma.$transaction(async (tx) => {
+      for (const address of [currentEmail, newEmail].sort()) {
+        await tx.$queryRaw(Prisma.sql`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(0, hashtext(${address}))) AS _lock`);
+      }
+      const registration = await tx.registration.findFirst({
+        where: {
+          id: token.registrationId!,
+          parentEmail: { equals: currentEmail, mode: 'insensitive' },
+          parentEmailVerifiedAt: null,
+          createdAt: { gte: cutoff },
+          anonymizedAt: null,
+          status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
+        },
+        select: { id: true },
+      });
+      if (!registration) throw new ParentAccessError('not_found');
+      const claimed = await tx.parentAccessToken.updateMany({
+        where: { id: token.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (claimed.count !== 1) throw new ParentAccessError('not_found');
+      const updated = await tx.registration.updateMany({
+        where: {
+          id: registration.id,
+          parentEmail: { equals: currentEmail, mode: 'insensitive' },
+          parentEmailVerifiedAt: null,
+          createdAt: { gte: cutoff },
+          anonymizedAt: null,
+          status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
+        },
+        data: { parentEmail: newEmail, parentEmailVerifiedAt: now },
+      });
+      if (updated.count !== 1) throw new ParentAccessError('not_found');
+      await tx.registrationChangeLog.create({
+        data: {
+          registrationId: registration.id,
+          actorType: 'ADMIN',
+          changedFields: ['parentEmail'],
+          changeData: { parentEmail: { from: token.email, to: newEmail } },
+        },
+      });
+      const sessionToken = generateToken();
+      const expiresAt = new Date(now.getTime() + PARENT_SESSION_TTL_HOURS * 60 * 60_000);
+      const session = await tx.parentAccessSession.create({
+        data: { email: newEmail, tokenHash: hashToken(sessionToken), expiresAt, createdAt: now },
+        select: { id: true },
+      });
+      return { email: newEmail, sessionToken, sessionId: session.id, expiresAt };
+    });
+  } catch (error) {
+    if (error instanceof ParentAccessError && ['not_found', 'email_change_conflict'].includes(error.code)) return null;
+    throw error;
   }
 }
 
@@ -115,9 +190,11 @@ export async function consumeParentAccessToken(
   prisma: PrismaClient,
   rawToken: string,
   now = new Date(),
-): Promise<{ email: string; sessionToken: string; sessionId: string; expiresAt: Date } | null> {
+): Promise<ParentSessionResult | null> {
   const found = await prisma.parentAccessToken.findUnique({ where: { tokenHash: hashToken(rawToken) } });
-  if (!found || found.purpose === 'EMAIL_CHANGE' || found.usedAt !== null || found.expiresAt <= now) return null;
+  if (!found || found.usedAt !== null || found.expiresAt <= now) return null;
+  if (found.purpose === 'EMAIL_CHANGE') return null;
+  if (found.purpose === 'REGISTRATION_EMAIL_CHANGE') return consumeRegistrationEmailCorrection(prisma, found, now);
 
   const matching = await prisma.registration.findMany({
     where: { parentEmail: { equals: found.email, mode: 'insensitive' }, anonymizedAt: null },
@@ -255,6 +332,16 @@ export async function updateParentRegistration(
     const playerFirstName = patch.playerFirstName ?? registration.playerFirstName;
     const playerLastName = patch.playerLastName ?? registration.playerLastName;
     const playerNameNormalized = normalizePlayerName(playerFirstName, playerLastName);
+    const rank1Position = patch.rank1Position ?? registration.rank1Position;
+    const rank2Position = patch.rank2Position === undefined ? registration.rank2Position : patch.rank2Position;
+    const rank3Position = patch.rank3Position === undefined ? registration.rank3Position : patch.rank3Position;
+    if (!positionsAreDistinct({
+      rank1Position,
+      rank2Position: rank2Position ?? undefined,
+      rank3Position: rank3Position ?? undefined,
+    }) || (rank3Position !== null && rank3Position !== undefined && !rank2Position)) {
+      throw new ParentAccessError('invalid_positions');
+    }
     if (playerNameNormalized !== registration.playerNameNormalized) {
       const duplicate = await tx.registration.findFirst({
         where: {
@@ -295,50 +382,76 @@ export async function updateParentRegistration(
     });
     if (updatedCount.count !== 1) throw new ParentAccessError('registration_locked');
     const updated = await tx.registration.findUniqueOrThrow({ where: { id: registration.id }, include: { event: true } });
+    const changeData = Object.fromEntries(changedFields.map((field) => [field, {
+      from: registration[field as keyof typeof registration],
+      to: patch[field as keyof ParentRegistrationUpdate],
+    }]));
     await tx.registrationChangeLog.create({
-      data: { registrationId: registration.id, actorType: 'PARENT', changedFields },
+      data: { registrationId: registration.id, actorType: 'PARENT', changedFields, changeData: changeData as Prisma.InputJsonObject },
     });
     return parentRegistrationDto(updated, now);
   });
 }
 
 export async function withdrawParentRegistration(
-  prisma: PrismaClient,
+  deps: AppDeps,
   email: string,
   registrationId: string,
   now = new Date(),
 ): Promise<ParentRegistrationDTO> {
-  return prisma.$transaction(async (tx) => {
-    const registration = await tx.registration.findFirst({
-      where: {
-        id: registrationId,
-        parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
-        parentEmailVerifiedAt: { not: null },
-        anonymizedAt: null,
-      },
+  const normalizedEmail = normalizeEmail(email);
+  const registration = await deps.prisma.registration.findFirst({
+    where: { id: registrationId, parentEmail: { equals: normalizedEmail, mode: 'insensitive' }, parentEmailVerifiedAt: { not: null }, anonymizedAt: null },
+    include: { event: true },
+  });
+  if (!registration) throw new ParentAccessError('not_found');
+  if (!parentRegistrationDto(registration, now).canWithdraw) throw new ParentAccessError('registration_locked');
+
+  const checkoutSessionId = registration.checkoutSessionId;
+  if (registration.status === 'PENDING' && checkoutSessionId) {
+    try {
+      if (!(await deps.payment.expireCheckout(checkoutSessionId))) throw new ParentAccessError('checkout_in_progress');
+    } catch (error) {
+      if (error instanceof ParentAccessError) throw error;
+      throw new ParentAccessError('checkout_unavailable');
+    }
+  }
+
+  return deps.prisma.$transaction(async (tx) => {
+    if (!await lockMailEvent(tx, registration.eventId)) throw new ParentAccessError('not_found');
+    const current = await tx.registration.findFirst({
+      where: { id: registrationId, parentEmail: { equals: normalizedEmail, mode: 'insensitive' }, parentEmailVerifiedAt: { not: null }, anonymizedAt: null },
       include: { event: true },
     });
-    if (!registration) throw new ParentAccessError('not_found');
-    const currentDto = parentRegistrationDto(registration, now);
-    if (!currentDto.canWithdraw) throw new ParentAccessError('registration_locked');
+    if (!current) throw new ParentAccessError('not_found');
+    if (!parentRegistrationDto(current, now).canWithdraw) throw new ParentAccessError('registration_locked');
+    if (current.status === 'PENDING' && current.checkoutSessionId !== checkoutSessionId) {
+      throw new ParentAccessError('checkout_in_progress');
+    }
 
     const updatedCount = await tx.registration.updateMany({
       where: {
-        id: registration.id,
-        parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
+        id: current.id,
+        parentEmail: { equals: normalizedEmail, mode: 'insensitive' },
         parentEmailVerifiedAt: { not: null },
         anonymizedAt: null,
         status: { in: ['PENDING', 'PAID'] },
         checkedInAt: null,
         bibNumber: null,
+        checkoutSessionId,
         event: { is: { status: 'OPEN', checkInClosedAt: null } },
       },
       data: { status: 'WITHDRAWN', checkedInAt: null, checkedInBy: null, bibNumber: null },
     });
     if (updatedCount.count !== 1) throw new ParentAccessError('registration_locked');
-    const updated = await tx.registration.findUniqueOrThrow({ where: { id: registration.id }, include: { event: true } });
+    const updated = await tx.registration.findUniqueOrThrow({ where: { id: current.id }, include: { event: true } });
     await tx.registrationChangeLog.create({
-      data: { registrationId: registration.id, actorType: 'PARENT', changedFields: ['status'] },
+      data: {
+        registrationId: current.id,
+        actorType: 'PARENT',
+        changedFields: ['status'],
+        changeData: { status: { from: current.status, to: 'WITHDRAWN' } },
+      },
     });
     return parentRegistrationDto(updated, now);
   });
@@ -374,12 +487,13 @@ export async function requestParentEmailChange(
   currentEmail: string,
   newEmail: string,
   now = new Date(),
-): Promise<void> {
+): Promise<'sent' | 'unchanged' | 'rate_limited'> {
   const current = normalizeEmail(currentEmail);
   const next = normalizeEmail(newEmail);
-  if (current === next) return;
-  if (!(await consumeRateLimit(deps.prisma, parentEmailRateKey(current), now, PARENT_EMAIL_LIMIT, PARENT_EMAIL_WINDOW_MS))) return;
+  if (current === next) return 'unchanged';
+  if (!(await consumeRateLimit(deps.prisma, parentEmailRateKey(current), now, PARENT_EMAIL_LIMIT, PARENT_EMAIL_WINDOW_MS))) return 'rate_limited';
   await sendParentToken(deps, current, 'EMAIL_CHANGE', now, undefined, next);
+  return 'sent';
 }
 
 export async function confirmParentEmailChange(
@@ -407,10 +521,21 @@ export async function confirmParentEmailChange(
     if (claimed.count !== 1) throw new ParentAccessError('not_found');
     const registrations = await tx.registration.findMany({
       where: { parentEmail: { equals: current, mode: 'insensitive' }, anonymizedAt: null },
-      select: { id: true },
+      select: { id: true, eventId: true },
     });
     if (!registrations.length) throw new ParentAccessError('not_found');
     const registrationIds = registrations.map((registration) => registration.id);
+    for (const eventId of [...new Set(registrations.map((registration) => registration.eventId))].sort()) {
+      if (!await lockMailEvent(tx, eventId)) throw new ParentAccessError('not_found');
+    }
+    const inFlightDelivery = await tx.emailLog.findFirst({
+      where: {
+        registrationId: { in: registrationIds },
+        OR: [{ status: 'SENDING' }, { status: 'AMBIGUOUS', error: INTERRUPTED_SEND }],
+      },
+      select: { id: true },
+    });
+    if (inFlightDelivery) throw new ParentAccessError('email_change_busy');
     const conflict = await tx.registration.findFirst({
       where: { id: { notIn: registrationIds }, parentEmail: { equals: newEmail, mode: 'insensitive' }, anonymizedAt: null },
       select: { id: true },
@@ -430,6 +555,7 @@ export async function confirmParentEmailChange(
         registrationId: registration.id,
         actorType: 'PARENT',
         changedFields: ['parentEmail'],
+        changeData: { parentEmail: { from: current, to: newEmail } },
       })),
     });
     await tx.parentAccessSession.deleteMany({ where: { email: current, id: { not: sessionId } } });
@@ -449,6 +575,70 @@ export async function confirmParentEmailChange(
     // The new address is already verified; notification failure must not undo the change.
   }
   return newEmail;
+}
+
+export async function requestIncompleteEmailCorrection(
+  deps: AppDeps,
+  eventId: string,
+  registrationId: string,
+  newEmail: string,
+  now = new Date(),
+): Promise<void> {
+  const registration = await deps.prisma.registration.findFirst({
+    where: {
+      id: registrationId,
+      eventId,
+      createdAt: { gte: new Date(now.getTime() - INCOMPLETE_REGISTRATION_RETENTION_DAYS * 24 * 60 * 60_000) },
+      parentEmailVerifiedAt: null,
+      anonymizedAt: null,
+      status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
+    },
+    select: { id: true, parentEmail: true },
+  });
+  if (!registration) throw new ParentAccessError('not_found');
+  const correctedEmail = normalizeEmail(newEmail);
+  if (correctedEmail === normalizeEmail(registration.parentEmail)) throw new ParentAccessError('email_change_conflict');
+  if (!(await consumeRateLimit(deps.prisma, parentEmailRateKey(correctedEmail), now, PARENT_EMAIL_LIMIT, PARENT_EMAIL_WINDOW_MS))) {
+    throw new ParentAccessError('email_rate_limited');
+  }
+  await sendParentToken(deps, registration.parentEmail, 'REGISTRATION_EMAIL_CHANGE', now, registration.id, correctedEmail);
+}
+
+function auditValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+  return JSON.stringify(value);
+}
+
+export async function listRegistrationChanges(
+  prisma: PrismaClient,
+  eventId: string,
+  registrationId: string,
+  now = new Date(),
+): Promise<RegistrationChangeDTO[] | null> {
+  const registration = await prisma.registration.findFirst({
+    where: { id: registrationId, eventId, anonymizedAt: null },
+    select: { event: { select: { eventDate: true } } },
+  });
+  if (!registration || isPastRetentionCutoff(registration.event.eventDate, now)) return null;
+  const rows = await prisma.registrationChangeLog.findMany({
+    where: { registrationId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  });
+  return rows.map((row) => {
+    const stored = row.changeData && typeof row.changeData === 'object' && !Array.isArray(row.changeData)
+      ? row.changeData as Record<string, { from?: unknown; to?: unknown }>
+      : {};
+    const fields = Array.isArray(row.changedFields) ? row.changedFields.filter((field): field is string => typeof field === 'string') : [];
+    return {
+      id: row.id,
+      actorType: row.actorType,
+      createdAt: row.createdAt.toISOString(),
+      changedFields: fields,
+      changes: fields.map((field) => ({ field, before: auditValue(stored[field]?.from), after: auditValue(stored[field]?.to) })),
+    };
+  });
 }
 
 export async function listIncompleteRegistrations(
@@ -503,8 +693,9 @@ export async function sendIncompleteRegistrationReminder(
     },
   });
   if (!registration) throw new ParentAccessError('registration_locked');
+  const recipientKey = createHash('sha256').update(normalizeEmail(registration.parentEmail)).digest('hex').slice(0, 16);
   const sent = await sendCheckoutContinuation(deps, registration, now, {
-    batchId: `parent-reminder:${registration.id}`,
+    batchId: `parent-reminder:${registration.id}:${recipientKey}`,
     senderUserId,
   });
   if (!sent) throw new ParentAccessError('checkout_unavailable');

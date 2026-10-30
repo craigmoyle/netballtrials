@@ -23,6 +23,7 @@ import { BlankSheetPage } from './planner/BlankSheetPage';
 import { ReviewPage } from './admin/ReviewPage';
 import { MessagesPage } from './admin/MessagesPage';
 import { RosterPage } from './admin/RosterPage';
+import { RegistrationChangeHistoryPage } from './admin/RegistrationChangeHistoryPage';
 import { AssociationsPage } from './admin/AssociationsPage';
 import { BibColorsPage } from './admin/BibColorsPage';
 import { StaffAccessPage } from './admin/StaffAccessPage';
@@ -49,6 +50,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/check-in$/, 'Admin check-in'],
   [/^\/admin\/events\/[^/]+\/day-of-registration$/, 'Admin-assisted registration'],
   [/^\/admin\/events\/new$/, 'New event'],
+  [/^\/admin\/events\/[^/]+\/roster\/[^/]+\/changes$/, 'Registration change history'],
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/events\/[^/]+\/incomplete$/, 'Incomplete registrations'],
   [/^\/admin\/associations$/, 'Member associations'],
@@ -162,6 +164,12 @@ function RosterRoute({ client }: { client: Client }) {
   return <RosterPage client={client} eventId={id} />;
 }
 
+function RegistrationChangesRoute({ client }: { client: Client }) {
+  const { id, registrationId } = useParams();
+  if (!id || !registrationId) return <Navigate to="/admin/events" replace />;
+  return <RegistrationChangeHistoryPage client={client} eventId={id} registrationId={registrationId} />;
+}
+
 function IncompleteRegistrationsRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -219,6 +227,7 @@ export function App() {
           <Route index element={<EventFormPage client={client} />} />
           <Route path="operations" element={<EventOperationsRoute client={client} />} />
           <Route path="roster" element={<RosterRoute client={client} />} />
+          <Route path="roster/:registrationId/changes" element={<RegistrationChangesRoute client={client} />} />
           <Route path="incomplete" element={<IncompleteRegistrationsRoute client={client} />} />
           <Route path="check-in" element={<AdminCheckInRoute client={client} />} />
           <Route path="day-of-registration" element={<DayOfRegistrationRoute client={client} />} />

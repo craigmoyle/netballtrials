@@ -16,7 +16,7 @@ beforeEach(resetDb);
 
 async function paidRegistration(eventId: string, email: string, sessionId: string) {
   const registration = await prisma.registration.create({
-    data: registrationFixture(eventId, { parentEmail: email, checkoutSessionId: sessionId, playerFirstName: sessionId, playerNameNormalized: `${sessionId} lovelace` }),
+    data: registrationFixture(eventId, { parentEmail: email, parentEmailVerifiedAt: now, checkoutSessionId: sessionId, playerFirstName: sessionId, playerNameNormalized: `${sessionId} lovelace` }),
   });
   await confirmPayment(prisma, {
     kind: 'checkout_completed', stripeEventId: `evt_${sessionId}`, registrationId: registration.id,
@@ -26,7 +26,7 @@ async function paidRegistration(eventId: string, email: string, sessionId: strin
 }
 
 describe('retryPendingConfirmations', () => {
-  it('retries the persisted message byte-for-byte after live event and parent details change', async () => {
+  it('retries the persisted message byte-for-byte after live event and player details change', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     const registration = await paidRegistration(event.id, 'original@example.com', 'cs_immutable');
     const rejected = createDevMailer([]);
@@ -36,7 +36,7 @@ describe('retryPendingConfirmations', () => {
     } };
     await sendConfirmation({ prisma, mailer }, registration, event, `${WEB_ORIGIN}/ticket/${registration.qrToken}`);
     await prisma.emailLog.updateMany({ data: { createdAt: old } });
-    await prisma.registration.update({ where: { id: registration.id }, data: { playerFirstName: 'Corrected', parentEmail: 'changed@example.com' } });
+    await prisma.registration.update({ where: { id: registration.id }, data: { playerFirstName: 'Corrected' } });
     await prisma.event.update({ where: { id: event.id }, data: { name: 'Edited', venue: 'Elsewhere' } });
     const retry = createDevMailer([]);
     expect(await retryPendingConfirmations({ prisma, mailer: retry, webOrigin: 'https://changed.example' }, now)).toMatchObject({ sent: 1, errors: 0 });

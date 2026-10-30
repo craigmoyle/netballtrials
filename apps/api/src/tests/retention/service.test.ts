@@ -52,6 +52,9 @@ describe('anonymizeExpiredRegistrations', () => {
       data: { eventId: old.id, tokenHash: 'a'.repeat(64), expiresAt: new Date('2025-09-13T00:00:00Z') },
     });
     const review = await prisma.reviewItem.create({ data: { eventId: old.id, registrationId: reg.id, reason: 'age_out_of_range', note: 'Birth certificate seen' } });
+    const changeLog = await prisma.registrationChangeLog.create({
+      data: { registrationId: reg.id, actorType: 'PARENT', changedFields: ['parentEmail'], changeData: { parentEmail: { from: 'old@example.com', to: 'anne@example.com' } } },
+    });
 
     const now = new Date('2025-10-10T00:00:00Z');
     expect(await anonymizeExpiredRegistrations(prisma, now)).toBe(1);
@@ -63,6 +66,7 @@ describe('anonymizeExpiredRegistrations', () => {
     });
     expect(anonymised.dateOfBirth.toISOString()).toContain('1900-01-01');
     expect(await prisma.reviewItem.findUnique({ where: { id: review.id } })).toBeNull();
+    expect(await prisma.registrationChangeLog.findUnique({ where: { id: changeLog.id } })).toBeNull();
     const anonymisedLog = await prisma.emailLog.findUniqueOrThrow({ where: { id: log.id } });
     expect(anonymisedLog).toMatchObject({ to: '', subject: '', body: '', registrationId: null, error: null, messagePayload: null, status: 'ANONYMIZED', kind: 'retention' });
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: eventMessage.id } })).toMatchObject({ to: '', subject: '', body: '', status: 'ANONYMIZED', kind: 'retention' });
@@ -95,7 +99,12 @@ describe('anonymizeExpiredRegistrations', () => {
     const staleVerified = await prisma.registration.create({
       data: { ...regFixture(event.id, { playerFirstName: 'Grace', playerNameNormalized: 'grace lovelace', parentEmail: 'grace@example.test' }), status: 'EXPIRED', parentEmailVerifiedAt: staleCreatedAt, createdAt: staleCreatedAt, expiresAt: new Date(staleCreatedAt.getTime() + 24 * 60 * 60_000) },
     });
-    const paid = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'Paid', playerNameNormalized: 'paid lovelace' }), status: 'PAID', createdAt: staleCreatedAt } });
+    const staleChange = await prisma.registrationChangeLog.create({
+      data: { registrationId: staleVerified.id, actorType: 'PARENT', changedFields: ['parentName'], changeData: { parentName: { from: 'Old', to: 'New' } } },
+    });
+    const paid = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'Paid', playerNameNormalized: 'paid lovelace' }), status: 'PAID', paidAt: staleCreatedAt, createdAt: staleCreatedAt } });
+    const staleWithdrawn = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'Withdrawn', playerNameNormalized: 'withdrawn lovelace', parentEmail: 'withdrawn@example.test' }), status: 'WITHDRAWN', createdAt: staleCreatedAt } });
+    const paidWithdrawn = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'PaidWithdrawn', playerNameNormalized: 'paidwithdrawn lovelace' }), status: 'WITHDRAWN', paidAt: staleCreatedAt, createdAt: staleCreatedAt } });
     const recent = await prisma.registration.create({ data: { ...regFixture(event.id, { playerFirstName: 'Recent', playerNameNormalized: 'recent lovelace' }), status: 'PENDING', createdAt: new Date(now.getTime() - 29 * 24 * 60 * 60_000) } });
     await prisma.parentAccessSession.create({ data: { email: 'grace@example.test', tokenHash: 'parent-session-stale'.padEnd(64, 'x'), expiresAt: new Date(now.getTime() + 60 * 60_000) } });
     await prisma.parentAccessToken.create({ data: { email: 'grace@example.test', purpose: 'SIGN_IN', tokenHash: 'parent-token-stale'.padEnd(64, 'y'), expiresAt: new Date(now.getTime() + 15 * 60_000) } });
@@ -103,10 +112,13 @@ describe('anonymizeExpiredRegistrations', () => {
       data: { eventId: event.id, registrationId: staleUnverified.id, batchId: 'unverified', idempotencyKey: 'unverified-key', to: staleUnverified.parentEmail, subject: 'Confirm email', body: 'Private confirmation link', kind: 'email-verification', status: 'SENT' },
     });
 
-    expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(2);
+    expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(3);
     expect(await prisma.registration.findUniqueOrThrow({ where: { id: staleUnverified.id } })).toMatchObject({ status: 'WITHDRAWN', parentEmail: '', anonymizedAt: now });
     expect(await prisma.registration.findUniqueOrThrow({ where: { id: staleVerified.id } })).toMatchObject({ status: 'WITHDRAWN', parentEmail: '', anonymizedAt: now });
+    expect(await prisma.registrationChangeLog.findUnique({ where: { id: staleChange.id } })).toBeNull();
     expect(await prisma.registration.findUniqueOrThrow({ where: { id: paid.id } })).toMatchObject({ status: 'PAID', anonymizedAt: null });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: staleWithdrawn.id } })).toMatchObject({ status: 'WITHDRAWN', parentEmail: '', anonymizedAt: now });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: paidWithdrawn.id } })).toMatchObject({ status: 'WITHDRAWN', parentEmail: 'anne@example.com', anonymizedAt: null });
     expect(await prisma.registration.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ status: 'PENDING', anonymizedAt: null });
     expect(await prisma.parentAccessSession.findFirst({ where: { email: 'grace@example.test' } })).toBeNull();
     expect(await prisma.parentAccessToken.findFirst({ where: { email: 'grace@example.test' } })).toBeNull();

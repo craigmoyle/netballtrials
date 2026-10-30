@@ -12,9 +12,11 @@ import {
   continueParentCheckout,
   expireParentAccessSession,
   listIncompleteRegistrations,
+  listRegistrationChanges,
   listParentRegistrations,
   requestParentAccessLink,
   requestParentEmailChange,
+  requestIncompleteEmailCorrection,
   sendIncompleteRegistrationReminder,
   updateParentRegistration,
   withdrawParentRegistration,
@@ -34,13 +36,18 @@ const parentUpdateSchema = z.object({
   optInExtraPositions: z.boolean().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0);
 const emailChangeSchema = z.object({ email: emailSchema });
+const incompleteEmailCorrectionSchema = z.object({ email: emailSchema, familyConfirmed: z.literal(true) });
 
 function parentError(reply: FastifyReply, error: unknown) {
   if (!(error instanceof ParentAccessError)) throw error;
   if (error.code === 'not_found') return reply.code(404).send({ error: 'not_found' });
   if (error.code === 'duplicate_player') return reply.code(409).send({ error: 'already_registered' });
+  if (error.code === 'invalid_positions') return reply.code(400).send({ error: 'validation_failed', fields: ['rank2Position', 'rank3Position'] });
   if (error.code === 'email_change_conflict') return reply.code(409).send({ error: 'email_change_unavailable' });
+  if (error.code === 'email_change_busy') return reply.code(409).send({ error: 'email_change_busy' });
+  if (error.code === 'email_rate_limited') return reply.code(429).send({ error: 'try_again_later' });
   if (error.code === 'checkout_unavailable') return reply.code(503).send({ error: 'checkout_unavailable' });
+  if (error.code === 'checkout_in_progress') return reply.code(409).send({ error: 'checkout_in_progress' });
   return reply.code(409).send({ error: 'registration_locked' });
 }
 
@@ -93,7 +100,7 @@ export function registerParentAccessRoutes(app: FastifyInstance, deps: AppDeps):
   app.post('/api/parent/registrations/:id/withdraw', { preHandler: requireParent(deps) }, async (request, reply) => {
     const { id } = request.params as { id: string };
     try {
-      return reply.send(await withdrawParentRegistration(deps.prisma, request.parentEmail!, id, new Date()));
+      return reply.send(await withdrawParentRegistration(deps, request.parentEmail!, id, new Date()));
     } catch (error) {
       return parentError(reply, error);
     }
@@ -112,11 +119,13 @@ export function registerParentAccessRoutes(app: FastifyInstance, deps: AppDeps):
     const parsed = emailChangeSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     try {
-      await requestParentEmailChange(deps, request.parentEmail!, parsed.data.email, new Date());
+      const result = await requestParentEmailChange(deps, request.parentEmail!, parsed.data.email, new Date());
+      if (result === 'rate_limited') return reply.code(429).send({ error: 'try_again_later' });
+      if (result === 'unchanged') return reply.code(400).send({ error: 'same_email' });
       return reply.code(202).send({ status: 'sent' });
     } catch {
-      // Do not reveal whether the requested email is already used by another parent group.
-      return reply.code(202).send({ status: 'sent' });
+      deps.log?.warn({ code: 'parent_email_change_send_failed' }, 'parent_email_change_send_failed');
+      return reply.code(503).send({ error: 'email_change_unavailable' });
     }
   });
 
@@ -137,9 +146,30 @@ export function registerParentAccessRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
+  app.get('/api/admin/events/:id/registrations/:registrationId/changes', { preHandler: requireAdmin(deps) }, async (request, reply) => {
+    const { id, registrationId } = request.params as { id: string; registrationId: string };
+    const changes = await listRegistrationChanges(deps.prisma, id, registrationId, new Date());
+    if (!changes) return reply.code(404).send({ error: 'not_found' });
+    return changes;
+  });
+
   app.get('/api/admin/events/:id/incomplete-registrations', { preHandler: requireAdmin(deps) }, async (request) => {
     const { id } = request.params as { id: string };
     return listIncompleteRegistrations(deps.prisma, id, new Date());
+  });
+
+  app.post('/api/admin/events/:id/incomplete-registrations/:registrationId/email-correction', { preHandler: requireAdmin(deps) }, async (request, reply) => {
+    const parsed = incompleteEmailCorrectionSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const { id, registrationId } = request.params as { id: string; registrationId: string };
+    try {
+      await requestIncompleteEmailCorrection(deps, id, registrationId, parsed.data.email, new Date());
+      return reply.code(202).send({ status: 'sent' });
+    } catch (error) {
+      if (error instanceof ParentAccessError) return parentError(reply, error);
+      deps.log?.warn({ code: 'registration_email_correction_send_failed' }, 'registration_email_correction_send_failed');
+      return reply.code(503).send({ error: 'email_verification_unavailable' });
+    }
   });
 
   app.post('/api/admin/events/:id/incomplete-registrations/:registrationId/reminder', { preHandler: requireAdmin(deps) }, async (request, reply) => {

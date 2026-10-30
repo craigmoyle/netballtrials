@@ -372,6 +372,14 @@ export interface IncompleteRegistrationDTO {
   stage: 'EMAIL_CONFIRMATION' | 'PAYMENT' | 'PAYMENT_EXPIRED';
 }
 
+export interface RegistrationChangeDTO {
+  id: string;
+  actorType: string;
+  createdAt: string;
+  changedFields: string[];
+  changes: Array<{ field: string; before: string | null; after: string | null }>;
+}
+
 export interface PlayerHistoryEntryDTO {
   registrationId: string;
   playerName: string;

@@ -28,7 +28,7 @@ function registration(id: string, playerName: string): ParentRegistrationDTO {
     checkedInAt: null,
     ageFlagged: false,
     createdAt: '2026-10-28T00:00:00.000Z',
-    expiresAt: '2026-10-29T00:00:00.000Z',
+    expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
     parentEmailVerifiedAt: '2026-10-28T00:00:00.000Z',
     parentFollowUpSentAt: null,
     canEdit: true,
@@ -102,6 +102,16 @@ describe('ParentAccessPage', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('No refund will be issued.'));
     expect(withdrawParentRegistration).toHaveBeenCalledWith('one');
     expect(await screen.findByText('Withdrawn. No refund is available.')).toBeInTheDocument();
+  });
+
+  it('distinguishes a failed payment and offers a new attempt while registration is open', async () => {
+    const failed = { ...registration('one', 'Ada Lovelace'), status: 'FAILED' as const, canEdit: false, canWithdraw: false, canContinueCheckout: false };
+    const api = mockClient({ listParentRegistrations: vi.fn().mockResolvedValue([failed]) });
+    render(<MemoryRouter initialEntries={['/manage-registration']}><ParentAccessPage client={api} /></MemoryRouter>);
+
+    expect(await screen.findByText('Payment failed. This registration is not complete.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Start a new registration' })).toHaveAttribute('href', '/register/event-one');
+    expect(screen.queryByRole('button', { name: 'Continue to Checkout' })).not.toBeInTheDocument();
   });
 
   it('requires an explicit Continue step, then shows every registration linked to the email', async () => {

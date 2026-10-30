@@ -357,7 +357,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
           ? <p>A secure Checkout link was sent to the parent or guardian. The registration remains pending until payment is confirmed.</p>
           : <>
             <p>Check the parent or guardian email for a secure confirmation link. A new registration is not complete until the email is verified and payment is confirmed.</p>
-            <p>If the player may already be registered, use the link in the original email or contact the club.</p>
+            <p>If you entered the wrong email or the player may already be registered, <a href="https://chisholmnetball.com/">contact the club</a> so they can help. A correction to an unconfirmed email must be approved by the club and verified by its owner.</p>
             <p><Link to="/manage-registration">Manage registrations</Link></p>
           </>}
       </section>

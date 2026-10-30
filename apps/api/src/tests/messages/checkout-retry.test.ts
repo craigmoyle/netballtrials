@@ -16,7 +16,7 @@ const now = new Date('2026-10-10T01:00:00Z');
 const old = new Date(+now - 10 * 60_000);
 
 describe('retryPendingCheckouts', () => {
-  it('recovers an OAuth failure using the original checkout payload, with no new provider session', async () => {
+  it('recovers an OAuth failure for the verified current address with no new provider session', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     const registration = await prisma.registration.create({ data: registrationFixture(event.id) });
     const send = vi.fn().mockRejectedValueOnce(new GmailDeliveryError('OAuth failed', undefined, { notSent: true })).mockResolvedValue(undefined);
@@ -25,7 +25,6 @@ describe('retryPendingCheckouts', () => {
     expect(await sendCheckoutContinuation(deps, registration)).toBe(false);
     const row = await prisma.emailLog.findFirstOrThrow();
     await prisma.emailLog.update({ where: { id: row.id }, data: { createdAt: old } });
-    await prisma.registration.update({ where: { id: registration.id }, data: { parentEmail: 'corrected@example.com' } });
     const original = send.mock.calls[0][0];
     const result = await retryPendingCheckouts(deps, now);
     expect(result).toEqual({ due: 1, sent: 1, failed: 0, ambiguous: 0, errors: 0 });

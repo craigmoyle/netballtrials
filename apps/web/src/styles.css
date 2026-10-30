@@ -369,10 +369,6 @@ thead { background: var(--blue-pale); }
 .parent-registration { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--line); }
 .parent-registration h3 { margin-block: 0 0.5rem; }
 
-.parent-access-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
-.parent-access-heading h1, .parent-access-heading p { margin-block: 0 0.35rem; }
-.parent-registration { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--line); }
-.parent-registration h3 { margin-block: 0 0.5rem; }
 .incomplete-registrations-table { min-width: 52rem; }
 
 .association-list { padding-left: 1.25rem; }

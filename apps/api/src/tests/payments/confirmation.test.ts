@@ -14,6 +14,7 @@ async function pending(overrides: Record<string, unknown> = {}) {
   const registration = await prisma.registration.create({
     data: registrationFixture(event.id, {
       status: 'PENDING',
+      parentEmailVerifiedAt: new Date(),
       checkoutSessionId: 'cs_expected',
       amountCents: 3500,
       currency: 'aud',
@@ -89,6 +90,16 @@ describe('confirmPayment', () => {
     expect(await prisma.processedStripeEvent.count({ where: { stripeEventId: event.stripeEventId } })).toBe(1);
   });
 
+  it('does not complete an unverified legacy Checkout', async () => {
+    const registration = await pending({ parentEmailVerifiedAt: null });
+    const result = await confirmPayment(prisma, completed(registration.id), now);
+
+    expect(result).toMatchObject({ outcome: 'orphaned' });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({ status: 'PENDING', parentEmailVerifiedAt: null, qrToken: null });
+    expect(await prisma.reviewItem.findFirstOrThrow({ where: { registrationId: registration.id } })).toMatchObject({ note: expect.stringContaining('parent email was not verified') });
+    expect(await prisma.emailLog.count({ where: { registrationId: registration.id } })).toBe(0);
+  });
+
   it('rechecks a real withdrawal that commits between the initial read and event lock', async () => {
     const registration = await pending();
     let withdrawn = false;
@@ -96,7 +107,7 @@ describe('confirmPayment', () => {
       const snapshot = await query(args);
       if (!withdrawn && args.where.id === registration.id) {
         withdrawn = true;
-        await withdrawRegistration(prisma, registration.eventId, registration.id, now);
+        await withdrawRegistration(prisma, registration.eventId, registration.id, now, async () => true);
       }
       return snapshot;
     } } } });

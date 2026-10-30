@@ -2,6 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { createFakePaymentProvider } from '../../payments/fake';
 
 describe('fake payment provider', () => {
+  it('expires an open Checkout session idempotently', async () => {
+    const provider = createFakePaymentProvider();
+    const session = await provider.createCheckout({
+      registrationId: 'r1', amountCents: 3500, currency: 'aud', productName: 'Trials',
+      successUrl: 'https://app/success', cancelUrl: 'https://app/cancel', expiresAt: new Date(),
+    }, 'r1');
+
+    expect(await provider.expireCheckout(session.sessionId)).toBe(true);
+    expect(await provider.expireCheckout(session.sessionId)).toBe(true);
+    expect(await provider.completeLocalCheckout?.(session.sessionId)).toBe(false);
+    expect(provider.expiredCheckouts).toEqual([session.sessionId]);
+    expect(await provider.expireCheckout('unknown')).toBe(false);
+  });
+
   it('keeps a stable opaque Checkout URL for the same idempotency key', async () => {
     const provider = createFakePaymentProvider();
     const request = {

@@ -70,6 +70,7 @@ export async function confirmPayment(
       if (
         registration &&
         registration.status === 'PENDING' &&
+        (event.kind !== 'checkout_completed' || registration.parentEmailVerifiedAt !== null) &&
         registration.checkoutSessionId === event.sessionId
       ) {
         if (event.kind === 'checkout_completed') {
@@ -153,7 +154,10 @@ export async function confirmPayment(
         // Money was taken for a registration that is no longer pending (for
         // example it expired or was withdrawn). Never resurrect it; flag it so
         // an admin can refund or reinstate by hand.
-        await flagOrphanedPayment(tx, registration, event, `the registration was ${registration.status.toLowerCase()}`);
+        const reason = registration.parentEmailVerifiedAt === null
+          ? 'the parent email was not verified before payment'
+          : `the registration was ${registration.status.toLowerCase()}`;
+        await flagOrphanedPayment(tx, registration, event, reason);
         outcome = 'orphaned';
       }
 

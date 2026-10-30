@@ -21,24 +21,31 @@ function draftFrom(registration: ParentRegistrationDTO): RegistrationDraft {
   };
 }
 
+function checkoutClosed(registration: ParentRegistrationDTO): boolean {
+  return registration.status === 'EXPIRED' || registration.status === 'FAILED' ||
+    (registration.status === 'PENDING' && new Date(registration.expiresAt).getTime() <= Date.now());
+}
+
 function registrationStatus(registration: ParentRegistrationDTO): string {
   if (registration.status === 'PAID') return 'Complete — payment confirmed.';
   if (registration.status === 'WITHDRAWN') return 'Withdrawn. No refund is available.';
-  if (registration.status === 'EXPIRED' || registration.status === 'FAILED' || new Date(registration.expiresAt).getTime() <= Date.now()) return 'Checkout expired. This registration is not complete.';
+  if (registration.status === 'FAILED') return 'Payment failed. This registration is not complete.';
+  if (registration.status === 'EXPIRED' || checkoutClosed(registration)) return 'Checkout expired. This registration is not complete.';
   return 'Email confirmed; payment is still pending. This registration is not complete.';
 }
 
 export function ParentAccessPage({ client }: { client: Client }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [pendingLink, setPendingLink] = useState<{ token: string; action: 'verify' | 'sign-in' | 'email-change' } | null>(() => {
+  const [pendingLink, setPendingLink] = useState<{ token: string; action: 'verify' | 'sign-in' | 'email-change' | 'registration-email-change' } | null>(() => {
     const values = new URLSearchParams(location.hash.replace(/^#/, ''));
     const token = values.get('token');
     const action = values.get('action');
-    return token ? { token, action: action === 'email-change' || action === 'sign-in' ? action : 'verify' } : null;
+    return token ? { token, action: action === 'email-change' || action === 'sign-in' || action === 'registration-email-change' ? action : 'verify' } : null;
   });
   const token = pendingLink?.token ?? null;
   const emailChange = pendingLink?.action === 'email-change';
+  const registrationEmailChange = pendingLink?.action === 'registration-email-change';
   const signInLink = pendingLink?.action === 'sign-in';
   const [mode, setMode] = useState<Mode>(token ? 'confirm' : 'checking');
   const [registrations, setRegistrations] = useState<ParentRegistrationDTO[]>([]);
@@ -105,9 +112,11 @@ export function ParentAccessPage({ client }: { client: Client }) {
       navigate('/manage-registration', { replace: true });
     } catch (reason) {
       const code = (reason as { message?: string }).message;
-      setError(emailChange && code === 'email_change_unavailable'
-        ? 'The new email could not be used for these registrations. Your current email is unchanged; contact the club or request another email-change link.'
-        : 'This link is invalid, expired or already used. Request a fresh link and try again.');
+      setError(emailChange && code === 'email_change_busy'
+        ? 'A message is still being sent to your current address. Wait a few minutes, then confirm this change again.'
+        : emailChange && code === 'email_change_unavailable'
+          ? 'The new email could not be used for these registrations. Your current email is unchanged; contact the club or request another email-change link.'
+          : 'This link is invalid, expired or already used. Request a fresh link and try again.');
     } finally {
       setBusy(false);
     }
@@ -132,9 +141,11 @@ export function ParentAccessPage({ client }: { client: Client }) {
       const code = (reason as { message?: string }).message;
       setError(status === 409 && code === 'already_registered'
         ? 'These player details match another registration in this event. Contact the club if they need correction.'
-        : status === 409
-          ? 'Registration editing has closed. Contact the club if a correction is needed.'
-          : 'Could not save these changes. Your entries are still here; try again.');
+        : status === 400 && code === 'validation_failed'
+          ? 'Position choices must be distinct, and a third choice requires a second choice. Your entries are still here.'
+          : status === 409
+            ? 'Registration editing has closed. Contact the club if a correction is needed.'
+            : 'Could not save these changes. Your entries are still here; try again.');
     } finally {
       setBusyRegistration(null);
     }
@@ -149,8 +160,11 @@ export function ParentAccessPage({ client }: { client: Client }) {
       const updated = await client.withdrawParentRegistration(registration.id);
       setRegistrations((current) => current.map((item) => item.id === registration.id ? updated : item));
       setNotice('Registration withdrawn. No refund was issued.');
-    } catch {
-      setError('Could not withdraw this registration. It may have been closed; try again or contact the club.');
+    } catch (reason) {
+      const code = (reason as { message?: string }).message;
+      setError(code === 'checkout_in_progress'
+        ? 'Checkout is open or being processed. Finish it or wait for it to expire before withdrawing.'
+        : 'Could not withdraw this registration. It may have been closed; try again or contact the club.');
     } finally {
       setBusyRegistration(null);
     }
@@ -201,8 +215,11 @@ export function ParentAccessPage({ client }: { client: Client }) {
       await client.requestParentEmailChange(newEmail.trim());
       setNotice('Check the new email address to confirm the change. Your current email remains active until you confirm.');
       setNewEmail('');
-    } catch {
-      setError('Could not request an email change. Check the address and try again.');
+    } catch (reason) {
+      const status = (reason as { status?: number }).status;
+      setError(status === 429
+        ? 'Too many email-change requests. Wait a little while, then try again.'
+        : 'We could not send the confirmation link. Your current email is unchanged; try again later.');
     } finally {
       setBusy(false);
     }
@@ -223,12 +240,14 @@ export function ParentAccessPage({ client }: { client: Client }) {
   if (mode === 'confirm') {
     return (
       <section className="public-page">
-        <h1>{emailChange ? 'Confirm your new email' : signInLink ? 'Sign in to manage registrations' : 'Confirm your email'}</h1>
+        <h1>{emailChange ? 'Confirm your new email' : signInLink ? 'Sign in to manage registrations' : registrationEmailChange ? 'Confirm your email address' : 'Confirm your email'}</h1>
         <p>{emailChange
           ? 'Confirm the new address to update it across registrations linked to your current email. Open this link in the browser where you requested the change.'
           : signInLink
             ? 'Continue to registrations linked to this email address.'
-            : 'Confirm that you control this email address to manage the registrations linked to it.'}</p>
+            : registrationEmailChange
+              ? 'The club has updated an unconfirmed address. Confirm this new address to continue managing the registration.'
+              : 'Confirm that you control this email address to manage the registrations linked to it.'}</p>
         {error ? <p role="alert">{error} <Link to="/manage-registration">Request a fresh link</Link></p> : null}
         <button type="button" disabled={busy} onClick={() => void confirmLink()}>{busy ? 'Confirming...' : emailChange ? 'Confirm email change' : signInLink ? 'Sign in and continue' : 'Confirm email and continue'}</button>
       </section>
@@ -247,6 +266,7 @@ export function ParentAccessPage({ client }: { client: Client }) {
         ) : (
           <>
             <p>Request a password-free sign-in link at the email address used for registration.</p>
+            <p>Can’t access that inbox or entered the address incorrectly? <a href="https://chisholmnetball.com/">Contact the club</a> for help.</p>
             {error ? <p role="alert">{error}</p> : null}
             <form onSubmit={(event) => void requestLink(event)}>
               <p><label htmlFor="parent-access-email">Parent or guardian email</label><input id="parent-access-email" type="email" autoComplete="email" required maxLength={320} value={email} onChange={(event) => setEmail(event.target.value)} /></p>
@@ -280,6 +300,8 @@ export function ParentAccessPage({ client }: { client: Client }) {
       <h2>Player registrations</h2>
       {registrations.map((registration) => {
         const draft = drafts[registration.id] ?? draftFrom(registration);
+        const checkoutNeedsRestart = checkoutClosed(registration);
+        const editingClosed = registration.event.status !== 'OPEN' || registration.checkedInAt !== null || registration.number !== null;
         return (
           <section className="parent-registration" key={registration.id} aria-labelledby={`parent-registration-${registration.id}`}>
             <h3 id={`parent-registration-${registration.id}`}>{registration.playerName} · {registration.event.name}</h3>
@@ -287,6 +309,9 @@ export function ParentAccessPage({ client }: { client: Client }) {
             <p role="status">{registrationStatus(registration)}</p>
             {registration.ticketPath ? <p><Link to={registration.ticketPath}>Open ticket</Link></p> : null}
             {registration.canContinueCheckout ? <p><button type="button" disabled={busyRegistration === registration.id} onClick={() => void continueCheckout(registration)}>Continue to Checkout</button></p> : null}
+            {checkoutNeedsRestart && registration.event.status === 'OPEN'
+              ? <p><Link to={`/register/${encodeURIComponent(registration.event.id)}`}>Start a new registration</Link></p>
+              : null}
             {registration.canEdit ? (
               <form onSubmit={(event) => void saveRegistration(registration.id, event)}>
                 <fieldset className="form-group" disabled={busyRegistration === registration.id}>
@@ -308,7 +333,10 @@ export function ParentAccessPage({ client }: { client: Client }) {
                 </fieldset>
                 <button type="submit" disabled={busyRegistration === registration.id}>Save changes</button>
               </form>
-            ) : <p>Editing is closed. Contact the club if a correction is needed.</p>}
+            ) : editingClosed
+              ? <p>Editing is closed. Contact the club if a correction is needed.</p>
+              : registration.status === 'WITHDRAWN' ? null
+                : <p>This registration is inactive. Start a new registration if the trial is still open.</p>}
             {registration.canWithdraw ? <button type="button" className="button-secondary" disabled={busyRegistration === registration.id} onClick={() => void withdraw(registration)}>Withdraw registration</button> : null}
             <p>Fee: {formatFee(registration.amountCents, registration.currency)} · Association: {registration.memberAssociation}</p>
           </section>

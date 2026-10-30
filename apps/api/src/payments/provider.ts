@@ -32,5 +32,9 @@ export type WebhookEvent =
 
 export interface PaymentProvider {
   createCheckout(request: CheckoutRequest, idempotencyKey: string): Promise<CheckoutSession>;
+  /** Expire an open Checkout session. Returns false when it has already completed. */
+  expireCheckout(sessionId: string): Promise<boolean>;
+  /** Local-only fake provider hook to prevent completing an expired test session. */
+  completeLocalCheckout?(sessionId: string): Promise<boolean>;
   parseWebhook(rawBody: Buffer, signature: string): WebhookEvent;
 }

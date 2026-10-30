@@ -147,22 +147,51 @@ export function createAdminPendingRegistration(
   return createPendingRegistrationWithPolicy(prisma, eventId, input, now, true);
 }
 
+export class RegistrationWithdrawalError extends Error {
+  constructor(readonly code: 'checkout_in_progress' | 'checkout_unavailable') {
+    super(code);
+    this.name = 'RegistrationWithdrawalError';
+  }
+}
+
 export async function withdrawRegistration(
   prisma: PrismaClient,
   eventId: string,
   registrationId: string,
   _now: Date,
+  expireCheckout?: (sessionId: string) => Promise<boolean>,
 ): Promise<Registration | null> {
+  const snapshot = await prisma.registration.findFirst({
+    where: { id: registrationId, eventId },
+    select: { status: true, checkoutSessionId: true },
+  });
+  if (!snapshot) return null;
+  if (snapshot.status === 'PENDING' && snapshot.checkoutSessionId) {
+    if (!expireCheckout) throw new RegistrationWithdrawalError('checkout_unavailable');
+    try {
+      if (!(await expireCheckout(snapshot.checkoutSessionId))) throw new RegistrationWithdrawalError('checkout_in_progress');
+    } catch (error) {
+      if (error instanceof RegistrationWithdrawalError) throw error;
+      throw new RegistrationWithdrawalError('checkout_unavailable');
+    }
+  }
+
   return prisma.$transaction(async (tx) => {
     const event = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE
     `);
     if (event.length === 0) return null;
     const result = await tx.registration.updateMany({
-      where: { id: registrationId, eventId },
+      where: { id: registrationId, eventId, checkoutSessionId: snapshot.checkoutSessionId },
       data: { status: 'WITHDRAWN', checkedInAt: null, checkedInBy: null, bibNumber: null },
     });
-    if (result.count === 0) return null;
+    if (result.count === 0) {
+      const current = await tx.registration.findFirst({ where: { id: registrationId, eventId }, select: { status: true, checkoutSessionId: true } });
+      if (current?.status === 'PENDING' && current.checkoutSessionId !== snapshot.checkoutSessionId) {
+        throw new RegistrationWithdrawalError('checkout_in_progress');
+      }
+      return null;
+    }
     return tx.registration.findUnique({ where: { id: registrationId } });
   });
 }

@@ -78,7 +78,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (registration.status === 'PAID') return { status: 'paid' as const };
 
       const now = new Date();
-      if (registration.status !== 'PENDING' || registration.expiresAt <= now) {
+      if (registration.status !== 'PENDING' || registration.expiresAt <= now || !deps.payment.completeLocalCheckout || !(await deps.payment.completeLocalCheckout(simulationToken))) {
         return { status: 'not_completed' as const };
       }
 

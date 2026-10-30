@@ -23,6 +23,7 @@ import { registerCommunicationRoutes } from './messages/communications-routes';
 import { registerPlayerHistoryRoutes } from './history/routes';
 import { registerRosterRoutes } from './roster/routes';
 import { registerParentAccessRoutes } from './parents/routes';
+import { assertNoUnverifiedPendingCheckouts } from './registrations/checkout';
 
 export type AppDeps = {
   prisma: PrismaClient;
@@ -141,6 +142,11 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   });
   deps.log = app.log;
   app.decorate('testDeps', deps);
+
+  app.addHook('onReady', async () => {
+    if (env.NODE_ENV !== 'production') return;
+    await assertNoUnverifiedPendingCheckouts(deps.prisma);
+  });
 
   // Fastify's default 404 handler logs the raw URL; reply the same way
   // without logging it.

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { withdrawRegistration } from '../registrations/service';
+import { RegistrationWithdrawalError, withdrawRegistration } from '../registrations/service';
 import { sendConfirmation } from '../registrations/confirmation';
 import { ensureReviewItems, listReviewQueue, resolveReviewItem } from './service';
 import { EmailBatchConflictError, countEventMessageRecipients, getDeliverySummary, reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../messages/service';
@@ -56,10 +56,14 @@ export function registerReviewRoutes(app: FastifyInstance, deps: AppDeps): void 
     { preHandler: requireAdmin(deps) },
     async (req, reply) => {
       const { id, registrationId } = req.params as { id: string; registrationId: string };
-      const withdrawn = await withdrawRegistration(deps.prisma, id, registrationId, new Date());
-      if (!withdrawn) {
-        return reply.code(404).send({ error: 'not_found' });
+      let withdrawn;
+      try {
+        withdrawn = await withdrawRegistration(deps.prisma, id, registrationId, new Date(), (sessionId) => deps.payment.expireCheckout(sessionId));
+      } catch (error) {
+        if (!(error instanceof RegistrationWithdrawalError)) throw error;
+        return reply.code(error.code === 'checkout_in_progress' ? 409 : 503).send({ error: error.code });
       }
+      if (!withdrawn) return reply.code(404).send({ error: 'not_found' });
       return {
         id: withdrawn.id,
         status: withdrawn.status,

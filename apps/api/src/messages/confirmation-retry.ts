@@ -24,7 +24,7 @@ export async function retryPendingConfirmations(
   now: Date,
   options: { dryRun?: boolean } = {},
 ): Promise<ConfirmationRetryResult> {
-  const rows = await deps.prisma.emailLog.findMany({
+  const candidates = await deps.prisma.emailLog.findMany({
     where: {
       kind: 'confirmation',
       status: { in: ['PENDING', 'FAILED'] },
@@ -35,6 +35,7 @@ export async function retryPendingConfirmations(
     include: { registration: { include: { event: true } } },
     orderBy: { createdAt: 'asc' },
   });
+  const rows = candidates.filter((row) => row.registration?.parentEmail.toLowerCase() === row.to.toLowerCase());
   const result: ConfirmationRetryResult = { due: rows.length, sent: 0, failed: 0, ambiguous: 0, errors: 0 };
   if (options.dryRun) return result;
 

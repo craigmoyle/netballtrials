@@ -89,6 +89,7 @@ export async function anonymizeExpiredRegistrations(
         if (claimed.count !== 1) continue;
 
         await tx.reviewItem.deleteMany({ where: { registrationId: registration.id } });
+        await tx.registrationChangeLog.deleteMany({ where: { registrationId: registration.id } });
         await tx.roundPlanPlayer.updateMany({
           where: { registrationId: registration.id },
           data: { registrationId: anonymizedRef, playerName: 'Former participant', bibNumber: null },
@@ -132,10 +133,16 @@ export async function anonymizeIncompleteRegistrations(
   onDeferred?: (deferral: RetentionDeferral) => void,
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - INCOMPLETE_REGISTRATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const incompleteStatuses: Prisma.RegistrationWhereInput = {
+    OR: [
+      { status: { in: ['PENDING', 'EXPIRED', 'FAILED'] } },
+      { status: 'WITHDRAWN', paidAt: null },
+    ],
+  };
   const candidates = await prisma.registration.findMany({
     where: {
       createdAt: { lt: cutoff },
-      status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
+      ...incompleteStatuses,
       anonymizedAt: null,
     },
     select: { id: true, eventId: true, status: true, parentEmail: true },
@@ -168,14 +175,14 @@ export async function anonymizeIncompleteRegistrations(
       }
 
       const expired = await tx.registration.findMany({
-        where: { id: { in: ids }, status: { in: ['PENDING', 'EXPIRED', 'FAILED'] }, anonymizedAt: null },
+        where: { id: { in: ids }, ...incompleteStatuses, anonymizedAt: null },
         select: { id: true, status: true, parentEmail: true },
       });
       let count = 0;
       for (const registration of expired) {
         const anonymizedRef = `anon_${randomUUID()}`;
         const claimed = await tx.registration.updateMany({
-          where: { id: registration.id, status: { in: ['PENDING', 'EXPIRED', 'FAILED'] }, anonymizedAt: null },
+          where: { id: registration.id, ...incompleteStatuses, anonymizedAt: null },
           data: {
             playerFirstName: '',
             playerLastName: '',

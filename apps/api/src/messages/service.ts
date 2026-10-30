@@ -113,7 +113,12 @@ async function prepareBatch(
 
     if (onlyRecipient) {
       const registration = onlyRecipient.registrationId && await tx.registration.findFirst({
-        where: { id: onlyRecipient.registrationId, eventId, ...mailRegistrationEligibility(kind, now) },
+        where: {
+          id: onlyRecipient.registrationId,
+          eventId,
+          parentEmail: { equals: onlyRecipient.email, mode: 'insensitive' },
+          ...mailRegistrationEligibility(kind, now),
+        },
       });
       if (!registration || !registration.parentEmail.trim()) return [];
     }
@@ -204,14 +209,9 @@ async function dispatchOne(
       : await tx.registration.findFirst({
           where: {
             eventId: current.eventId,
+            parentEmail: { equals: current.to, mode: 'insensitive' },
             ...mailRegistrationEligibility(current.kind, now),
-            OR: [
-              { id: current.registrationId ?? '' },
-              // A batch represents a household, not just the first paid sibling.
-              ...(['message', 'reminder'].includes(current.kind)
-                ? [{ parentEmail: { equals: current.to, mode: 'insensitive' as const } }]
-                : []),
-            ],
+            ...(['message', 'reminder'].includes(current.kind) ? {} : { id: current.registrationId ?? '' }),
           },
           select: { id: true },
         });

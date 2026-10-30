@@ -4,7 +4,7 @@ import { prisma } from '../../db';
 import { loadEnv } from '../../env';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { createFakePaymentProvider } from '../../payments/fake';
-import { createRegistrationCheckout, sendCheckoutContinuation } from '../../registrations/checkout';
+import { assertNoUnverifiedPendingCheckouts, createRegistrationCheckout, expireUnverifiedPendingCheckouts, sendCheckoutContinuation } from '../../registrations/checkout';
 import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
@@ -31,6 +31,35 @@ async function createPendingRegistration() {
   const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
   return prisma.registration.create({ data: registrationFixture(event.id) });
 }
+
+describe('expireUnverifiedPendingCheckouts', () => {
+  it('expires legacy unverified sessions and reports sessions that cannot be expired', async () => {
+    const expiredRegistration = await createPendingRegistration();
+    const unresolvedRegistration = await prisma.registration.create({
+      data: registrationFixture(expiredRegistration.eventId, {
+        playerFirstName: 'Grace', playerNameNormalized: 'grace hopper', checkoutSessionId: 'cs_unresolved',
+      }),
+    });
+    const withdrawnRegistration = await prisma.registration.create({
+      data: registrationFixture(expiredRegistration.eventId, { playerFirstName: 'Dorothy', playerNameNormalized: 'dorothy vaughan' }),
+    });
+    const { deps, payment } = makeDeps();
+    const session = await createRegistrationCheckout(deps, expiredRegistration);
+    const withdrawnSession = await createRegistrationCheckout(deps, withdrawnRegistration);
+    expect(session).not.toBeNull();
+    expect(withdrawnSession).not.toBeNull();
+    await prisma.registration.update({ where: { id: withdrawnRegistration.id }, data: { status: 'WITHDRAWN' } });
+
+    const result = await expireUnverifiedPendingCheckouts(prisma, payment);
+    expect(result).toEqual({ found: 3, markedExpired: 2, unresolved: [unresolvedRegistration.id] });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: expiredRegistration.id } })).toMatchObject({ status: 'EXPIRED', checkoutSessionId: null });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: withdrawnRegistration.id } })).toMatchObject({ status: 'WITHDRAWN', checkoutSessionId: null });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: unresolvedRegistration.id } })).toMatchObject({ status: 'PENDING', checkoutSessionId: 'cs_unresolved' });
+    await expect(assertNoUnverifiedPendingCheckouts(prisma)).rejects.toThrow(/checkout:cutover/);
+    await prisma.registration.update({ where: { id: unresolvedRegistration.id }, data: { status: 'EXPIRED', checkoutSessionId: null } });
+    await expect(assertNoUnverifiedPendingCheckouts(prisma)).resolves.toBeUndefined();
+  });
+});
 
 describe('createRegistrationCheckout', () => {
   it('persists a fake session without sending a checkout email', async () => {

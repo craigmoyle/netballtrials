@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -115,6 +115,10 @@ export function apiClient(baseUrl: string) {
       request<{ status: 'email_updated'; email: string }>(baseUrl, '/api/parent/email-change/confirm', { method: 'POST', body: JSON.stringify({ token }) }),
     listIncompleteRegistrations: (eventId: string) =>
       request<IncompleteRegistrationDTO[]>(baseUrl, `/api/admin/events/${eventId}/incomplete-registrations`),
+    getRegistrationChanges: (eventId: string, registrationId: string) =>
+      request<RegistrationChangeDTO[]>(baseUrl, `/api/admin/events/${eventId}/registrations/${registrationId}/changes`),
+    requestIncompleteRegistrationEmailCorrection: (eventId: string, registrationId: string, email: string, familyConfirmed: true) =>
+      request<{ status: 'sent' }>(baseUrl, `/api/admin/events/${eventId}/incomplete-registrations/${registrationId}/email-correction`, { method: 'POST', body: JSON.stringify({ email, familyConfirmed }) }),
     sendIncompleteRegistrationReminder: (eventId: string, registrationId: string) =>
       request<{ status: 'sent' }>(baseUrl, `/api/admin/events/${eventId}/incomplete-registrations/${registrationId}/reminder`, { method: 'POST' }),
     requestLink: (email: string) =>

@@ -308,6 +308,12 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText('Scroll horizontally to view all roster details.')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expectAccessible(page);
+  await page.getByRole('link', { name: 'View changes' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Registration change history' })).toBeVisible();
+  await expect(page.getByText('No recorded changes.')).toBeVisible();
+  await expectAccessible(page);
+  await page.getByRole('link', { name: 'Back to event roster' }).click();
+  await expect(page.getByRole('heading', { name: 'Event roster' })).toBeVisible();
   const [csv] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download roster CSV' }).click(),
@@ -371,6 +377,10 @@ test('Parent magic link manages every registration linked to the guardian email'
   await page.getByLabel('Parent or guardian email').fill('parent1@example.test');
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page.getByRole('status')).toHaveText(genericResponse);
+  await expect.poll(async () => {
+    const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=parent1%40example.test`).then((response) => response.json());
+    return outbox.messages.some((message: { subject: string }) => message.subject.includes('Sign in to manage'));
+  }).toBe(true);
   const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=parent1%40example.test`).then((response) => response.json());
   const signInEmail = outbox.messages.find((message: { subject: string }) => message.subject.includes('Sign in to manage'));
   const link = signInEmail?.text.match(/https?:\/\/[^\s]+/)?.[0];
