@@ -22,6 +22,7 @@ model StaffUser {
   sessions          Session[]
   emailDeliveries   EmailLog[]    @relation("EmailLogSender")
   scheduledMessages ScheduledMessage[] @relation("ScheduledMessageSender")
+  siteAssociationCommunications SiteAssociationCommunication[] @relation("SiteAssociationCommunicationSender")
 }
 
 model LoginToken {
@@ -90,6 +91,7 @@ model Event {
   reviewItems          ReviewItem[]
   emailLogs            EmailLog[]
   scheduledMessages    ScheduledMessage[]
+  siteAssociationCommunications SiteAssociationCommunication[] @relation("SiteAssociationCommunicationAnchor")
   courtColors          EventCourtColor[]
   policyDocument       EventPolicyDocument?
   publishedPlanId      String?
@@ -122,6 +124,7 @@ model EmailTemplate {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   scheduledMessages ScheduledMessage[]
+  siteAssociationCommunications SiteAssociationCommunication[]
 }
 
 enum ScheduledMessageStatus {
@@ -157,6 +160,34 @@ model ScheduledMessage {
 
   @@index([status, scheduledAt])
   @@index([eventId, scheduledAt])
+}
+
+model SiteAssociationCommunication {
+  id            String                 @id @default(cuid())
+  anchorEventId String
+  anchorEvent   Event                  @relation("SiteAssociationCommunicationAnchor", fields: [anchorEventId], references: [id], onDelete: Cascade)
+  eventIds      Json
+  recipientIds  Json
+  eventList     String
+  senderUserId  String?
+  sender        StaffUser?             @relation("SiteAssociationCommunicationSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  templateId    String?
+  template      EmailTemplate?         @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  batchId       String                 @unique
+  subject       String
+  body          String
+  scheduledAt   DateTime?
+  status        ScheduledMessageStatus @default(SENDING)
+  attempts      Int                    @default(0)
+  lastAttemptAt DateTime?
+  completedAt   DateTime?
+  error         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  deliveries    EmailLog[]
+
+  @@index([status, scheduledAt])
+  @@index([anchorEventId, scheduledAt])
 }
 
 model BibColor {
@@ -429,9 +460,11 @@ model EmailLog {
   event          Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   registrationId String?
   registration   Registration?       @relation(fields: [registrationId], references: [id], onDelete: Cascade)
-  associationId  String?
-  association    MemberAssociation?  @relation(fields: [associationId], references: [id], onDelete: SetNull)
-  senderUserId   String?
+  associationId       String?
+  association         MemberAssociation?            @relation(fields: [associationId], references: [id], onDelete: SetNull)
+  siteCommunicationId String?
+  siteCommunication   SiteAssociationCommunication? @relation(fields: [siteCommunicationId], references: [id], onDelete: Cascade)
+  senderUserId        String?
   sender         StaffUser?          @relation("EmailLogSender", fields: [senderUserId], references: [id], onDelete: SetNull)
   batchId        String
   idempotencyKey String              @unique
@@ -451,4 +484,5 @@ model EmailLog {
 
   @@index([eventId, sentAt])
   @@index([batchId, status])
+  @@index([siteCommunicationId])
 }

@@ -43,6 +43,8 @@ describe('Melbourne event start and reminders', () => {
     const first = await sendDueReminders({ prisma, mailer }, now);
     expect(first).toMatchObject({ sent: 2, failed: 0, ambiguous: 0, events: 1 });
     expect(mailer.sent.map((message) => message.to).sort()).toEqual(['anne@example.com', 'bo@example.com']);
+    expect(mailer.sent[0].attachments?.[0]).toMatchObject({ filename: `${event.id}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH' });
+    expect(Buffer.from(mailer.sent[0].attachments![0].content).toString()).toContain(`UID:${event.id}@chisholmnetball.com`);
     const second = await sendDueReminders({ prisma, mailer }, new Date(now.getTime() + 60_000));
     expect(second.sent).toBe(0);
     expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'reminder' } })).toBe(2);

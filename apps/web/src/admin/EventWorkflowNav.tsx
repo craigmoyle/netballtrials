@@ -30,8 +30,12 @@ const workflowGroups: WorkflowGroup[] = [
   },
   {
     label: 'Trial day',
+    workflows: [],
+  },
+  {
+    label: 'Communications',
     workflows: [
-      { id: 'messages', label: 'Communications', path: '/communications' },
+      { id: 'messages', label: 'Event communications', path: '/communications' },
     ],
   },
 ];

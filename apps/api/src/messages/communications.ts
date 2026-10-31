@@ -4,6 +4,8 @@ import type { CommunicationRecipientDTO, ScheduledMessageDTO } from '@netball-tr
 import { lockMailEvent, mailRegistrationEligibility } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
 import { deliveryIdempotencyKey, dispatchSelectedRows, EmailBatchConflictError, type DeliverySummary } from './service';
+import { renderEmailTemplate } from './template-renderer';
+import { runDueSiteAssociationCommunications } from './site-association-communications';
 
 export type CommunicationAudience = 'participants' | 'associations';
 export type SelectedCommunication = { audience: CommunicationAudience; recipientIds: string[] };
@@ -74,54 +76,92 @@ async function createSelectedRows(
   policyAttachment?: { fileName: string; contentBase64: string } | null,
 ): Promise<Prisma.EmailLogGetPayload<{}>[]> {
   return prisma.$transaction(async (tx) => {
-    const event = await lockMailEvent(tx, eventId);
-    if (!event || isPastRetentionCutoff(event.eventDate, now)) return [];
+    const lockedEvent = await lockMailEvent(tx, eventId);
+    if (!lockedEvent || isPastRetentionCutoff(lockedEvent.eventDate, now)) return [];
+    const event = await tx.event.findUnique({ where: { id: eventId }, select: { name: true, eventDate: true, venue: true, startTime: true, gameStartTime: true } });
+    if (!event) return [];
     const kind = selected.audience === 'associations' ? 'association' : 'message';
     const messagePayload = policyAttachment ? { attachments: [{ filename: policyAttachment.fileName, contentType: 'application/pdf', contentBase64: policyAttachment.contentBase64 }] } : null;
-    const existing = await tx.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
-    if (existing.length) {
-      if (existing.some((row) => row.eventId !== eventId || row.subject !== subject || row.body !== body || row.kind !== kind || JSON.stringify(row.messagePayload ?? null) !== JSON.stringify(messagePayload))) {
-        throw new EmailBatchConflictError();
-      }
-      return existing;
-    }
-
     const recipientIds = [...new Set(selected.recipientIds)];
     if (recipientIds.length === 0) return [];
-    const targets: Array<{ to: string; registrationId: string | null; associationId: string | null }> = [];
+    const eventFields = {
+      eventName: event.name,
+      eventDate: event.eventDate.toISOString().slice(0, 10),
+      arrivalTime: event.startTime,
+      startTime: event.gameStartTime,
+      venue: event.venue,
+      eventList: `${event.name} — ${event.eventDate.toISOString().slice(0, 10)} at ${event.startTime}, ${event.venue}`,
+    };
+    type Target = { to: string; registrationId: string | null; associationId: string | null; fields: Record<string, string> };
+    const targets: Target[] = [];
     if (selected.audience === 'participants') {
       const registrations = await tx.registration.findMany({
         where: { eventId, id: { in: recipientIds }, ...mailRegistrationEligibility('message', now) },
-        select: { id: true, parentEmail: true },
+        select: { id: true, parentEmail: true, parentName: true, playerFirstName: true, playerLastName: true, bibNumber: true, memberAssociation: true },
         orderBy: [{ parentEmail: 'asc' }, { id: 'asc' }],
       });
-      const byEmail = new Map<string, string>();
+      const byEmail = new Map<string, typeof registrations>();
       for (const registration of registrations) {
         const email = registration.parentEmail.trim().toLowerCase();
-        if (email && !byEmail.has(email)) byEmail.set(email, registration.id);
+        if (email) byEmail.set(email, [...(byEmail.get(email) ?? []), registration]);
       }
-      for (const [to, registrationId] of byEmail) targets.push({ to, registrationId, associationId: null });
+      for (const [to, players] of byEmail) {
+        const names = players.map((player) => `${player.playerFirstName} ${player.playerLastName}`.trim()).filter(Boolean);
+        const onlyPlayer = players.length === 1 ? players[0] : null;
+        targets.push({
+          to, registrationId: players[0].id, associationId: null,
+          fields: {
+            ...eventFields,
+            playerFirstName: onlyPlayer?.playerFirstName ?? '',
+            playerLastName: onlyPlayer?.playerLastName ?? '',
+            playerName: onlyPlayer ? `${onlyPlayer.playerFirstName} ${onlyPlayer.playerLastName}`.trim() : '',
+            playerNames: names.join(', '),
+            playerNumber: onlyPlayer?.bibNumber === null || !onlyPlayer ? '' : String(onlyPlayer.bibNumber),
+            parentName: players[0].parentName,
+            associationName: players[0].memberAssociation,
+          },
+        });
+      }
     } else {
       const associations = await tx.memberAssociation.findMany({
         where: { id: { in: recipientIds }, active: true, primaryContactEmail: { not: null } },
-        select: { id: true, primaryContactEmail: true },
+        select: { id: true, name: true, primaryContactName: true, primaryContactEmail: true },
         orderBy: { name: 'asc' },
       });
-      const byEmail = new Map<string, string>();
+      const byEmail = new Map<string, (typeof associations)[number]>();
       for (const association of associations) {
         const email = association.primaryContactEmail?.trim().toLowerCase();
-        if (email && !byEmail.has(email)) byEmail.set(email, association.id);
+        if (email && !byEmail.has(email)) byEmail.set(email, association);
       }
-      for (const [to, associationId] of byEmail) targets.push({ to, registrationId: null, associationId });
+      for (const [to, association] of byEmail) targets.push({
+        to, registrationId: null, associationId: association.id,
+        fields: { ...eventFields, associationName: association.name, contactName: association.primaryContactName ?? '' },
+      });
+    }
+
+    const messages = targets.map((target) => ({
+      ...target,
+      subject: renderEmailTemplate(subject, target.fields),
+      body: renderEmailTemplate(body, target.fields),
+    }));
+    const existing = await tx.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
+    if (existing.length) {
+      if (existing.length !== messages.length) throw new EmailBatchConflictError();
+      const expected = new Map(messages.map((message) => [message.to, message]));
+      if (existing.some((row) => {
+        const message = expected.get(row.to.trim().toLowerCase());
+        return !message || row.eventId !== eventId || row.subject !== message.subject || row.body !== message.body || row.kind !== kind || JSON.stringify(row.messagePayload ?? null) !== JSON.stringify(messagePayload);
+      })) throw new EmailBatchConflictError();
+      return existing;
     }
 
     await tx.emailLog.createMany({
       skipDuplicates: true,
-      data: targets.map((target) => ({
-        eventId, registrationId: target.registrationId, associationId: target.associationId,
+      data: messages.map((message) => ({
+        eventId, registrationId: message.registrationId, associationId: message.associationId,
         senderUserId: senderUserId ?? null, batchId,
-        idempotencyKey: deliveryIdempotencyKey(batchId, target.to),
-        to: target.to, subject, body, kind, status: 'PENDING',
+        idempotencyKey: deliveryIdempotencyKey(batchId, message.to),
+        to: message.to, subject: message.subject, body: message.body, kind, status: 'PENDING',
         messagePayload: messagePayload ? messagePayload as Prisma.InputJsonObject : Prisma.DbNull,
       })),
     });
@@ -213,5 +253,6 @@ export async function runDueScheduledMessages(
       failed += 1;
     }
   }
-  return { completed, failed };
+  const siteResults = await runDueSiteAssociationCommunications(deps.prisma, deps, now);
+  return { completed: completed + siteResults.completed, failed: failed + siteResults.failed };
 }

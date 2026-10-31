@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { prisma } from '../db';
 import { loadEnv } from '../env';
 import { createStripePaymentProvider } from '../payments/stripe';
+import { IntegrationSettings } from '../integrations/settings';
 import { expireUnverifiedPendingCheckouts } from '../registrations/checkout';
 
 async function main(): Promise<void> {
@@ -9,7 +10,9 @@ async function main(): Promise<void> {
   if (env.NODE_ENV !== 'production' || env.PAYMENT_PROVIDER !== 'stripe') {
     throw new Error('Checkout cutover requires NODE_ENV=production and PAYMENT_PROVIDER=stripe');
   }
-  const payment = createStripePaymentProvider({ secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET });
+  const credentials = await new IntegrationSettings(env).readCredentials();
+  if (!credentials.stripe) throw new Error('Stripe credentials are not configured');
+  const payment = createStripePaymentProvider(credentials.stripe);
   const result = await expireUnverifiedPendingCheckouts(prisma, payment);
   console.log(`checkout cutover: found ${result.found}; marked expired ${result.markedExpired}; unresolved ${result.unresolved.length}`);
   if (result.unresolved.length > 0) {

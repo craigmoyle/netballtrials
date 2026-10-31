@@ -20,13 +20,14 @@ describe('site navigation', () => {
     unmount();
   });
 
-  it('groups lower-emphasis staff access links under a visible label', () => {
+  it('offers parent registration access alongside staff and volunteer links', () => {
     render(<MemoryRouter><PublicAccessNav /></MemoryRouter>);
-    const nav = screen.getByRole('navigation', { name: 'Staff and volunteer access' });
+    const nav = screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
 
+    expect(within(nav).getByRole('link', { name: 'Manage registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(within(nav).getByText('Staff & volunteers')).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(nav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
-    expect(within(nav).getAllByRole('link')).toHaveLength(2);
+    expect(within(nav).getAllByRole('link')).toHaveLength(3);
   });
 });

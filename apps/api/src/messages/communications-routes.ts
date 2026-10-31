@@ -9,6 +9,7 @@ import {
   getScheduledMessages, listCommunicationRecipients, previewSelectedRecipients, sendSelectedCommunication,
   type CommunicationAudience, type SelectedCommunication,
 } from './communications';
+import { unsupportedTemplateFields } from './template-renderer';
 
 const audience = z.enum(['participants', 'associations']);
 const selectedSchema = z.object({ audience, recipientIds: z.array(z.string().min(1)).max(500) });
@@ -49,6 +50,8 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
   app.post('/api/admin/communications/templates', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = templateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const unsupported = unsupportedTemplateFields(parsed.data.audience, parsed.data.subject, parsed.data.body);
+    if (unsupported.length) return reply.code(400).send({ error: 'unsupported_template_fields', fields: unsupported });
     try {
       const created = await deps.prisma.emailTemplate.create({ data: parsed.data });
       return reply.code(201).send({ ...created, createdAt: created.createdAt.toISOString(), updatedAt: created.updatedAt.toISOString() });
@@ -61,6 +64,8 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
   app.put('/api/admin/communications/templates/:templateId', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = templateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const unsupported = unsupportedTemplateFields(parsed.data.audience, parsed.data.subject, parsed.data.body);
+    if (unsupported.length) return reply.code(400).send({ error: 'unsupported_template_fields', fields: unsupported });
     const { templateId } = req.params as { templateId: string };
     try {
       const updated = await deps.prisma.emailTemplate.update({ where: { id: templateId }, data: parsed.data });
@@ -97,6 +102,8 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
   app.post('/api/admin/events/:id/communications/send', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = messageSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const unsupported = unsupportedTemplateFields(parsed.data.audience, parsed.data.subject, parsed.data.text);
+    if (unsupported.length) return reply.code(400).send({ error: 'unsupported_template_fields', fields: unsupported });
     const { id } = req.params as { id: string };
     const selectedRecipients = selected(parsed.data);
     const preview = await previewSelectedRecipients(deps.prisma, id, selectedRecipients);
@@ -117,6 +124,8 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
   app.post('/api/admin/events/:id/communications/schedule', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = scheduleSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const unsupported = unsupportedTemplateFields(parsed.data.audience, parsed.data.subject, parsed.data.text);
+    if (unsupported.length) return reply.code(400).send({ error: 'unsupported_template_fields', fields: unsupported });
     const { id } = req.params as { id: string };
     let scheduledAt: Date;
     try { scheduledAt = scheduledLocalToUtc(parsed.data.scheduledLocal); }
@@ -179,7 +188,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const event = await deps.prisma.event.findUnique({ where: { id }, select: { id: true } });
     if (!event) return reply.code(404).send({ error: 'not_found' });
     await reconcileStaleDeliveries(deps.prisma, new Date());
-    const rows = await deps.prisma.emailLog.findMany({ where: { eventId: id }, orderBy: { createdAt: 'desc' } });
+    const rows = await deps.prisma.emailLog.findMany({ where: { eventId: id, siteCommunicationId: null }, orderBy: { createdAt: 'desc' } });
     return rows.map((row) => ({
       id: row.id, registrationId: row.registrationId, associationId: row.associationId,
       senderUserId: row.senderUserId, batchId: row.batchId, to: row.to, subject: row.subject,

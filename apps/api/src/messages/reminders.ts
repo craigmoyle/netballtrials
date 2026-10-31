@@ -3,6 +3,7 @@ import type { EmailProvider } from '../mail/provider';
 import { mailRegistrationEligibility } from '../mail/lifecycle';
 import { localDateTimeToUtc } from '../time/melbourne';
 import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage } from './service';
+import { buildTrialCalendar } from '../registrations/calendar';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,7 +34,7 @@ export async function sendDueReminders(
 ): Promise<ReminderRunResult> {
   const events = await deps.prisma.event.findMany({
     where: { eventDate: eventDateBounds(now) },
-    select: { id: true, name: true, eventDate: true, venue: true, startTime: true },
+    select: { id: true, name: true, eventDate: true, venue: true, startTime: true, endTime: true, gameStartTime: true, createdAt: true },
     orderBy: [{ eventDate: 'asc' }, { id: 'asc' }],
   });
   let sent = 0;
@@ -61,6 +62,11 @@ export async function sendDueReminders(
         {
           subject: `Reminder: ${event.name}`,
           text: `${event.name} is at ${event.venue} on ${event.eventDate.toISOString().slice(0, 10)} at ${event.startTime}. See you there.`,
+          attachments: [{
+            filename: `${event.id}.ics`,
+            contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
+            content: Buffer.from(buildTrialCalendar(event, `${event.id}@chisholmnetball.com`, event.createdAt), 'utf8'),
+          }],
         },
         now,
         'reminder',

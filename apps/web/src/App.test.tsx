@@ -7,6 +7,10 @@ const apiMocks = vi.hoisted(() => ({
   me: vi.fn(),
   logout: vi.fn(),
   listEvents: vi.fn(),
+  listAssociations: vi.fn(),
+  getIntegrationSettings: vi.fn(),
+  listSiteAssociationCampaigns: vi.fn(),
+  listCommunicationTemplates: vi.fn(),
   getEvent: vi.fn(),
   checkInSettings: vi.fn(),
   checkInSummary: vi.fn(),
@@ -61,6 +65,11 @@ beforeEach(() => {
   apiMocks.logout.mockResolvedValue(undefined);
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
+  apiMocks.listEvents.mockResolvedValue([]);
+  apiMocks.listAssociations.mockResolvedValue([]);
+  apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
+  apiMocks.listSiteAssociationCampaigns.mockResolvedValue([]);
+  apiMocks.listCommunicationTemplates.mockResolvedValue([]);
   apiMocks.checkInSettings.mockResolvedValue({ pinConfigured: false, checkInClosedAt: null });
   apiMocks.checkInSummary.mockResolvedValue({ eventId: 'check-in-event', eventName: 'E2E Check-in', registered: 14, checkedIn: 0, closed: false });
   apiMocks.openAdminCheckIn.mockResolvedValue({ eventName: 'E2E Check-in' });
@@ -97,11 +106,12 @@ describe('Public home page', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
     expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
-    const accessNav = screen.getByRole('navigation', { name: 'Staff and volunteer access' });
+    const accessNav = screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
+    expect(within(accessNav).getByRole('link', { name: 'Manage registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(within(accessNav).getByText('Staff & volunteers')).toBeInTheDocument();
     expect(within(accessNav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(accessNav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
-    expect(within(accessNav).getAllByRole('link')).toHaveLength(2);
+    expect(within(accessNav).getAllByRole('link')).toHaveLength(3);
     expect(await screen.findByRole('heading', { name: '15/U State Titles Trial' })).toBeInTheDocument();
     expect(screen.getByText(/35\.00/)).toBeInTheDocument();
     expect(screen.getByText('1 March 2099')).toBeInTheDocument();
@@ -115,7 +125,7 @@ describe('Public home page', () => {
     expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'After you register' })).toBeInTheDocument();
     expect(screen.getByText(/confirm the parent or guardian email, then complete secure checkout/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage registrations' })).toHaveAttribute('href', '/manage-registration');
+    expect(within(accessNav).getByRole('link', { name: 'Manage registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(screen.getByRole('link', { name: 'Chisholm Netball website' })).toHaveAttribute('href', 'https://chisholmnetball.com/');
     expect(apiMocks.me).not.toHaveBeenCalled();
   });
@@ -170,7 +180,7 @@ describe('App route boundaries', () => {
     });
     renderApp('/register/event-1');
     expect(await screen.findByRole('heading', { name: 'Trials' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' })).toBeInTheDocument();
     expect(apiMocks.getPublicEvent).toHaveBeenCalledWith('event-1');
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Register for trials | Chisholm Netball Trials'));
@@ -209,7 +219,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/admin/events');
     expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' })).toBeInTheDocument();
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
   });
@@ -220,9 +230,11 @@ describe('App route boundaries', () => {
     renderApp('/admin/events');
     const newEvent = await screen.findByRole('link', { name: 'New event' });
     expect(screen.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
-    expect(screen.getByRole('navigation', { name: 'Administration' })).toBeInTheDocument();
+    const adminNavigation = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(adminNavigation).getByRole('link', { name: 'Communications' })).toHaveAttribute('href', '/admin/communications');
+    expect(within(adminNavigation).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/admin/settings');
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    expect(screen.queryByRole('navigation', { name: 'Staff and volunteer access' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Parent, staff and volunteer access' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Events | Chisholm Netball Trials'));
     fireEvent.click(newEvent);
     expect(await screen.findByRole('heading', { name: 'New event' })).toBeInTheDocument();
@@ -230,6 +242,32 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/new');
     await waitFor(() => expect(document.title).toBe('New event | Chisholm Netball Trials'));
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads the site-level association communications workspace for an Admin', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.listEvents.mockResolvedValue([]);
+    apiMocks.listAssociations.mockResolvedValue([]);
+    apiMocks.listCommunicationTemplates.mockResolvedValue([]);
+    apiMocks.listSiteAssociationCampaigns.mockResolvedValue([]);
+    renderApp('/admin/communications');
+
+    expect(await screen.findByRole('heading', { name: 'Communications' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Communications sections' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Events to include' })).toBeInTheDocument();
+    expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows integration settings without credentials in the test environment', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
+    renderApp('/admin/settings');
+
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(await screen.findByText(/uses fake payment and email providers/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/new stripe secret key/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/new gmail oauth refresh token/i)).not.toBeInTheDocument();
+    expect(apiMocks.getIntegrationSettings).toHaveBeenCalledTimes(1);
   });
 
   it('allows a signed-in Admin to start event-scoped check-in without a PIN', async () => {
@@ -381,7 +419,7 @@ describe('App route boundaries', () => {
     expect(within(checkInNav).getByRole('link', { name: 'Scan' })).toHaveAttribute('href', '/check-in/scan');
     expect(within(checkInNav).getByRole('link', { name: 'Lookup' })).toHaveAttribute('href', '/check-in/lookup');
     expect(within(checkInNav).getByRole('link', { name: 'Lookup' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.queryByRole('navigation', { name: 'Staff and volunteer access' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Parent, staff and volunteer access' })).not.toBeInTheDocument();
     expect(apiMocks.me).not.toHaveBeenCalled();
   });
 
@@ -447,10 +485,11 @@ describe('App route boundaries', () => {
     }]);
     renderApp('/check-in');
     expect(await screen.findByRole('heading', { name: 'Check-in' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Staff and volunteer access' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' })).toBeInTheDocument();
     expect(await screen.findByRole('option', { name: /17\/u state titles trial.*chisholm netball centre/i })).toBeInTheDocument();
     expect(screen.getByLabelText('Event PIN')).toHaveAttribute('type', 'password');
     expect(screen.getByText(/choose your trial, then enter the event pin/i)).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' })).toBeInTheDocument();
     expect(apiMocks.listPublicEvents).toHaveBeenCalledTimes(1);
     expect(apiMocks.me).not.toHaveBeenCalled();
     await waitFor(() => expect(document.title).toBe('Volunteer check-in | Chisholm Netball Trials'));

@@ -29,6 +29,8 @@ import { BibColorsPage } from './admin/BibColorsPage';
 import { StaffAccessPage } from './admin/StaffAccessPage';
 import { PlayerHistoryPage } from './admin/PlayerHistoryPage';
 import { IncompleteRegistrationsPage } from './admin/IncompleteRegistrationsPage';
+import { SiteCommunicationsPage } from './admin/SiteCommunicationsPage';
+import { SettingsPage } from './admin/SettingsPage';
 import { PublicHomePage } from './routes/PublicHomePage';
 import { ParentAccessPage } from './routes/ParentAccessPage';
 import { PublicSiteHeader } from './SiteNavigation';
@@ -53,6 +55,8 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/roster\/[^/]+\/changes$/, 'Registration change history'],
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/events\/[^/]+\/incomplete$/, 'Incomplete registrations'],
+  [/^\/admin\/communications$/, 'Communications'],
+  [/^\/admin\/settings$/, 'Settings'],
   [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/bib-colors$/, 'Bib colors'],
   [/^\/admin\/staff$/, 'Staff access'],
@@ -239,6 +243,8 @@ export function App() {
           <Route path="communications" element={<MessagesRoute client={client} />} />
           <Route path="messages" element={<MessagesRoute client={client} />} />
         </Route>
+        <Route path="communications" element={<SiteCommunicationsPage client={client} />} />
+        <Route path="settings" element={<SettingsPage client={client} />} />
         <Route path="associations" element={<AssociationsPage client={client} />} />
         <Route path="bib-colors" element={<BibColorsPage client={client} />} />
         <Route path="staff" element={<StaffAccessPage client={client} />} />

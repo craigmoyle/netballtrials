@@ -29,6 +29,7 @@ describe('EventWorkflowNav', () => {
     const registrationGroup = within(nav).getByRole('group', { name: 'Registration' });
     const planningGroup = within(nav).getByRole('group', { name: 'Planning' });
     const trialDayGroup = within(nav).getByRole('group', { name: 'Trial day' });
+    const communicationsGroup = within(nav).getByRole('group', { name: 'Communications' });
 
     expect(within(eventGroup).getByRole('link', { name: 'Event settings' })).toHaveAttribute('href', '/admin/events/e1');
     expect(within(eventGroup).getByRole('link', { name: 'Event operations' })).toHaveAttribute('aria-current', 'page');
@@ -37,7 +38,7 @@ describe('EventWorkflowNav', () => {
     expect(within(registrationGroup).getByRole('link', { name: 'Incomplete registrations' })).toHaveAttribute('href', '/admin/events/e1/incomplete');
     expect(within(planningGroup).getByRole('link', { name: 'Plan rounds' })).toBeInTheDocument();
     expect(within(planningGroup).getByRole('link', { name: 'Print selector sheets' })).toBeInTheDocument();
-    expect(within(trialDayGroup).getByRole('link', { name: 'Communications' })).toBeInTheDocument();
+    expect(within(communicationsGroup).getByRole('link', { name: 'Event communications' })).toHaveAttribute('href', '/admin/events/e1/communications');
     expect(within(trialDayGroup).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in?eventId=e1');
     const toggle = screen.getByRole('button', { name: 'Event tools: Event operations' });
     const links = nav.querySelector('#event-workflow-links')!;
@@ -47,7 +48,7 @@ describe('EventWorkflowNav', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(links).toHaveClass('is-open');
-    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Incomplete registrations', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Communications', 'Volunteer check-in']) {
+    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Incomplete registrations', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Event communications', 'Volunteer check-in']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });

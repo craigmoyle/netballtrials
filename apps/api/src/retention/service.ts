@@ -119,6 +119,7 @@ export async function anonymizeExpiredRegistrations(
       `);
       await tx.reviewItem.deleteMany({ where: { eventId } });
       await tx.scheduledMessage.deleteMany({ where: { eventId } });
+      await tx.siteAssociationCommunication.deleteMany({ where: { anchorEventId: eventId } });
       await tx.checkInSession.deleteMany({ where: { eventId } });
       return count;
     }, { timeout: 60_000 });

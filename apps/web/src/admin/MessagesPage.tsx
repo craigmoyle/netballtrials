@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, ScheduledMessageDTO } from '@netball-trials/types';
-import type { ApiClient as Client } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 
 type Audience = 'participants' | 'associations';
 type FilterStatus = 'all' | 'PAID' | 'PENDING' | 'EXPIRED' | 'FAILED' | 'WITHDRAWN' | 'checked-in' | 'not-checked-in';
+
+function templateErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError && error.message === 'unsupported_template_fields'
+    ? `Unsupported template field(s): ${error.fields?.join(', ') || 'check the available fields below'}.`
+    : fallback;
+}
 
 function recipientStatus(recipient: CommunicationRecipientDTO): string {
   if (recipient.registrationStatus === null) return 'Association contact';
@@ -129,8 +135,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       const result = await client.previewCommunication(eventId, { audience, recipientIds: selectedIds });
       setPreviewRecipients(result.recipients);
       if (!result.count) setError('No eligible recipients are selected. Choose paid players or active association contacts.');
-    } catch {
-      setError('Could not preview the selected recipients. Your message is still here; try again.');
+    } catch (error) {
+      setError(templateErrorMessage(error, 'Could not preview the selected recipients. Your message is still here; try again.'));
     } finally {
       setBusy(false);
     }
@@ -150,8 +156,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       setSelectedIds([]);
       setPreviewRecipients(null);
       await load();
-    } catch {
-      setError('Could not send this message. Check the delivery history before trying again.');
+    } catch (error) {
+      setError(templateErrorMessage(error, 'Could not send this message. Check the delivery history before trying again.'));
     } finally {
       setBusy(false);
     }
@@ -170,8 +176,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       setNotice('Message scheduled. Recipients and eligibility will be checked again when it sends.');
       setSelectedIds([]);
       setPreviewRecipients(null);
-    } catch {
-      setError('Could not schedule this message. Choose a future Melbourne time and try again.');
+    } catch (error) {
+      setError(templateErrorMessage(error, 'Could not schedule this message. Choose a future Melbourne time and try again.'));
     } finally {
       setBusy(false);
     }
@@ -205,8 +211,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       setTemplateName('');
       setEditingTemplateId(null);
       setNotice('Template saved.');
-    } catch {
-      setError('Could not save this template. The name may already be in use.');
+    } catch (error) {
+      setError(templateErrorMessage(error, 'Could not save this template. Check that its name is unique and its placeholders are supported.'));
     } finally {
       setBusy(false);
     }
@@ -298,6 +304,9 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
         <p><label htmlFor="template-select">Use a saved template</label><select id="template-select" value="" onChange={(event) => selectTemplate(event.target.value)}><option value="">Choose a template</option>{templates.filter((template) => template.audience === audience).map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></p>
         <p><label htmlFor="subject">Subject</label><input id="subject" maxLength={200} value={subject} onChange={(event) => { setSubject(event.target.value); setPreviewRecipients(null); }} /></p>
         <p><label htmlFor="message-body">Message</label><textarea id="message-body" maxLength={5000} value={text} onChange={(event) => { setText(event.target.value); setPreviewRecipients(null); }} /></p>
+        <p className="template-field-help">{audience === 'participants'
+          ? <>Available fields: <code>{'{{playerFirstName}}'}</code>, <code>{'{{playerLastName}}'}</code>, <code>{'{{playerName}}'}</code>, <code>{'{{playerNames}}'}</code>, <code>{'{{playerNumber}}'}</code>, <code>{'{{parentName}}'}</code>, <code>{'{{associationName}}'}</code>, <code>{'{{eventName}}'}</code>, <code>{'{{eventDate}}'}</code>, <code>{'{{arrivalTime}}'}</code>, <code>{'{{startTime}}'}</code>, and <code>{'{{venue}}'}</code>. Use <code>{'{{playerNames}}'}</code> when a household may have siblings.</>
+          : <>Available fields: <code>{'{{associationName}}'}</code>, <code>{'{{contactName}}'}</code>, <code>{'{{eventName}}'}</code>, <code>{'{{eventDate}}'}</code>, <code>{'{{arrivalTime}}'}</code>, <code>{'{{startTime}}'}</code>, <code>{'{{venue}}'}</code>, and <code>{'{{eventList}}'}</code>.</>}</p>
         <p><label htmlFor="template-name">{editingTemplateId ? 'Edit template name' : 'Save current message as template'}</label><input id="template-name" maxLength={100} value={templateName} onChange={(event) => setTemplateName(event.target.value)} /></p>
         <p><button type="button" className="button-secondary" disabled={busy || !templateName.trim() || !subject.trim() || !text.trim()} onClick={() => void saveTemplate()}>{editingTemplateId ? 'Update template' : 'Save template'}</button>{editingTemplateId ? <> <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingTemplateId(null); setTemplateName(''); }}>Stop editing template</button></> : null}</p>
         {templates.filter((template) => template.audience === audience).length ? <ul aria-label="Saved templates">{templates.filter((template) => template.audience === audience).map((template) => <li key={template.id}>{template.name} <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingTemplateId(template.id); setTemplateName(template.name); setSubject(template.subject); setText(template.body); }}>Edit template</button> <button type="button" className="button-secondary" disabled={busy} onClick={() => void removeTemplate(template)}>Delete template</button></li>)}</ul> : <p>No saved templates for this audience.</p>}

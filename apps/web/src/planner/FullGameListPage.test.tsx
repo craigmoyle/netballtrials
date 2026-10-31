@@ -544,6 +544,69 @@ describe('FullGameListPage', () => {
     expect(within(screen.getByRole('region', { name: 'Resting players' })).getByText('Player 1')).toBeInTheDocument();
   });
 
+  it('lets an assigned player rest for the round, then fills the vacancy from resting players', async () => {
+    const reserve: GamePlayerDTO = {
+      registrationId: 'late-player', playerName: 'Late Arrival', bibNumber: 99, rank1Position: 'GS',
+      rank2Position: null, rank3Position: null, optInExtraPositions: true,
+    };
+    const client = renderPage(makeClient({ getGameRoster: vi.fn().mockResolvedValue([...roster, reserve]) }));
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
+    const table = screen.getByRole('table', { name: 'Round 1, Court 1, Team A' });
+    const source = within(table).getByRole('button', { name: 'Move Player 1, Number 1' });
+    const restingZone = screen.getByRole('region', { name: 'Resting players' });
+    const original = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: vi.fn(() => restingZone) });
+    try {
+      fireEvent.pointerDown(source, { pointerId: 1, pointerType: 'touch', button: 0, clientX: 10, clientY: 10 });
+      fireEvent.pointerMove(source, { pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
+      fireEvent.pointerUp(source, { pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
+    } finally {
+      if (original) Object.defineProperty(document, 'elementFromPoint', original);
+      else Reflect.deleteProperty(document, 'elementFromPoint');
+    }
+
+    const vacancy = within(table).getByRole('row', { name: /GS.*replacement needed/i });
+    expect(vacancy).toHaveAttribute('data-change-state', 'vacated');
+    expect(screen.getByRole('button', { name: /save round 1/i })).toBeDisabled();
+    expect(within(restingZone).getByText('Player 1')).toBeInTheDocument();
+
+    const replacement = within(vacancy).getByRole('combobox', { name: /replacement player for round 1, court 1, team a, GS/i });
+    fireEvent.change(replacement, { target: { value: 'late-player' } });
+    expect(within(table).getByRole('row', { name: /GS.*Late Arrival/i })).toHaveAttribute('data-change-state', 'replacement');
+    expect(screen.getByRole('button', { name: /save round 1/i })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /save round 1/i }));
+
+    await waitFor(() => expect(client.saveManualRound).toHaveBeenCalledTimes(1));
+    const [, round, input] = client.saveManualRound.mock.calls[0] as [string, number, { slots: Array<{ round: number; registrationId: string }> }];
+    expect(round).toBe(1);
+    expect(input.slots).toHaveLength(28);
+    expect(input.slots.every((slot) => slot.registrationId)).toBe(true);
+    expect(input.slots.find((slot) => slot.round === 1 && slot.registrationId === 'late-player')).toBeTruthy();
+    expect(screen.queryByText('Replacement')).not.toBeInTheDocument();
+    expect(screen.queryByText('Replacement needed')).not.toBeInTheDocument();
+  });
+
+  it('offers the resting action through the accessible player and destination menus', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit round 1' }));
+    fireEvent.click(screen.getByText('Use player and destination menus instead'));
+    fireEvent.change(screen.getByLabelText('Player to move'), { target: { value: 'player-0' } });
+    fireEvent.change(screen.getByLabelText('Destination slot'), { target: { value: 'not-playing' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Move or substitute' }));
+    expect(screen.getByRole('row', { name: /GS.*replacement needed/i })).toHaveAttribute('data-change-state', 'vacated');
+  });
+
+  it('clears edit highlights after canceling the round', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Full Game List' });
+    makeMove();
+    expect(screen.getAllByText('Moved').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    expect(screen.queryByText('Moved')).not.toBeInTheDocument();
+  });
+
   it('keeps hard validation errors blocking and retains the local edit for correction', async () => {
     renderPage(makeClient({
       saveManualRound: vi.fn().mockResolvedValue({ ok: false, reason: 'invalid_plan', errors: [{ code: 'no_solution', message: 'Every court position needs a player.' }] }),

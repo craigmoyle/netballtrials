@@ -425,6 +425,46 @@ export interface EmailTemplateDTO {
   updatedAt: string;
 }
 
+export interface SiteCommunicationEventDTO {
+  id: string;
+  name: string;
+  division: string;
+  section: string;
+  eventDate: string;
+  venue: string;
+  startTime: string;
+  gameStartTime: string;
+}
+
+export interface SiteAssociationCommunicationPreviewDTO {
+  events: SiteCommunicationEventDTO[];
+  recipients: CommunicationRecipientDTO[];
+  subject: string;
+  text: string;
+}
+
+export interface SiteAssociationCampaignDTO {
+  id: string;
+  eventIds: string[];
+  eventNames: string[];
+  associationIds: string[];
+  batchId: string;
+  subject: string;
+  body: string;
+  scheduledAt: string | null;
+  status: 'SCHEDULED' | 'SENDING' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
+  attempts: number;
+  error: string | null;
+  createdAt: string;
+  deliveries: Array<Pick<EmailLogDTO, 'id' | 'to' | 'status' | 'attempts' | 'sentAt' | 'failedAt' | 'error'> & { associationName: string | null }>;
+}
+
+export interface IntegrationStatusDTO {
+  mode: 'fake' | 'environment' | 'infisical';
+  stripe: { configured: boolean; updatedAt: string | null };
+  gmail: { configured: boolean; updatedAt: string | null };
+}
+
 export interface ScheduledMessageDTO {
   id: string;
   eventId: string;

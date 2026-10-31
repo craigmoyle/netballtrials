@@ -389,6 +389,19 @@ thead { background: var(--blue-pale); }
 .communications-page .communication-recipient-list { max-height: min(65vh, 36rem); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .communication-recipient-list thead { position: sticky; top: 0; z-index: 1; }
 .communications-page table { min-width: 46rem; }
+.site-settings-page { max-width: 62rem; }
+.site-settings-section { margin-block: 1.5rem; padding-block: 1.25rem; border-top: 1px solid var(--line); }
+.site-settings-section h2 { margin-top: 0; }
+.site-settings-section form { display: grid; gap: 0.35rem; max-width: 44rem; }
+.site-settings-section form button { justify-self: start; margin-top: 0.5rem; }
+.site-settings-page .message-confirmation { margin-block: 1rem; padding: 1rem; background: var(--canvas); border: 1px solid var(--line); }
+.communications-tabs { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; margin-block: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line); }
+.communications-tabs button { min-height: 2.75rem; padding: 0.25rem 0.1rem; color: var(--burgundy); background: transparent; border: 0; border-radius: 0; text-decoration: underline; text-underline-offset: 0.18em; }
+.communications-tabs button[aria-pressed="true"] { color: var(--burgundy-dark); font-weight: 700; text-decoration-thickness: 3px; }
+.site-selection-list { display: grid; gap: 0.35rem; max-height: 18rem; overflow: auto; margin: 0; padding: 0.25rem 0; list-style: none; }
+.site-selection-list label { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.4rem 0; font-weight: 400; }
+.site-selection-list input[type="checkbox"] { flex: 0 0 auto; min-width: 1.25rem; min-height: 1.25rem; margin-top: 0.1rem; }
+.template-field-help { max-width: 70ch; color: var(--placeholder-ink); }
 .roster-table { min-width: 62rem; }
 .player-history-table { min-width: 58rem; }
 .player-history-table th:first-child { min-width: 16rem; }
@@ -426,6 +439,14 @@ thead { background: var(--blue-pale); }
 .game-player-drag:focus-visible { outline-color: var(--focus-amber); }
 .game-player-drag.is-dragging { cursor: grabbing; opacity: 0.65; }
 .full-game-table tr[data-drop-target="true"] > *, .game-resting-list li[data-drop-target="true"] { background: var(--warning-surface); outline: 2px solid var(--warning-border); outline-offset: -2px; }
+.full-game-table tr[data-change-state="moved"] > * { background: var(--blue-pale); }
+.full-game-table tr[data-change-state="replacement"] > * { background: var(--success-surface); }
+.full-game-table tr[data-change-state="vacated"] > * { background: var(--warning-surface); }
+.game-resting-list li[data-change-state="resting"] { background: var(--warning-surface); }
+.game-resting-drop-zone[data-drop-target="true"] { background: var(--warning-panel); outline: 2px solid var(--warning-border); outline-offset: -2px; }
+.game-empty-slot { display: grid; gap: 0.3rem; max-width: 22rem; }
+.game-empty-slot select { width: 100%; }
+.game-change-label { display: inline-block; margin-inline-start: 0.35rem; padding: 0.05rem 0.3rem; font-size: 0.78em; font-weight: 650; }
 .button-secondary { color: var(--burgundy); background: var(--paper); border-color: var(--burgundy); }
 .button-secondary:hover:not(:disabled) { color: var(--paper); background: var(--burgundy-dark); }
 .game-editor, .game-empty-state, .game-history-banner { margin-block: 1rem; padding: 1rem; background: var(--paper); border: 1px solid var(--line); }

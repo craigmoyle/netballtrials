@@ -18,6 +18,12 @@ const envSchema = z
     GMAIL_REFRESH_TOKEN: z.string().default(''),
     STRIPE_SECRET_KEY: z.string().default(''),
     STRIPE_WEBHOOK_SECRET: z.string().default(''),
+    INFISICAL_API_URL: z.url().default('https://us.infisical.com'),
+    INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: z.string().default(''),
+    INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: z.string().default(''),
+    INFISICAL_PROJECT_ID: z.string().default(''),
+    INFISICAL_ENVIRONMENT: z.string().default(''),
+    INFISICAL_SECRET_PATH: z.string().default('/'),
     PORT: z.coerce.number().int().positive().default(3000),
   })
   .superRefine((env, context) => {
@@ -32,11 +38,12 @@ const envSchema = z
     }
 
     const provider = env.PAYMENT_PROVIDER ?? (env.NODE_ENV === 'test' ? 'fake' : 'stripe');
-    if (provider === 'stripe' && (!hasStripeSecret || !hasWebhookSecret)) {
+    const hasInfisicalConfig = Boolean(env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT);
+    if (provider === 'stripe' && (!hasStripeSecret || !hasWebhookSecret) && !hasInfisicalConfig) {
       context.addIssue({
         code: 'custom',
         path: ['STRIPE_SECRET_KEY'],
-        message: 'Stripe payment requires both Stripe credentials',
+        message: 'Stripe payment requires both Stripe credentials or a configured Infisical secret store',
       });
     }
     if (provider === 'fake' && env.NODE_ENV === 'production') {
@@ -60,8 +67,8 @@ const envSchema = z
         message: 'API_PUBLIC_URL must use HTTPS in production',
       });
     }
-    if (env.NODE_ENV === 'production' && (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN)) {
-      context.addIssue({ code: 'custom', path: ['GMAIL_REFRESH_TOKEN'], message: 'Production requires Gmail OAuth client ID, client secret, and refresh token' });
+    if (env.NODE_ENV === 'production' && (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) && !hasInfisicalConfig) {
+      context.addIssue({ code: 'custom', path: ['GMAIL_REFRESH_TOKEN'], message: 'Production requires Gmail OAuth credentials or a configured Infisical secret store' });
     }
     if (env.NODE_ENV === 'production' && env.SESSION_COOKIE_SECURE !== 'true') {
       context.addIssue({
@@ -87,6 +94,12 @@ export type Env = {
   GMAIL_REFRESH_TOKEN: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
+  INFISICAL_API_URL: string;
+  INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: string;
+  INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: string;
+  INFISICAL_PROJECT_ID: string;
+  INFISICAL_ENVIRONMENT: string;
+  INFISICAL_SECRET_PATH: string;
   PORT: number;
 };
 

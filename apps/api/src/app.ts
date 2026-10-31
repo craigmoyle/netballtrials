@@ -20,16 +20,21 @@ import { registerCheckInRoutes } from './checkin/routes';
 import { registerPlannerRoutes } from './planner/routes';
 import { registerReviewRoutes } from './review/routes';
 import { registerCommunicationRoutes } from './messages/communications-routes';
+import { registerSiteAssociationRoutes } from './messages/site-association-routes';
 import { registerPlayerHistoryRoutes } from './history/routes';
 import { registerRosterRoutes } from './roster/routes';
 import { registerParentAccessRoutes } from './parents/routes';
 import { assertNoUnverifiedPendingCheckouts } from './registrations/checkout';
+import { IntegrationSettings } from './integrations/settings';
+import { registerIntegrationRoutes } from './integrations/routes';
 
 export type AppDeps = {
   prisma: PrismaClient;
   mailer: EmailProvider;
   env: Env;
   payment: PaymentProvider;
+  integrationSettings?: IntegrationSettings;
+  reloadIntegrations?: () => Promise<void>;
   /** Application logger; silent in tests. Never pass request bodies or PII. */
   log?: Pick<FastifyBaseLogger, 'error' | 'warn' | 'info'>;
 };
@@ -88,49 +93,52 @@ declare module 'fastify' {
 
 export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions = {}): FastifyInstance {
   const env = overrides.env ?? loadEnv();
+  const integrationSettings = overrides.integrationSettings ?? new IntegrationSettings(env);
   const hasStripeSecret = env.STRIPE_SECRET_KEY.length > 0;
   const hasWebhookSecret = env.STRIPE_WEBHOOK_SECRET.length > 0;
+  const hasGmailCredentials = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN);
+  const readsInfisical = integrationSettings.mode === 'infisical';
   if (hasStripeSecret !== hasWebhookSecret) {
     throw new Error('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured together');
   }
   if (env.NODE_ENV === 'production') {
-    if (env.PAYMENT_PROVIDER !== 'stripe' || !hasStripeSecret || !hasWebhookSecret) {
-      throw new Error('Production requires the Stripe payment provider and both Stripe credentials');
+    if (env.PAYMENT_PROVIDER !== 'stripe' || ((!hasStripeSecret || !hasWebhookSecret) && !readsInfisical)) {
+      throw new Error('Production requires Stripe credentials from Infisical or the deployment environment');
     }
     if (!env.SESSION_COOKIE_SECURE) {
       throw new Error('SESSION_COOKIE_SECURE must be true in production');
     }
-    if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
-      throw new Error('Production requires configured Gmail OAuth credentials');
+    if (!hasGmailCredentials && !readsInfisical) {
+      throw new Error('Production requires Gmail OAuth credentials from Infisical or the deployment environment');
     }
     if (overrides.payment && 'checkouts' in overrides.payment) {
       throw new Error('The fake payment provider is forbidden in production');
     }
   }
 
-  const payment = overrides.payment ??
-    (env.PAYMENT_PROVIDER === 'stripe'
-      ? createStripePaymentProvider({
-          secretKey: env.STRIPE_SECRET_KEY,
-          webhookSecret: env.STRIPE_WEBHOOK_SECRET,
-        })
-      : createFakePaymentProvider());
-  const mailer = overrides.mailer ?? (env.NODE_ENV === 'production'
-    ? createGmailMailer({
-        clientId: env.GMAIL_CLIENT_ID,
-        clientSecret: env.GMAIL_CLIENT_SECRET,
-        refreshToken: env.GMAIL_REFRESH_TOKEN,
-      })
+  const payment = overrides.payment ?? (hasStripeSecret && hasWebhookSecret
+    ? createStripePaymentProvider({ secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET })
+    : createFakePaymentProvider());
+  const mailer = overrides.mailer ?? (hasGmailCredentials
+    ? createGmailMailer({ clientId: env.GMAIL_CLIENT_ID, clientSecret: env.GMAIL_CLIENT_SECRET, refreshToken: env.GMAIL_REFRESH_TOKEN })
     : createDevMailer([]));
-  if (env.NODE_ENV === 'production' && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
+  if (env.NODE_ENV === 'production' && !readsInfisical && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
     throw new Error('Production requires the Gmail API mail provider');
   }
 
-  const deps: AppDeps = {
+  let deps!: AppDeps;
+  const reloadIntegrations = async () => {
+    const credentials = await integrationSettings.readCredentials();
+    if (credentials.stripe) deps.payment = createStripePaymentProvider(credentials.stripe);
+    if (credentials.gmail) deps.mailer = createGmailMailer(credentials.gmail);
+  };
+  deps = {
     env,
     prisma: overrides.prisma ?? defaultPrisma,
     mailer,
     payment,
+    integrationSettings,
+    reloadIntegrations,
   };
 
   const webOrigin = new URL(env.WEB_ORIGIN).origin;
@@ -144,7 +152,11 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   app.decorate('testDeps', deps);
 
   app.addHook('onReady', async () => {
+    if (integrationSettings.mode === 'infisical') await deps.reloadIntegrations?.();
     if (env.NODE_ENV !== 'production') return;
+    if (!('provider' in deps.mailer) || deps.mailer.provider !== 'gmail-api' || 'checkouts' in deps.payment) {
+      throw new Error('Production requires Stripe and Gmail integrations');
+    }
     await assertNoUnverifiedPendingCheckouts(deps.prisma);
   });
 
@@ -184,6 +196,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   app.get('/health', async () => ({ status: 'ok' }));
 
   registerAuthRoutes(app, deps);
+  registerIntegrationRoutes(app, deps);
   registerEventRoutes(app, deps);
   registerAssociationRoutes(app, deps);
   registerBibColorRoutes(app, deps);
@@ -193,6 +206,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   registerPlannerRoutes(app, deps);
   registerReviewRoutes(app, deps);
   registerCommunicationRoutes(app, deps);
+  registerSiteAssociationRoutes(app, deps);
   registerPlayerHistoryRoutes(app, deps);
   registerRosterRoutes(app, deps);
   registerParentAccessRoutes(app, deps);

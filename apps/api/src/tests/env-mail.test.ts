@@ -28,4 +28,18 @@ describe('production environment config', () => {
       GMAIL_REFRESH_TOKEN: 'refresh-token',
     } as NodeJS.ProcessEnv).GMAIL_REFRESH_TOKEN).toBe('refresh-token');
   });
+
+  it('allows production integrations to come from Infisical instead of app environment values', () => {
+    const env = loadEnv({
+      ...base,
+      STRIPE_SECRET_KEY: '',
+      STRIPE_WEBHOOK_SECRET: '',
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'machine-client-id',
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: 'machine-client-secret',
+      INFISICAL_PROJECT_ID: 'project-id',
+      INFISICAL_ENVIRONMENT: 'prod',
+    } as NodeJS.ProcessEnv);
+    expect(env.INFISICAL_PROJECT_ID).toBe('project-id');
+    expect(env.STRIPE_SECRET_KEY).toBe('');
+  });
 });
