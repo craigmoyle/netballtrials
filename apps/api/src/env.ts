@@ -36,6 +36,9 @@ const envSchema = z
         message: 'STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured together',
       });
     }
+    if (env.NODE_ENV === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
+      context.addIssue({ code: 'custom', path: ['STRIPE_SECRET_KEY'], message: 'Production requires a live Stripe secret key (sk_live_)' });
+    }
 
     const provider = env.PAYMENT_PROVIDER ?? (env.NODE_ENV === 'test' ? 'fake' : 'stripe');
     const hasInfisicalConfig = Boolean(env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT);

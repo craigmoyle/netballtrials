@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventInputSchema, eventPatchSchema } from '../../events/schemas';
+import { eventInputSchema, eventPatchSchema, validateWindow } from '../../events/schemas';
 
 const event = {
   name: '15/U', competitionYear: 2027, division: '15/U', section: 'Ladies',
@@ -11,6 +11,11 @@ const event = {
 describe('event input boundaries', () => {
   it('rejects impossible calendar dates', () => {
     expect(eventInputSchema.safeParse({ ...event, eventDate: '2026-02-31' }).success).toBe(false);
+  });
+
+  it('rejects event clock times skipped by the Melbourne daylight-saving transition', () => {
+    expect(validateWindow({ ...event, eventDate: '2026-10-04', startTime: '02:30', gameStartTime: '03:00', endTime: '04:00' }))
+      .toContain('startTime');
   });
 
   it('accepts only HTTP or HTTPS policy URLs', () => {

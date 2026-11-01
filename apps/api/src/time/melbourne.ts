@@ -35,5 +35,10 @@ export function localDateTimeToUtc(date: Date, clock: string, timeZone = 'Austra
     if (next === candidate) break;
     candidate = next;
   }
-  return new Date(candidate);
+  const result = new Date(candidate);
+  // Repeated fall-back times resolve to the later occurrence; skipped spring times are rejected.
+  if (result.getTime() + zoneOffsetMs(result, timeZone) !== wallTimeAsUtc) {
+    throw new Error('local date/time does not exist in this time zone');
+  }
+  return result;
 }

@@ -86,6 +86,33 @@ describe('createRegistrationCheckout', () => {
     expect(mailer.sent[0].text).toContain('https://checkout.test/fake_');
   });
 
+  it('extends a late first Stripe Checkout to the provider minimum and keeps retries idempotent', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
+    const now = new Date('2026-10-10T00:00:00.000Z');
+    const createdAt = new Date(now.getTime() - 23 * 60 * 60_000 - 45 * 60_000);
+    const registration = await prisma.registration.create({ data: registrationFixture(event.id, {
+      createdAt, expiresAt: new Date(createdAt.getTime() + 24 * 60 * 60_000),
+    }) });
+    const { deps, payment } = makeDeps('stripe');
+    const requests: Array<{ expiresAt: Date }> = [];
+    const stripe = { ...payment, createCheckout: async (request: { expiresAt: Date }) => {
+      requests.push(request);
+      return { sessionId: 'cs_late', url: 'https://checkout.test/cs_late' };
+    } };
+    const stripeDeps = { ...deps, payment: stripe };
+
+    const first = await createRegistrationCheckout(stripeDeps, registration, now);
+    const retry = await createRegistrationCheckout(stripeDeps, registration, new Date(now.getTime() + 60_000));
+    expect(first?.sessionId).toBe('cs_late');
+    expect(retry?.sessionId).toBe('cs_late');
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.expiresAt).toEqual(requests[1]?.expiresAt);
+    expect(requests[0]!.expiresAt.getTime() - now.getTime()).toBeGreaterThanOrEqual(35 * 60_000);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({
+      checkoutSessionId: 'cs_late', expiresAt: requests[0]!.expiresAt,
+    });
+  });
+
   it('uses an injected registration clock when checking checkout mail expiry', async () => {
     const now = new Date('2026-09-11T14:30:00Z');
     const registration = await createPendingRegistration();

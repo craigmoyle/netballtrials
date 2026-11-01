@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { ApiClient as Client } from '../api/client';
 
 export function VerifyPage({
@@ -9,18 +9,23 @@ export function VerifyPage({
   client: Client;
   onSignedIn: () => void;
 }) {
-  const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [state, setState] = useState<'checking' | 'ok' | 'error'>('checking');
+  const tokenRef = useRef<string | null>(null);
   const startedFor = useRef<string | null>(null);
 
+  if (tokenRef.current === null) tokenRef.current = new URLSearchParams(location.hash.slice(1)).get('token');
+
   useEffect(() => {
-    const token = params.get('token');
+    const token = tokenRef.current;
     if (!token) {
       setState('error');
       return;
     }
     if (startedFor.current === token) return;
     startedFor.current = token;
+    navigate({ pathname: location.pathname, search: location.search, hash: '' }, { replace: true });
 
     client
       .verify(token)
@@ -29,7 +34,7 @@ export function VerifyPage({
         onSignedIn();
       })
       .catch(() => setState('error'));
-  }, [client, onSignedIn, params]);
+  }, [client, location.pathname, location.search, navigate, onSignedIn]);
 
   if (state === 'checking') return <p role="status">Signing you in...</p>;
   if (state === 'ok') {

@@ -4,7 +4,7 @@ import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibilit
 import { DEFAULT_POLICY_URL } from '../policy';
 import { registrationInputSchema, type RegistrationInput } from './schemas';
 
-const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class RegistrationValidationError extends Error {
   readonly fields: string[];
@@ -34,18 +34,6 @@ function isUniqueViolation(err: unknown): boolean {
     err !== null &&
     (err as { code?: string }).code === 'P2002'
   );
-}
-
-export async function expireStalePending(
-  prisma: PrismaClient,
-  eventId: string,
-  now: Date,
-): Promise<number> {
-  const result = await prisma.registration.updateMany({
-    where: { eventId, status: 'PENDING', expiresAt: { lt: now } },
-    data: { status: 'EXPIRED' },
-  });
-  return result.count;
 }
 
 async function createPendingRegistrationWithPolicy(
@@ -83,7 +71,7 @@ async function createPendingRegistrationWithPolicy(
         where: { eventId, status: 'PENDING', expiresAt: { lt: now } },
         data: { status: 'EXPIRED' },
       });
-      if (dateOfBirth.getTime() > now.getTime()) throw new RegistrationValidationError(['dateOfBirth']);
+      if (values.dateOfBirth > melbourneDateKey(now)) throw new RegistrationValidationError(['dateOfBirth']);
       duplicateWhere = {
         eventId,
         playerNameNormalized,

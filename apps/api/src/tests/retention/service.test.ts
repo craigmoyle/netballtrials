@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, pruneParentAccessArtifacts, pruneRateLimitBuckets, retentionCutoff } from '../../retention/service';
+import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, pruneParentAccessArtifacts, pruneRateLimitBuckets, pruneStaffAuthArtifacts, retentionCutoff } from '../../retention/service';
 import { verifyPlan } from '../../planner/verify';
 import { eventFixture, registrationFixture as regFixture } from '../helpers/fixtures';
 
@@ -192,6 +192,29 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(await prisma.parentAccessToken.findUnique({ where: { tokenHash: 'b'.repeat(64) } })).not.toBeNull();
     expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'c'.repeat(64) } })).toBeNull();
     expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'd'.repeat(64) } })).not.toBeNull();
+  });
+
+  it('prunes expired Admin login links and sessions while preserving live sessions', async () => {
+    const user = await prisma.staffUser.create({ data: { email: 'retention-admin@example.test' } });
+    const now = new Date('2026-10-10T00:00:00Z');
+    await prisma.loginToken.createMany({
+      data: [
+        { userId: user.id, tokenHash: 'e'.repeat(64), expiresAt: new Date(now.getTime() - 1), createdAt: new Date(now.getTime() - 60_000) },
+        { userId: user.id, tokenHash: 'f'.repeat(64), expiresAt: new Date(now.getTime() + 60_000), createdAt: now },
+      ],
+    });
+    await prisma.session.createMany({
+      data: [
+        { userId: user.id, tokenHash: 'g'.repeat(64), expiresAt: new Date(now.getTime() - 1), createdAt: new Date(now.getTime() - 60_000) },
+        { userId: user.id, tokenHash: 'h'.repeat(64), expiresAt: new Date(now.getTime() + 60_000), createdAt: now },
+      ],
+    });
+
+    expect(await pruneStaffAuthArtifacts(prisma, now)).toEqual({ tokens: 1, sessions: 1 });
+    expect(await prisma.loginToken.findUnique({ where: { tokenHash: 'e'.repeat(64) } })).toBeNull();
+    expect(await prisma.loginToken.findUnique({ where: { tokenHash: 'f'.repeat(64) } })).not.toBeNull();
+    expect(await prisma.session.findUnique({ where: { tokenHash: 'g'.repeat(64) } })).toBeNull();
+    expect(await prisma.session.findUnique({ where: { tokenHash: 'h'.repeat(64) } })).not.toBeNull();
   });
 
   it('deletes rate-limit buckets idle for more than a day', async () => {

@@ -43,6 +43,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [positionFilter, setPositionFilter] = useState('all');
   const [previewRecipients, setPreviewRecipients] = useState<CommunicationRecipientDTO[] | null>(null);
+  const [sendBatchId, setSendBatchId] = useState<string | null>(null);
+  const [scheduleBatchId, setScheduleBatchId] = useState<string | null>(null);
   const [scheduleAt, setScheduleAt] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -77,6 +79,12 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
 
   useEffect(() => { void load(); }, [client, eventId]);
 
+  function invalidatePreview() {
+    setPreviewRecipients(null);
+    setSendBatchId(null);
+    setScheduleBatchId(null);
+  }
+
   const allRecipients = audience === 'participants' ? participants : associations;
   const associationNames = [...new Set(participants.map((recipient) => recipient.association).filter((value): value is string => Boolean(value)))].sort();
   const filteredRecipients = useMemo(() => allRecipients.filter((recipient) => {
@@ -101,7 +109,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     setEditingTemplateId(null);
     setTemplateName('');
     setSelectedIds([]);
-    setPreviewRecipients(null);
+    invalidatePreview();
     setAssociationFilter('all');
     setStatusFilter('all');
     setPositionFilter('all');
@@ -109,7 +117,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
 
   function toggleRecipient(id: string, checked: boolean) {
     setSelectedIds((current) => checked ? [...new Set([...current, id])] : current.filter((value) => value !== id));
-    setPreviewRecipients(null);
+    invalidatePreview();
   }
 
   function selectVisible(checked: boolean) {
@@ -117,7 +125,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       .filter((recipient) => Boolean(recipient.email.trim()) && (audience === 'associations' || recipient.registrationStatus === 'PAID'))
       .map((recipient) => recipient.id);
     setSelectedIds((current) => checked ? [...new Set([...current, ...visibleIds])] : current.filter((id) => !visibleIds.includes(id)));
-    setPreviewRecipients(null);
+    invalidatePreview();
   }
 
   function selectTemplate(id: string) {
@@ -125,6 +133,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     if (!template || template.audience !== audience) return;
     setSubject(template.subject);
     setText(template.body);
+    invalidatePreview();
   }
 
   async function preview() {
@@ -134,6 +143,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     try {
       const result = await client.previewCommunication(eventId, { audience, recipientIds: selectedIds });
       setPreviewRecipients(result.recipients);
+      setSendBatchId(crypto.randomUUID());
+      setScheduleBatchId(crypto.randomUUID());
       if (!result.count) setError('No eligible recipients are selected. Choose paid players or active association contacts.');
     } catch (error) {
       setError(templateErrorMessage(error, 'Could not preview the selected recipients. Your message is still here; try again.'));
@@ -148,13 +159,14 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     setError(null);
     setNotice(null);
     try {
+      const batchId = sendBatchId ?? crypto.randomUUID();
+      setSendBatchId(batchId);
       const result = await client.sendCommunication(eventId, {
-        audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text,
-        batchId: crypto.randomUUID(),
+        audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, batchId,
       });
       setNotice(`${result.sent} sent, ${result.failed} failed${result.ambiguous ? `, ${result.ambiguous} outcome unknown` : ''}.`);
       setSelectedIds([]);
-      setPreviewRecipients(null);
+      invalidatePreview();
       await load();
     } catch (error) {
       setError(templateErrorMessage(error, 'Could not send this message. Check the delivery history before trying again.'));
@@ -169,13 +181,15 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     setError(null);
     setNotice(null);
     try {
+      const batchId = scheduleBatchId ?? crypto.randomUUID();
+      setScheduleBatchId(batchId);
       const result = await client.scheduleCommunication(eventId, {
-        audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, scheduledLocal: scheduleAt,
+        audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, scheduledLocal: scheduleAt, batchId,
       });
       setScheduled((current) => [result, ...current]);
       setNotice('Message scheduled. Recipients and eligibility will be checked again when it sends.');
       setSelectedIds([]);
-      setPreviewRecipients(null);
+      invalidatePreview();
     } catch (error) {
       setError(templateErrorMessage(error, 'Could not schedule this message. Choose a future Melbourne time and try again.'));
     } finally {
@@ -266,12 +280,12 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       <section aria-labelledby="recipient-selection-heading">
         <h2 id="recipient-selection-heading">Recipients</h2>
         <p>Choose recipients, then preview the final list before sending or scheduling.</p>
-        <p><label htmlFor="recipient-search">Search recipients</label><input id="recipient-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPreviewRecipients(null); }} placeholder="Name, email or Number" /></p>
+        <p><label htmlFor="recipient-search">Search recipients</label><input id="recipient-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); invalidatePreview(); }} placeholder="Name, email or Number" /></p>
         {audience === 'participants' ? (
           <div className="communication-filters">
-            <label>Association<select aria-label="Filter by association" value={associationFilter} onChange={(event) => { setAssociationFilter(event.target.value); setPreviewRecipients(null); }}><option value="all">All associations</option>{associationNames.map((name) => <option key={name}>{name}</option>)}</select></label>
-            <label>Payment / attendance<select aria-label="Filter by payment or attendance" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as FilterStatus); setPreviewRecipients(null); }}><option value="all">All statuses</option><option value="PAID">Paid</option><option value="PENDING">Pending payment</option><option value="EXPIRED">Expired</option><option value="FAILED">Failed</option><option value="WITHDRAWN">Withdrawn</option><option value="checked-in">Checked in</option><option value="not-checked-in">Paid, not checked in</option></select></label>
-            <label>Position<select aria-label="Filter by position" value={positionFilter} onChange={(event) => { setPositionFilter(event.target.value); setPreviewRecipients(null); }}><option value="all">Any chosen position</option>{['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'].map((position) => <option key={position}>{position}</option>)}</select></label>
+            <label>Association<select aria-label="Filter by association" value={associationFilter} onChange={(event) => { setAssociationFilter(event.target.value); invalidatePreview(); }}><option value="all">All associations</option>{associationNames.map((name) => <option key={name}>{name}</option>)}</select></label>
+            <label>Payment / attendance<select aria-label="Filter by payment or attendance" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as FilterStatus); invalidatePreview(); }}><option value="all">All statuses</option><option value="PAID">Paid</option><option value="PENDING">Pending payment</option><option value="EXPIRED">Expired</option><option value="FAILED">Failed</option><option value="WITHDRAWN">Withdrawn</option><option value="checked-in">Checked in</option><option value="not-checked-in">Paid, not checked in</option></select></label>
+            <label>Position<select aria-label="Filter by position" value={positionFilter} onChange={(event) => { setPositionFilter(event.target.value); invalidatePreview(); }}><option value="all">Any chosen position</option>{['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'].map((position) => <option key={position}>{position}</option>)}</select></label>
           </div>
         ) : null}
         <div className="communication-recipient-actions">
@@ -302,14 +316,14 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       <section aria-labelledby="compose-heading">
         <h2 id="compose-heading">Compose message</h2>
         <p><label htmlFor="template-select">Use a saved template</label><select id="template-select" value="" onChange={(event) => selectTemplate(event.target.value)}><option value="">Choose a template</option>{templates.filter((template) => template.audience === audience).map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></p>
-        <p><label htmlFor="subject">Subject</label><input id="subject" maxLength={200} value={subject} onChange={(event) => { setSubject(event.target.value); setPreviewRecipients(null); }} /></p>
-        <p><label htmlFor="message-body">Message</label><textarea id="message-body" maxLength={5000} value={text} onChange={(event) => { setText(event.target.value); setPreviewRecipients(null); }} /></p>
+        <p><label htmlFor="subject">Subject</label><input id="subject" maxLength={200} value={subject} onChange={(event) => { setSubject(event.target.value); invalidatePreview(); }} /></p>
+        <p><label htmlFor="message-body">Message</label><textarea id="message-body" maxLength={5000} value={text} onChange={(event) => { setText(event.target.value); invalidatePreview(); }} /></p>
         <p className="template-field-help">{audience === 'participants'
           ? <>Available fields: <code>{'{{playerFirstName}}'}</code>, <code>{'{{playerLastName}}'}</code>, <code>{'{{playerName}}'}</code>, <code>{'{{playerNames}}'}</code>, <code>{'{{playerNumber}}'}</code>, <code>{'{{parentName}}'}</code>, <code>{'{{associationName}}'}</code>, <code>{'{{eventName}}'}</code>, <code>{'{{eventDate}}'}</code>, <code>{'{{arrivalTime}}'}</code>, <code>{'{{startTime}}'}</code>, and <code>{'{{venue}}'}</code>. Use <code>{'{{playerNames}}'}</code> when a household may have siblings.</>
           : <>Available fields: <code>{'{{associationName}}'}</code>, <code>{'{{contactName}}'}</code>, <code>{'{{eventName}}'}</code>, <code>{'{{eventDate}}'}</code>, <code>{'{{arrivalTime}}'}</code>, <code>{'{{startTime}}'}</code>, <code>{'{{venue}}'}</code>, and <code>{'{{eventList}}'}</code>.</>}</p>
         <p><label htmlFor="template-name">{editingTemplateId ? 'Edit template name' : 'Save current message as template'}</label><input id="template-name" maxLength={100} value={templateName} onChange={(event) => setTemplateName(event.target.value)} /></p>
         <p><button type="button" className="button-secondary" disabled={busy || !templateName.trim() || !subject.trim() || !text.trim()} onClick={() => void saveTemplate()}>{editingTemplateId ? 'Update template' : 'Save template'}</button>{editingTemplateId ? <> <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingTemplateId(null); setTemplateName(''); }}>Stop editing template</button></> : null}</p>
-        {templates.filter((template) => template.audience === audience).length ? <ul aria-label="Saved templates">{templates.filter((template) => template.audience === audience).map((template) => <li key={template.id}>{template.name} <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingTemplateId(template.id); setTemplateName(template.name); setSubject(template.subject); setText(template.body); }}>Edit template</button> <button type="button" className="button-secondary" disabled={busy} onClick={() => void removeTemplate(template)}>Delete template</button></li>)}</ul> : <p>No saved templates for this audience.</p>}
+        {templates.filter((template) => template.audience === audience).length ? <ul aria-label="Saved templates">{templates.filter((template) => template.audience === audience).map((template) => <li key={template.id}>{template.name} <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingTemplateId(template.id); setTemplateName(template.name); setSubject(template.subject); setText(template.body); invalidatePreview(); }}>Edit template</button> <button type="button" className="button-secondary" disabled={busy} onClick={() => void removeTemplate(template)}>Delete template</button></li>)}</ul> : <p>No saved templates for this audience.</p>}
         <p><button type="button" disabled={busy || selectedIds.length === 0 || !subject.trim() || !text.trim()} onClick={() => void preview()}>{busy ? 'Working...' : 'Preview recipients'}</button></p>
       </section>
 

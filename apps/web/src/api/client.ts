@@ -301,7 +301,7 @@ export function apiClient(baseUrl: string) {
       request<{ participants: CommunicationRecipientDTO[]; associations: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/recipients`),
     previewCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[] }) =>
       request<{ count: number; recipients: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/preview`, { method: 'POST', body: JSON.stringify(input) }),
-    sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; batchId?: string }) =>
+    sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; batchId: string }) =>
       request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(baseUrl, `/api/admin/events/${eventId}/communications/send`, { method: 'POST', body: JSON.stringify(input) }),
     getIntegrationSettings: () => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations'),
     updateInfisicalConnection: (input: { apiUrl: string; projectId: string; environment: string; secretPath: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/infisical', { method: 'PUT', body: JSON.stringify(input) }),
@@ -324,7 +324,7 @@ export function apiClient(baseUrl: string) {
       request<EmailTemplateDTO>(baseUrl, `/api/admin/communications/templates/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     deleteCommunicationTemplate: (templateId: string) => request<unknown>(baseUrl, `/api/admin/communications/templates/${templateId}`, { method: 'DELETE' }),
     listScheduledCommunications: (eventId: string) => request<ScheduledMessageDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled`),
-    scheduleCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string }) =>
+    scheduleCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string; batchId: string }) =>
       request<ScheduledMessageDTO>(baseUrl, `/api/admin/events/${eventId}/communications/schedule`, { method: 'POST', body: JSON.stringify(input) }),
     cancelScheduledCommunication: (eventId: string, id: string) => request<{ status: string }>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}/cancel`, { method: 'POST' }),
     listCommunicationDeliveries: (eventId: string) => request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/deliveries`),

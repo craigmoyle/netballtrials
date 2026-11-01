@@ -254,6 +254,14 @@ export async function pruneParentAccessArtifacts(prisma: PrismaClient, now: Date
   return { tokens: tokens.count, sessions: sessions.count };
 }
 
+export async function pruneStaffAuthArtifacts(prisma: PrismaClient, now: Date): Promise<{ tokens: number; sessions: number }> {
+  const [tokens, sessions] = await Promise.all([
+    prisma.loginToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+    prisma.session.deleteMany({ where: { expiresAt: { lt: now } } }),
+  ]);
+  return { tokens: tokens.count, sessions: sessions.count };
+}
+
 const RATE_LIMIT_BUCKET_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function pruneRateLimitBuckets(prisma: PrismaClient, now: Date): Promise<number> {

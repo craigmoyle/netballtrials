@@ -24,7 +24,7 @@ describe('requestLoginLink', () => {
     await requestLoginLink(deps(), ' Craig@Example.com ', new Date('2026-10-07T00:00:00Z'));
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0].to).toBe('craig@example.com');
-    expect(mailer.sent[0].text).toContain('http://localhost:5173/admin/verify?token=');
+    expect(mailer.sent[0].text).toContain('http://localhost:5173/admin/verify#token=');
   });
   it('resolves identically and sends nothing for an unknown email', async () => {
     await expect(requestLoginLink(deps(), 'nobody@example.com', new Date())).resolves.toEqual({ sent: true });
@@ -69,5 +69,5 @@ describe('consumeLoginToken', () => {
 });
 
 function extractToken(text: string): string {
-  return new URL(text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+  return new URLSearchParams(new URL(text.match(/https?:\/\/\S+/)![0]).hash.slice(1)).get('token')!;
 }

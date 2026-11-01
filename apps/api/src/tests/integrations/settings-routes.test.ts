@@ -40,8 +40,11 @@ describe('integration settings routes', () => {
     const settings = new IntegrationSettings(env);
     vi.spyOn(settings, 'readCredentials').mockResolvedValue({ stripe: null, gmail: null });
     const testConnection = vi.spyOn(settings, 'testConnection')
-      .mockResolvedValueOnce({ stripe: { configured: true, updatedAt: null }, gmail: { configured: true, updatedAt: null } })
-      .mockResolvedValue({ stripe: { configured: false, updatedAt: null }, gmail: { configured: true, updatedAt: null } });
+      .mockResolvedValueOnce({
+        stripe: { secretKey: 'sk_test_fake', webhookSecret: 'whsec_fake' },
+        gmail: { clientId: 'client-id', clientSecret: 'client-secret', refreshToken: 'refresh-token' },
+      })
+      .mockResolvedValue({ stripe: null, gmail: { clientId: 'client-id', clientSecret: 'client-secret', refreshToken: 'refresh-token' } });
     vi.spyOn(settings, 'status').mockImplementation(async () => ({
       mode: 'infisical', infisical: settings.connectionSettings(),
       stripe: { configured: true, updatedAt: null }, gmail: { configured: true, updatedAt: null },
@@ -55,8 +58,14 @@ describe('integration settings routes', () => {
       });
       expect(response.statusCode).toBe(200);
       expect(testConnection).toHaveBeenCalledWith({ apiUrl: 'https://eu.infisical.com', projectId: 'target-project', environment: 'test', secretPath: '/netball-trials' });
+      expect('checkouts' in infisicalApp.testDeps.payment).toBe(false);
+      expect(infisicalApp.testDeps.mailer).toMatchObject({ provider: 'gmail-api' });
       expect(response.json().infisical).toMatchObject({ configured: true, apiUrl: 'https://eu.infisical.com', projectId: 'target-project', environment: 'test', secretPath: '/netball-trials' });
       expect(response.body).not.toContain('machine-secret');
+      expect(response.body).not.toContain('client-secret');
+      expect(response.body).not.toContain('refresh-token');
+      expect(response.body).not.toContain('sk_test_fake');
+      expect(response.body).not.toContain('whsec_fake');
       expect(await prisma.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } })).toMatchObject({
         apiUrl: 'https://eu.infisical.com', projectId: 'target-project', environment: 'test', secretPath: '/netball-trials',
       });

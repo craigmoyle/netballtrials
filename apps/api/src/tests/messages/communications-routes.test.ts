@@ -58,6 +58,18 @@ describe('event communications routes', () => {
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'paid@example.test', subject: 'Trials update', text: 'Bring water.' });
     const log = await prisma.emailLog.findFirstOrThrow({ where: { batchId: sent.json().batchId } });
     expect(log).toMatchObject({ registrationId: paid.id, kind: 'message', status: 'SENT' });
+    const sentCount = outbox.sent.length;
+    const duplicate = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
+      payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Trials update', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
+    });
+    expect(duplicate.statusCode).toBe(200);
+    expect(outbox.sent).toHaveLength(sentCount);
+    const conflict = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
+      payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Changed', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
+    });
+    expect(conflict.statusCode).toBe(409);
   });
 
   it('renders participant placeholders and combines sibling names in one household email', async () => {
@@ -74,14 +86,14 @@ describe('event communications routes', () => {
 
     const personalized = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [single.id], subject: 'Hello {{playerFirstName}}', text: '{{playerName}} — {{eventName}} at {{venue}}' },
+      payload: { audience: 'participants', recipientIds: [single.id], subject: 'Hello {{playerFirstName}}', text: '{{playerName}} — {{eventName}} at {{venue}}', batchId: '00000000-0000-4000-8000-000000000076' },
     });
     expect(personalized.statusCode).toBe(200);
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'single@example.test', subject: 'Hello Ada', text: 'Ada Lovelace — Spring Trials at SNC' });
 
     const household = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [firstSibling.id, secondSibling.id], subject: 'Your players', text: '{{playerNames}}' },
+      payload: { audience: 'participants', recipientIds: [firstSibling.id, secondSibling.id], subject: 'Your players', text: '{{playerNames}}', batchId: '00000000-0000-4000-8000-000000000077' },
     });
     expect(household.statusCode).toBe(200);
     expect(household.json().sent).toBe(1);
@@ -96,7 +108,7 @@ describe('event communications routes', () => {
     await prisma.eventPolicyDocument.create({ data: { eventId, fileName: 'Selection policy.pdf', bytes: Buffer.from('%PDF-1.4 test') } });
     const sent = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'associations', recipientIds: [association.id], subject: 'Association notice', text: 'Please share with your teams.' },
+      payload: { audience: 'associations', recipientIds: [association.id], subject: 'Association notice', text: 'Please share with your teams.', batchId: '00000000-0000-4000-8000-000000000078' },
     });
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toMatchObject({ sent: 1 });
@@ -164,13 +176,19 @@ describe('event communications routes', () => {
   it('creates a future Melbourne schedule, lists it, and cancels before send', async () => {
     const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'parent@example.test' }) });
     const scheduledLocal = '2027-01-15T10:30';
+    const scheduleInput = { audience: 'participants', recipientIds: [paid.id], subject: 'Trial reminder', text: 'See you soon.', scheduledLocal, batchId: '00000000-0000-4000-8000-000000000075' };
     const created = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/schedule`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Trial reminder', text: 'See you soon.', scheduledLocal },
+      payload: scheduleInput,
     });
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({ status: 'SCHEDULED', audience: 'participants', subject: 'Trial reminder', recipientIds: [paid.id] });
     expect(created.json().scheduledAt).toBe('2027-01-14T23:30:00.000Z');
+    const duplicate = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/schedule`, cookies: { nt_session: cookie }, payload: scheduleInput,
+    });
+    expect(duplicate.statusCode).toBe(200);
+    expect(duplicate.json().id).toBe(created.json().id);
     const list = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/communications/scheduled`, cookies: { nt_session: cookie } });
     expect(list.json()).toHaveLength(1);
     const cancelled = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/communications/scheduled/${created.json().id}/cancel`, cookies: { nt_session: cookie } });
@@ -209,7 +227,7 @@ describe('event communications routes', () => {
   it('rejects schedules in the past and duplicate template names', async () => {
     const past = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/schedule`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: ['unused'], subject: 'Past', text: 'No', scheduledLocal: '2020-01-01T10:00' },
+      payload: { audience: 'participants', recipientIds: ['unused'], subject: 'Past', text: 'No', scheduledLocal: '2020-01-01T10:00', batchId: '00000000-0000-4000-8000-000000000079' }
     });
     expect(past.statusCode).toBe(400);
     const template = { name: 'Trial update', audience: 'participants', subject: 'Update', body: 'Hello' };

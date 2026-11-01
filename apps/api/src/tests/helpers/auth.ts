@@ -16,7 +16,7 @@ export async function signInAsNewAdmin(app: FastifyInstance, email: string): Pro
     throw new Error('signInAsNewAdmin: no login link was emailed');
   }
 
-  const token = new URL(link).searchParams.get('token')!;
+  const token = new URLSearchParams(new URL(link).hash.slice(1)).get('token')!;
   const verified = await app.inject({
     method: 'POST',
     url: '/api/auth/verify',

@@ -8,7 +8,7 @@ import { VerifyPage } from './VerifyPage';
 function Host({ client }: { client: any }) {
   const [signedIn, setSignedIn] = useState(false);
   return (
-    <MemoryRouter initialEntries={['/admin/verify?token=abc']}>
+    <MemoryRouter initialEntries={['/admin/verify#token=abc']}>
       <VerifyPage client={client} onSignedIn={() => setSignedIn(true)} />
       <p>signedIn: {String(signedIn)}</p>
     </MemoryRouter>

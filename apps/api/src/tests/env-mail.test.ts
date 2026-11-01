@@ -9,7 +9,7 @@ describe('production environment config', () => {
     WEB_ORIGIN: 'https://trials.example',
     API_PUBLIC_URL: 'https://api.example',
     SESSION_COOKIE_SECURE: 'true',
-    STRIPE_SECRET_KEY: 'sk_test_configured',
+    STRIPE_SECRET_KEY: 'sk_live_configured',
     STRIPE_WEBHOOK_SECRET: 'whsec_configured',
   };
 
@@ -17,6 +17,11 @@ describe('production environment config', () => {
     const source = { ...base } as NodeJS.ProcessEnv;
     delete source.DATABASE_URL;
     expect(() => loadEnv(source)).toThrow(/DATABASE_URL.*production/i);
+  });
+
+  it('rejects Stripe test keys in production', () => {
+    expect(() => loadEnv({ ...base, STRIPE_SECRET_KEY: 'sk_test_configured' } as NodeJS.ProcessEnv))
+      .toThrow(/production.*live Stripe|sk_live/i);
   });
 
   it('requires client ID, client secret, and refresh token for production Gmail', () => {

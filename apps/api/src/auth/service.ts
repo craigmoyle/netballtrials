@@ -113,7 +113,7 @@ export async function requestLoginLink(
     });
   }
 
-  const link = `${deps.webOrigin}/admin/verify?token=${record.token}`;
+  const link = `${deps.webOrigin}/admin/verify#token=${record.token}`;
   await deps.mailer.send({
     to: email,
     subject: 'Sign in to Netball Trials',

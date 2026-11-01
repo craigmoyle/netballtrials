@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { eventFixture } from '../helpers/fixtures';
-import { createPendingRegistration, expireStalePending, RegistrationConflictError, RegistrationValidationError } from '../../registrations/service';
+import { createPendingRegistration, RegistrationConflictError, RegistrationValidationError } from '../../registrations/service';
 
 let eventId: string;
 
@@ -45,9 +45,15 @@ describe('createPendingRegistration', () => {
   it('allows a new registration after the previous pending one expires', async () => {
     const first = await createPendingRegistration(prisma, eventId, input, new Date());
     await prisma.registration.update({ where: { id: first.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
-    expect(await expireStalePending(prisma, eventId, new Date())).toBe(1);
-    await expect(createPendingRegistration(prisma, eventId, input, new Date())).resolves.toBeTruthy();
+    const replacement = await createPendingRegistration(prisma, eventId, input, new Date());
+    expect(replacement.id).not.toBe(first.id);
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: first.id } })).status).toBe('EXPIRED');
   });
+  it('accepts a date of birth that is today in Melbourne before UTC midnight', async () => {
+    const registration = await createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2026-10-10' }, new Date('2026-10-09T14:00:00Z'));
+    expect(registration.dateOfBirth.toISOString()).toContain('2026-10-10');
+  });
+
   it('rejects a date of birth in the future', async () => {
     await expect(
       createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2026-10-11' }, new Date('2026-10-10T00:00:00Z')),

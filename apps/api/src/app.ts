@@ -26,6 +26,7 @@ import { registerRosterRoutes } from './roster/routes';
 import { registerParentAccessRoutes } from './parents/routes';
 import { assertNoUnverifiedPendingCheckouts } from './registrations/checkout';
 import { IntegrationSettings } from './integrations/settings';
+import type { IntegrationCredentials } from './integrations/infisical';
 import { registerIntegrationRoutes } from './integrations/routes';
 
 export type AppDeps = {
@@ -35,6 +36,7 @@ export type AppDeps = {
   payment: PaymentProvider;
   integrationSettings?: IntegrationSettings;
   reloadIntegrations?: () => Promise<void>;
+  prepareIntegrationUpdate?: (credentials: Partial<IntegrationCredentials>) => () => void;
   /** Application logger; silent in tests. Never pass request bodies or PII. */
   log?: Pick<FastifyBaseLogger, 'error' | 'warn' | 'info'>;
 };
@@ -101,6 +103,9 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   if (hasStripeSecret !== hasWebhookSecret) {
     throw new Error('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured together');
   }
+  if (env.NODE_ENV === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
+    throw new Error('Production requires a live Stripe secret key (sk_live_)');
+  }
   if (env.NODE_ENV === 'production') {
     if (env.PAYMENT_PROVIDER !== 'stripe' || ((!hasStripeSecret || !hasWebhookSecret) && !readsInfisical)) {
       throw new Error('Production requires Stripe credentials from Infisical or the deployment environment');
@@ -128,6 +133,17 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
 
   const database = overrides.prisma ?? defaultPrisma;
   let deps!: AppDeps;
+  const prepareIntegrationUpdate = (credentials: Partial<IntegrationCredentials>) => {
+    if (env.NODE_ENV === 'production' && credentials.stripe && !credentials.stripe.secretKey.startsWith('sk_live_')) {
+      throw new Error('Production requires a live Stripe secret key (sk_live_)');
+    }
+    const nextPayment = credentials.stripe ? createStripePaymentProvider(credentials.stripe) : null;
+    const nextMailer = credentials.gmail ? createGmailMailer(credentials.gmail) : null;
+    return () => {
+      if (nextPayment) deps.payment = nextPayment;
+      if (nextMailer) deps.mailer = nextMailer;
+    };
+  };
   const reloadIntegrations = async () => {
     if (integrationSettings.mode === 'infisical') {
       const saved = await database.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } });
@@ -136,8 +152,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
       }, saved.updatedAt);
     }
     const credentials = await integrationSettings.readCredentials();
-    if (credentials.stripe) deps.payment = createStripePaymentProvider(credentials.stripe);
-    if (credentials.gmail) deps.mailer = createGmailMailer(credentials.gmail);
+    prepareIntegrationUpdate(credentials)();
   };
   deps = {
     env,
@@ -146,6 +161,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     payment,
     integrationSettings,
     reloadIntegrations,
+    prepareIntegrationUpdate,
   };
 
   const webOrigin = new URL(env.WEB_ORIGIN).origin;

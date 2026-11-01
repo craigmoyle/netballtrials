@@ -143,6 +143,7 @@ export function SettingsPage({ client }: { client: Client }) {
         <h2 id="stripe-integration-heading">Stripe payments</h2>
         <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'Credential status is unavailable until Infisical is reachable.' : settings?.stripe.configured ? 'Credentials are configured.' : 'Credentials are not configured.'}{settings?.stripe.updatedAt ? ` Last updated ${new Date(settings.stripe.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>
         <p>Saved values are write-only. Replacing them updates the secret store; the current values are never displayed.</p>
+        <p>Production must use a live Stripe secret key beginning with <code>sk_live_</code>.</p>
         {settings?.mode === 'infisical' ? (
           <form onSubmit={(event) => void saveStripe(event)}>
             <label htmlFor="stripe-secret-key">New Stripe secret key</label>

@@ -84,6 +84,29 @@ describe('CommunicationsPage', () => {
     expect(await screen.findByText('2 sent, 0 failed.')).toBeInTheDocument();
   });
 
+  it('reuses the same idempotency key when an immediate send response is lost', async () => {
+    const client = renderPage({
+      sendCommunication: vi.fn().mockRejectedValueOnce(new Error('network response lost'))
+        .mockResolvedValue({ batchId: 'batch-1', sent: 2, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
+    });
+    await screen.findByText('Ada Lovelace');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' }));
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Trial update' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Bring water.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview recipients' }));
+    await screen.findByRole('heading', { name: 'Review recipients' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send now to 1' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Send now to 1' }));
+    await waitFor(() => expect(client.sendCommunication).toHaveBeenCalledTimes(2));
+    const first = client.sendCommunication.mock.calls[0]![1].batchId;
+    const second = client.sendCommunication.mock.calls[1]![1].batchId;
+    expect(first).toEqual(expect.any(String));
+    expect(second).toBe(first);
+    expect(await screen.findByText('2 sent, 0 failed.')).toBeInTheDocument();
+  });
+
   it('saves and applies audience-specific email templates', async () => {
     const template = { id: 'template-1', name: 'Trial update', audience: 'participants', subject: 'Saved subject', body: 'Saved body', createdAt: '', updatedAt: '' };
     const client = renderPage({
@@ -113,7 +136,7 @@ describe('CommunicationsPage', () => {
     await screen.findByRole('heading', { name: 'Review recipients' });
     fireEvent.change(screen.getByLabelText('Send at (Australia/Melbourne)'), { target: { value: '2099-01-15T10:30' } });
     fireEvent.click(screen.getByRole('button', { name: 'Schedule email' }));
-    await waitFor(() => expect(client.scheduleCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({ audience: 'participants', recipientIds: ['p1'], subject: 'Reminder', text: 'Tomorrow.', scheduledLocal: '2099-01-15T10:30' })));
+    await waitFor(() => expect(client.scheduleCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({ audience: 'participants', recipientIds: ['p1'], subject: 'Reminder', text: 'Tomorrow.', scheduledLocal: '2099-01-15T10:30', batchId: expect.any(String) })));
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel scheduled email' }));
     await waitFor(() => expect(client.cancelScheduledCommunication).toHaveBeenCalledWith('event-1', 'scheduled-1'));
   });

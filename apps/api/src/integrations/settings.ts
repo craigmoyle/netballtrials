@@ -90,10 +90,10 @@ export class IntegrationSettings {
     this.store = this.createStore(connection);
   }
 
-  async testConnection(connection: InfisicalConnectionSettings): Promise<IntegrationCredentialStatus> {
+  async testConnection(connection: InfisicalConnectionSettings): Promise<IntegrationCredentials> {
     if (this.mode !== 'infisical') throw new IntegrationSettingsUnavailableError();
     this.validateConnection(connection);
-    return this.createStore(connection).getStatus();
+    return this.createStore(connection).readCredentials();
   }
 
   async readCredentials(): Promise<IntegrationCredentials> {

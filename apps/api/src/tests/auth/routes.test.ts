@@ -36,7 +36,7 @@ describe('auth routes', () => {
   it('keeps an earlier link working after a newer request', async () => {
     await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
     await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
-    const first = new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+    const first = new URLSearchParams(new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).hash.slice(1)).get('token')!;
     const verified = await app.inject({ method: 'POST', url: '/api/auth/verify', payload: { token: first } });
     expect(verified.statusCode).toBe(200);
   });
@@ -46,7 +46,7 @@ describe('auth routes', () => {
   });
   it('signs a token, sets a cookie, and reports the admin', async () => {
     await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
-    const token = new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+    const token = new URLSearchParams(new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).hash.slice(1)).get('token')!;
     const verified = await app.inject({ method: 'POST', url: '/api/auth/verify', payload: { token } });
     expect(verified.statusCode).toBe(200);
     const cookie = verified.cookies.find((c) => c.name === 'nt_session')!;
@@ -61,7 +61,7 @@ describe('auth routes', () => {
   });
   it('invalidates the server session on logout', async () => {
     await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } });
-    const token = new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+    const token = new URLSearchParams(new URL(outbox.sent[0].text.match(/https?:\/\/\S+/)![0]).hash.slice(1)).get('token')!;
     const verified = await app.inject({ method: 'POST', url: '/api/auth/verify', payload: { token } });
     const cookieValue = verified.cookies.find((c) => c.name === 'nt_session')!.value;
     const out = await app.inject({ method: 'POST', url: '/api/auth/logout', cookies: { nt_session: cookieValue } });

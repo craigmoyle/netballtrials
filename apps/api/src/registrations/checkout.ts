@@ -3,10 +3,45 @@ import type { PrismaClient, Registration } from '@prisma/client';
 import type { AppDeps } from '../app';
 import { sendEmailToRecipient } from '../messages/service';
 import type { CheckoutSession, PaymentProvider } from '../payments/provider';
+import { PENDING_TTL_MS } from './service';
+
+const STRIPE_CHECKOUT_MIN_LIFETIME_MS = 30 * 60_000;
+const STRIPE_CHECKOUT_SAFETY_MS = 5 * 60_000;
+const STRIPE_CHECKOUT_WINDOW_MS = STRIPE_CHECKOUT_MIN_LIFETIME_MS + STRIPE_CHECKOUT_SAFETY_MS;
+
+async function checkoutExpiry(
+  prisma: PrismaClient,
+  registrationId: string,
+  now: Date,
+): Promise<Date | null> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const current = await prisma.registration.findUnique({
+      where: { id: registrationId },
+      select: { status: true, checkoutSessionId: true, expiresAt: true, createdAt: true },
+    });
+    if (!current || current.status !== 'PENDING' || current.expiresAt <= now) return null;
+    const remaining = current.expiresAt.getTime() - now.getTime();
+    if (current.checkoutSessionId || remaining >= STRIPE_CHECKOUT_WINDOW_MS) return current.expiresAt;
+
+    // Stripe requires a 30-minute minimum; this one-time extension adds a 5-minute safety margin.
+    const originalExpiry = current.createdAt.getTime() + PENDING_TTL_MS;
+    if (current.expiresAt.getTime() > originalExpiry) {
+      return remaining >= STRIPE_CHECKOUT_MIN_LIFETIME_MS + 60_000 ? current.expiresAt : null;
+    }
+    const extendedExpiry = new Date(now.getTime() + STRIPE_CHECKOUT_WINDOW_MS);
+    const extended = await prisma.registration.updateMany({
+      where: { id: registrationId, status: 'PENDING', checkoutSessionId: null, expiresAt: current.expiresAt },
+      data: { expiresAt: extendedExpiry },
+    });
+    if (extended.count === 1) return extendedExpiry;
+  }
+  return null;
+}
 
 export async function createRegistrationCheckout(
   deps: AppDeps,
   registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
+  now = new Date(),
 ): Promise<CheckoutSession | null> {
   try {
     if (deps.env.PAYMENT_PROVIDER === 'fake' && registration.checkoutSessionId?.startsWith('fake_sim_')) {
@@ -21,6 +56,10 @@ export async function createRegistrationCheckout(
       };
     }
 
+    const expiresAt = deps.env.PAYMENT_PROVIDER === 'stripe'
+      ? await checkoutExpiry(deps.prisma, registration.id, now)
+      : registration.expiresAt;
+    if (!expiresAt) return null;
     const checkout = await deps.payment.createCheckout({
       registrationId: registration.id,
       amountCents: registration.amountCents,
@@ -28,7 +67,7 @@ export async function createRegistrationCheckout(
       productName: 'Netball trials registration',
       successUrl: `${deps.env.WEB_ORIGIN}/register/${registration.eventId}/pending?session={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${deps.env.WEB_ORIGIN}/register/${registration.eventId}`,
-      expiresAt: registration.expiresAt,
+      expiresAt,
     }, registration.id);
     if (!checkout.url || !checkout.sessionId) return null;
 
@@ -122,7 +161,7 @@ export async function sendCheckoutContinuation(
   now = new Date(),
   options: { batchId?: string; senderUserId?: string } = {},
 ): Promise<boolean> {
-  const checkout = await createRegistrationCheckout(deps, registration);
+  const checkout = await createRegistrationCheckout(deps, registration, now);
   if (!checkout) return false;
 
   try {

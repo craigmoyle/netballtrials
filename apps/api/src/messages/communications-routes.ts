@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import type { ScheduledMessage } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
+import type { ScheduledMessageDTO } from '@netball-trials/types';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
@@ -19,9 +20,10 @@ const messageFields = {
   subject: z.string().trim().min(1).max(200),
   text: z.string().trim().min(1).max(5000),
 };
-const messageSchema = z.object({ ...messageFields, batchId: z.uuid().optional() });
+const messageSchema = z.object({ ...messageFields, batchId: z.uuid() });
 const scheduleSchema = z.object({
   ...messageFields,
+  batchId: z.uuid(),
   scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
 });
 const templateSchema = z.object({
@@ -32,6 +34,29 @@ const retrySchema = z.object({ deliveryIds: z.array(z.string().min(1)).min(1).ma
 
 function selected(data: { audience: CommunicationAudience; recipientIds: string[] }): SelectedCommunication {
   return { audience: data.audience, recipientIds: data.recipientIds };
+}
+
+function scheduledMessageDto(row: ScheduledMessage): ScheduledMessageDTO {
+  return {
+    id: row.id, eventId: row.eventId, audience: row.audience as CommunicationAudience,
+    recipientIds: row.recipientIds as string[], batchId: row.batchId, subject: row.subject, body: row.body,
+    scheduledAt: row.scheduledAt.toISOString(), status: row.status, attempts: row.attempts, error: row.error,
+  };
+}
+
+function matchesScheduledInput(
+  row: ScheduledMessage,
+  input: { eventId: string; audience: CommunicationAudience; recipientIds: string[]; subject: string; text: string; scheduledAt: Date },
+): boolean {
+  const storedIds = [...new Set(row.recipientIds as string[])].sort();
+  const requestedIds = [...new Set(input.recipientIds)].sort();
+  return row.eventId === input.eventId && row.audience === input.audience &&
+    JSON.stringify(storedIds) === JSON.stringify(requestedIds) && row.subject === input.subject &&
+    row.body === input.text && row.scheduledAt.getTime() === input.scheduledAt.getTime();
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
 }
 
 function scheduledLocalToUtc(value: string): Date {
@@ -113,7 +138,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
       return await sendSelectedCommunication(
         { prisma: deps.prisma, mailer: deps.mailer }, id, selectedRecipients,
         { subject: parsed.data.subject, text: parsed.data.text }, new Date(),
-        { batchId: parsed.data.batchId ?? randomUUID(), senderUserId: req.adminUserId },
+        { batchId: parsed.data.batchId, senderUserId: req.adminUserId },
       );
     } catch (error) {
       if (error instanceof EmailBatchConflictError) return reply.code(409).send({ error: 'idempotency_conflict' });
@@ -130,6 +155,18 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     let scheduledAt: Date;
     try { scheduledAt = scheduledLocalToUtc(parsed.data.scheduledLocal); }
     catch { return reply.code(400).send({ error: 'invalid_schedule_time' }); }
+    const batchId = parsed.data.batchId;
+    const input = {
+      eventId: id, audience: parsed.data.audience, recipientIds: parsed.data.recipientIds,
+      subject: parsed.data.subject, text: parsed.data.text, scheduledAt,
+    };
+    const existing = parsed.data.batchId
+      ? await deps.prisma.scheduledMessage.findUnique({ where: { batchId } })
+      : null;
+    if (existing) {
+      if (!matchesScheduledInput(existing, input)) return reply.code(409).send({ error: 'idempotency_conflict' });
+      return reply.code(200).send(scheduledMessageDto(existing));
+    }
     if (scheduledAt.getTime() < Date.now() + 60_000) return reply.code(400).send({ error: 'schedule_must_be_in_future' });
     const selectedRecipients = selected(parsed.data);
     const preview = await previewSelectedRecipients(deps.prisma, id, selectedRecipients);
@@ -137,19 +174,24 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
     const policyDocument = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, select: { fileName: true, bytes: true } });
     const policyAttachment = policyDocument ? { fileName: policyDocument.fileName, contentBase64: Buffer.from(policyDocument.bytes).toString('base64') } : undefined;
-    const row = await deps.prisma.scheduledMessage.create({
-      data: {
-        eventId: id, senderUserId: req.adminUserId, audience: parsed.data.audience,
-        recipientIds: [...new Set(parsed.data.recipientIds)], batchId: randomUUID(),
-        subject: parsed.data.subject, body: parsed.data.text, scheduledAt,
-        ...(policyAttachment ? { policyAttachment } : {}),
-      },
-    });
-    return reply.code(201).send({
-      id: row.id, eventId: row.eventId, audience: row.audience, recipientIds: row.recipientIds,
-      batchId: row.batchId, subject: row.subject, body: row.body, scheduledAt: row.scheduledAt.toISOString(),
-      status: row.status, attempts: row.attempts, error: row.error,
-    });
+    let row: ScheduledMessage;
+    try {
+      row = await deps.prisma.scheduledMessage.create({
+        data: {
+          eventId: id, senderUserId: req.adminUserId, audience: parsed.data.audience,
+          recipientIds: [...new Set(parsed.data.recipientIds)], batchId,
+          subject: parsed.data.subject, body: parsed.data.text, scheduledAt,
+          ...(policyAttachment ? { policyAttachment } : {}),
+        },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error) || !parsed.data.batchId) throw error;
+      const duplicate = await deps.prisma.scheduledMessage.findUnique({ where: { batchId } });
+      if (!duplicate) throw error;
+      if (!matchesScheduledInput(duplicate, input)) return reply.code(409).send({ error: 'idempotency_conflict' });
+      return reply.code(200).send(scheduledMessageDto(duplicate));
+    }
+    return reply.code(201).send(scheduledMessageDto(row));
   });
 
   app.get('/api/admin/events/:id/communications/scheduled', { preHandler: requireAdmin(deps) }, async (req, reply) => {

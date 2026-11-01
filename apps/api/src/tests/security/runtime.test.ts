@@ -51,7 +51,7 @@ describe('production runtime boundary', () => {
       SESSION_COOKIE_SECURE: 'true',
       WEB_ORIGIN: 'http://trials.example',
       API_PUBLIC_URL: 'https://api.example',
-      STRIPE_SECRET_KEY: 'sk_test_configured',
+      STRIPE_SECRET_KEY: 'sk_live_configured',
       STRIPE_WEBHOOK_SECRET: 'whsec_configured',
     })).toThrow(/HTTPS/i);
   });
@@ -64,7 +64,7 @@ describe('production runtime boundary', () => {
       SESSION_COOKIE_SECURE: 'false',
       WEB_ORIGIN: 'https://trials.example',
       API_PUBLIC_URL: 'https://api.example',
-      STRIPE_SECRET_KEY: 'sk_test_configured',
+      STRIPE_SECRET_KEY: 'sk_live_configured',
       STRIPE_WEBHOOK_SECRET: 'whsec_configured',
     }) })).toThrow(/SESSION_COOKIE_SECURE|secure cookie/i);
   });
@@ -100,7 +100,7 @@ describe('production runtime boundary', () => {
       SESSION_COOKIE_SECURE: 'true',
       WEB_ORIGIN: 'https://trials.example',
       API_PUBLIC_URL: 'https://api.example',
-      STRIPE_SECRET_KEY: 'sk_test_configured',
+      STRIPE_SECRET_KEY: 'sk_live_configured',
       STRIPE_WEBHOOK_SECRET: 'whsec_configured',
     });
     const app = createApp({ env: productionEnv });
@@ -115,7 +115,7 @@ describe('production runtime boundary', () => {
       SESSION_COOKIE_SECURE: 'true',
       WEB_ORIGIN: 'https://trials.example',
       API_PUBLIC_URL: 'https://api.example',
-      STRIPE_SECRET_KEY: 'sk_test_configured',
+      STRIPE_SECRET_KEY: 'sk_live_configured',
       STRIPE_WEBHOOK_SECRET: 'whsec_configured',
       MAIL_FROM: 'chisholmnetball@gmail.com',
       MAIL_REPLY_TO: 'chisholmnetball@gmail.com',

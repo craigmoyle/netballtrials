@@ -33,17 +33,21 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
     const settings = deps.integrationSettings;
     if (!settings || settings.mode !== 'infisical') return reply.code(409).send({ error: 'infisical_identity_not_configured' });
     try {
-      const test = await settings.testConnection(parsed.data);
-      if (!test.stripe.configured || !test.gmail.configured) {
+      const credentials = await settings.testConnection(parsed.data);
+      if (!credentials.stripe || !credentials.gmail) {
         return reply.code(409).send({ error: 'infisical_provider_secrets_missing' });
       }
+      if (deps.env.NODE_ENV === 'production' && !credentials.stripe.secretKey.startsWith('sk_live_')) {
+        return reply.code(400).send({ error: 'stripe_live_key_required' });
+      }
+      const activate = deps.prepareIntegrationUpdate?.(credentials);
       const saved = await deps.prisma.infisicalConnectionSettings.upsert({
         where: { id: 'infisical' },
         create: { id: 'infisical', ...parsed.data },
         update: parsed.data,
       });
       settings.configureConnection(parsed.data, saved.updatedAt);
-      await deps.reloadIntegrations?.();
+      activate?.();
       return settings.status();
     } catch {
       return reply.code(502).send({ error: 'infisical_connection_failed' });
@@ -53,15 +57,17 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
   app.put('/api/admin/settings/integrations/stripe', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = stripeSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
-    if (!parsed.data.secretKey.startsWith('sk_') || !parsed.data.webhookSecret.startsWith('whsec_')) {
+    const requiredKeyPrefix = deps.env.NODE_ENV === 'production' ? 'sk_live_' : 'sk_';
+    if (!parsed.data.secretKey.startsWith(requiredKeyPrefix) || !parsed.data.webhookSecret.startsWith('whsec_')) {
       return reply.code(400).send({ error: 'stripe_credentials_invalid' });
     }
     if (!deps.integrationSettings || deps.integrationSettings.mode !== 'infisical') {
       return reply.code(409).send({ error: 'secret_store_not_configured' });
     }
     try {
+      const activate = deps.prepareIntegrationUpdate?.({ stripe: parsed.data });
       await deps.integrationSettings.replaceStripe(parsed.data);
-      await deps.reloadIntegrations?.();
+      activate?.();
       return deps.integrationSettings.status();
     } catch (error) {
       if (error instanceof IntegrationSettingsUnavailableError) return reply.code(409).send({ error: 'secret_store_not_configured' });
@@ -76,8 +82,9 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
       return reply.code(409).send({ error: 'secret_store_not_configured' });
     }
     try {
+      const activate = deps.prepareIntegrationUpdate?.({ gmail: parsed.data });
       await deps.integrationSettings.replaceGmail(parsed.data);
-      await deps.reloadIntegrations?.();
+      activate?.();
       return deps.integrationSettings.status();
     } catch {
       return reply.code(502).send({ error: 'integration_update_failed' });

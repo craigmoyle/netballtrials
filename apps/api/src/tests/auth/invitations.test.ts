@@ -50,7 +50,7 @@ describe('admin invitations', () => {
     const invited = await prisma.staffUser.findUniqueOrThrow({ where: { email: 'new-admin@example.com' } });
     expect(invited.invitedByUserId).toBe(owner.id);
     expect(mailer.sent.at(-1)?.to).toBe('new-admin@example.com');
-    expect(mailer.sent.at(-1)?.text).toContain('/admin/verify?token=');
+    expect(mailer.sent.at(-1)?.text).toContain('/admin/verify#token=');
   });
 
   it('requires an admin session to invite another administrator', async () => {
