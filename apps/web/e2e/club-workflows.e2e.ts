@@ -50,6 +50,12 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await expectSkipNavigation(page);
 }
 
+async function openAdminSetup(page: Page, name: string): Promise<void> {
+  const menu = page.locator('nav[aria-label="Administration"] details.admin-nav-menu');
+  if (!await menu.evaluate((element) => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();
+  await menu.getByRole('link', { name, exact: true }).click();
+}
+
 async function openEventTool(page: Page, name: string): Promise<void> {
   const nav = page.getByRole('navigation', { name: 'Event workflows' });
   await expect(nav).toBeVisible();
@@ -148,7 +154,8 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   await expect(logo).toHaveAttribute('href', '/');
   await expect.poll(() => logo.locator('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   const signIn = page.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
-  await expect(signIn.getByRole('link', { name: 'Parents & guardians' })).toHaveAttribute('href', '/manage-registration');
+  const parentGroup = signIn.getByRole('group', { name: 'Parents, guardians and players' });
+  await expect(parentGroup.getByRole('link', { name: 'Manage Registrations' })).toHaveAttribute('href', '/manage-registration');
   await expect(signIn.getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
   await signIn.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
@@ -196,7 +203,9 @@ test('parent registration stays neutral, checkout return stays pending, and tick
   await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
   await expect(page.getByText(/arrival time 08:30 · start time 09:00/i)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await expect(page.getByRole('option', { name: 'MENA' })).toBeAttached();
+  for (const association of ['Ariels', 'Boroondara', 'MENA', 'Manningham', 'Whitehorse']) {
+    await expect(page.getByRole('option', { name: association })).toBeAttached();
+  }
   await expectAccessible(page);
   await page.getByLabel('Player first name').focus();
   await page.keyboard.press('Tab');
@@ -256,6 +265,23 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(trial).toMatchObject({ competitionYear: 2027, courts: 3, rank1Min: 2, rank2Min: 1, rank3Min: 0 });
   const seededRoster = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/roster`).then((response) => response.json());
   expect(seededRoster.registrations).toHaveLength(70);
+  const seededAssociations = await adminGet(page, request, `${API_ORIGIN}/api/admin/associations`).then((response) => response.json());
+  const expectedAssociations = ['Ariels', 'Boroondara', 'MENA', 'Manningham', 'Whitehorse'];
+  expect(new Set(seededAssociations.map((association: { name: string }) => association.name))).toEqual(new Set(expectedAssociations));
+  expect(seededAssociations).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: 'MENA', primaryContactName: 'Morgan Chen', primaryContactEmail: 'contact.mena@example.test' }),
+    expect.objectContaining({ name: 'Ariels', primaryContactName: 'Avery Taylor', primaryContactEmail: 'contact.ariels@example.test' }),
+    expect.objectContaining({ name: 'Manningham', primaryContactName: 'Mackenzie Lee', primaryContactEmail: 'contact.manningham@example.test' }),
+    expect.objectContaining({ name: 'Whitehorse', primaryContactName: 'Willow Ford', primaryContactEmail: 'contact.whitehorse@example.test' }),
+    expect.objectContaining({ name: 'Boroondara', primaryContactName: 'Bailey Nguyen', primaryContactEmail: 'contact.boroondara@example.test' }),
+  ]));
+  const seededNames = seededRoster.registrations.map((player: { playerName: string }) => player.playerName);
+  expect(new Set(seededNames).size).toBe(70);
+  expect(seededNames).toContain('Arielle Ashford');
+  expect(seededNames).toContain('Briar Ashford');
+  expect(seededNames).toContain('Ada Ticket');
+  expect(seededNames).not.toContain('Player1 Trial');
+  expect(new Set(seededRoster.registrations.map((player: { memberAssociation: string }) => player.memberAssociation))).toEqual(new Set(expectedAssociations));
   const seededPlayers = seededRoster.registrations as Array<{ rank1Position: string; rank2Position: string | null; rank3Position: string | null; optInExtraPositions: boolean }>;
   expect(seededPlayers.every((player) => Boolean(player.rank1Position && player.rank2Position) &&
     new Set([player.rank1Position, player.rank2Position, player.rank3Position].filter(Boolean)).size === (player.rank3Position ? 3 : 2))).toBe(true);
@@ -281,8 +307,14 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText('Status: Closed')).toBeVisible();
   await page.getByRole('button', { name: /close event/i }).click();
   await expect(page.getByText('Status: closed', { exact: true })).toBeVisible();
-  await page.locator('nav[aria-label="Administration"]').getByRole('link', { name: 'Member associations' }).click();
+  await openAdminSetup(page, 'Member associations');
   await expect(page.getByRole('heading', { name: 'Member associations' })).toBeVisible();
+  const associationInputs = await page.locator('input').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
+  for (const contact of [
+    'Morgan Chen', 'Avery Taylor', 'Mackenzie Lee', 'Willow Ford', 'Bailey Nguyen',
+    'contact.mena@example.test', 'contact.ariels@example.test', 'contact.manningham@example.test',
+    'contact.whitehorse@example.test', 'contact.boroondara@example.test',
+  ]) expect(associationInputs).toContain(contact);
   await page.getByLabel('Association name').fill('Test Region Club');
   await page.getByLabel('Primary contact name (optional)').fill('Casey Contact');
   await page.getByLabel('Primary contact email (optional)').fill('casey-contact@example.test');
@@ -290,10 +322,10 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByRole('heading', { name: 'Test Region Club — Active' })).toBeVisible();
   await expectAccessible(page);
   const adminNav = page.locator('nav[aria-label="Administration"]');
-  await adminNav.getByRole('link', { name: 'Bib colors' }).click();
+  await openAdminSetup(page, 'Bib colors');
   await expect(page.getByRole('heading', { name: 'Bib colors' })).toBeVisible();
   await expectAccessible(page);
-  await adminNav.getByRole('link', { name: 'Staff access' }).click();
+  await openAdminSetup(page, 'Staff access');
   await expect(page.getByRole('heading', { name: 'Staff access' })).toBeVisible();
   await expectAccessible(page);
   await adminNav.getByRole('link', { name: 'Events', exact: true }).click();
@@ -305,7 +337,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await page.setViewportSize({ width: 390, height: 844 });
   await openEventTool(page, 'Roster and export');
   await expect(page.getByRole('heading', { name: 'Event roster' })).toBeVisible();
-  await expect(page.getByText(/Player1 Trial/)).toBeVisible();
+  await expect(page.getByText(/Arielle Ashford/)).toBeVisible();
   await expect(page.getByText('Scroll horizontally to view all roster details.')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expectAccessible(page);
@@ -352,11 +384,11 @@ test('Admin searches a player history without exposing parent or payment details
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('link', { name: 'Player history' }).click();
   await expect(page.getByRole('heading', { name: 'Player history' })).toBeVisible();
-  await page.getByLabel('Player full name').fill('Player1 Trial');
+  await page.getByLabel('Player full name').fill('Arielle Ashford');
   await page.getByLabel('Date of birth').fill('2012-04-02');
   await page.getByRole('button', { name: 'Search history' }).click();
   await expect(page.getByRole('heading', { name: 'Possible matching registrations' })).toBeVisible();
-  const history = page.getByRole('table', { name: 'Trial records for Player1 Trial' });
+  const history = page.getByRole('table', { name: 'Trial records for Arielle Ashford' });
   await expect(history.getByRole('row', { name: /2027-09-12.*E2E 15\/U Ladies/ })).toContainText('GS');
   await expect(page.getByText('Scroll horizontally to compare all trial details.')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -390,15 +422,15 @@ test('Parent magic link manages every registration linked to the guardian email'
   await expect(page.getByRole('button', { name: 'Sign in and continue' })).toBeVisible();
   await page.getByRole('button', { name: 'Sign in and continue' }).click();
   await expect(page.getByRole('heading', { name: 'Manage registrations' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Player1 Trial · E2E 15/U Ladies' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Arielle Ashford · E2E 15/U Ladies' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Ada Ticket · E2E 15/U Ladies' })).toBeVisible();
-  await expect(page.getByText('Player2 Trial · E2E 15/U Ladies')).toHaveCount(0);
+  await expect(page.getByText('Briar Ashford · E2E 15/U Ladies')).toHaveCount(0);
   await expectAccessible(page);
 
   const editableSibling = page.locator('.parent-registration').nth(1);
   await editableSibling.getByLabel('Player first name').fill('Player One');
   await editableSibling.getByRole('button', { name: 'Save changes' }).click();
-  await expect(editableSibling.getByRole('heading', { name: 'Player One Trial · E2E 15/U Ladies' })).toBeVisible();
+  await expect(editableSibling.getByRole('heading', { name: 'Player One Ashford · E2E 15/U Ladies' })).toBeVisible();
 
   await page.getByLabel('New email address').fill('family@example.test');
   await page.getByRole('button', { name: 'Send confirmation link' }).click();
@@ -423,9 +455,9 @@ test('Admin opens event-scoped check-in without a PIN', async ({ page, request }
   await expect(page.getByRole('heading', { name: 'E2E 15/U Ladies' })).toBeVisible();
   await expect(page.getByLabel('Event PIN')).toHaveCount(0);
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
-  await page.getByLabel('Player name').fill('Player1 Trial');
+  await page.getByLabel('Player name').fill('Arielle Ashford');
   await page.getByRole('button', { name: 'Check in' }).first().click();
-  await expect(page.getByRole('status')).toHaveText(/Player1 Trial, Number 70 — Refer to committee/);
+  await expect(page.getByRole('status')).toHaveText(/Arielle Ashford, Number 70 — Refer to committee/);
 });
 
 test('Admin assists a family on a closed event day and parent verifies email before Checkout', async ({ page, request }) => {
@@ -514,9 +546,9 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   await expectAccessible(page);
   await expectSkipNavigation(page);
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
-  await page.getByLabel('Player name').fill('Player1 Trial');
+  await page.getByLabel('Player name').fill('Arielle Ashford');
   await page.getByRole('button', { name: 'Check in' }).click();
-  await expect(page.getByRole('status')).toHaveText(/Player1 Trial, Number 70 — Refer to committee/);
+  await expect(page.getByRole('status')).toHaveText(/Arielle Ashford, Number 70 — Refer to committee/);
   await expect(page.getByText('70 of 70 arrived')).toBeVisible();
   await expect(page.getByText(/parent1@example\.test/)).toHaveCount(0);
   await expectAccessible(page);
@@ -569,11 +601,17 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   await expectAccessible(page);
 
   const publishedBefore = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`).then((response) => response.json());
+  const leavers = publishedBefore.players.filter((player: { active: boolean; registrationId: string }) =>
+    player.active && publishedBefore.slots.some((slot: { registrationId: string; round: number }) =>
+      slot.registrationId === player.registrationId && slot.round >= 1,
+    ),
+  ).slice(0, 28);
+  expect(leavers).toHaveLength(28);
   await page.setViewportSize({ width: 390, height: 844 });
   await openRosterChanges(page);
   await page.getByRole('button', { name: 'Remove early leaver' }).click();
-  for (let player = 2; player <= 29; player += 1) {
-    await page.getByLabel(`Remove Player${player} Trial from round 1 onward`).check();
+  for (const player of leavers as Array<{ playerName: string }>) {
+    await page.getByLabel(`Remove ${player.playerName} from round 1 onward`).check();
   }
   await page.getByRole('button', { name: 'Rebuild fixtures from round' }).click();
   await expect(page.getByRole('alert')).toContainText(/41 checked-in players cannot fill 3 courts \(need 42\)/i);

@@ -24,10 +24,13 @@ describe('site navigation', () => {
     render(<MemoryRouter><PublicAccessNav /></MemoryRouter>);
     const nav = screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
 
-    expect(within(nav).getByRole('link', { name: 'Parents & guardians' })).toHaveAttribute('href', '/manage-registration');
-    expect(within(nav).getByText('Staff & volunteers')).toBeInTheDocument();
-    expect(within(nav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
-    expect(within(nav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
+    const parentGroup = within(nav).getByRole('group', { name: 'Parents, guardians and players' });
+    const staffGroup = within(nav).getByRole('group', { name: 'Staff and volunteers' });
+    expect(within(parentGroup).getByText('Parents, guardians and players')).toBeInTheDocument();
+    expect(within(parentGroup).getByRole('link', { name: 'Manage Registrations' })).toHaveAttribute('href', '/manage-registration');
+    expect(within(staffGroup).getByText('Staff & volunteers')).toBeInTheDocument();
+    expect(within(staffGroup).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
+    expect(within(staffGroup).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
   });
 });

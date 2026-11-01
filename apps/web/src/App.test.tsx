@@ -117,7 +117,7 @@ describe('Public home page', () => {
     expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
     const accessNav = screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
-    expect(within(accessNav).getByRole('link', { name: 'Parents & guardians' })).toHaveAttribute('href', '/manage-registration');
+    expect(within(accessNav).getByRole('link', { name: 'Manage Registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(within(accessNav).getByText('Staff & volunteers')).toBeInTheDocument();
     expect(within(accessNav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(accessNav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
@@ -240,8 +240,15 @@ describe('App route boundaries', () => {
     const newEvent = await screen.findByRole('link', { name: 'New event' });
     expect(screen.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
     const adminNavigation = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(adminNavigation).getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/admin/events');
     expect(within(adminNavigation).getByRole('link', { name: 'Communications' })).toHaveAttribute('href', '/admin/communications');
+    expect(within(adminNavigation).getByRole('link', { name: 'Player history' })).toHaveAttribute('href', '/admin/player-history');
+    const setupMenu = within(adminNavigation).getByText('Club setup');
+    fireEvent.click(setupMenu);
+    expect(within(adminNavigation).getByRole('link', { name: 'Member associations' })).toHaveAttribute('href', '/admin/associations');
+    expect(within(adminNavigation).getByRole('link', { name: 'Bib colors' })).toHaveAttribute('href', '/admin/bib-colors');
     expect(within(adminNavigation).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/admin/settings');
+    expect(within(adminNavigation).getByRole('link', { name: 'Staff access' })).toHaveAttribute('href', '/admin/staff');
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Parent, staff and volunteer access' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Events | Chisholm Netball Trials'));
@@ -398,6 +405,8 @@ describe('App route boundaries', () => {
     expect(screen.getByText('White')).toBeInTheDocument();
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(apiMocks.listBibColors).toHaveBeenCalledTimes(1);
+    const setupSummary = screen.getByText('Club setup: Bib colors');
+    fireEvent.click(setupSummary);
     expect(screen.getByRole('link', { name: 'Bib colors' })).toHaveAttribute('href', '/admin/bib-colors');
   });
 

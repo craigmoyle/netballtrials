@@ -77,6 +77,7 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .app-brand img { display: block; width: 100%; height: auto; }
 .public-access-nav { margin-right: 0; margin-left: auto; }
+.public-access-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
 .public-access-label { font-weight: 650; }
 .app-nav.public-access-nav a { display: flex; align-items: center; min-height: 2.75rem; font-weight: 400; }
 
@@ -90,6 +91,12 @@ a:hover { text-decoration-thickness: 2px; }
 .app-nav a { color: var(--ink); font-weight: 650; }
 .app-nav.public-access-nav { margin-right: 0; margin-left: auto; }
 .app-nav:not(.public-access-nav) a { display: flex; align-items: center; min-height: 2.75rem; font-weight: 400; }
+.admin-nav-menu { position: relative; }
+.admin-nav-menu > summary { min-height: 2.75rem; padding-block: 0.6rem; color: var(--ink); font-weight: 400; cursor: pointer; text-decoration: underline; text-underline-offset: 0.18em; }
+.admin-nav-menu > summary:hover { text-decoration-thickness: 2px; }
+.admin-nav-menu > summary::marker { color: var(--burgundy); }
+.admin-nav-menu-links { position: absolute; z-index: 10; top: calc(100% + 0.25rem); left: 0; display: grid; min-width: 15rem; padding: 0.25rem 0.75rem; background: var(--paper); border: 1px solid var(--line); }
+.admin-nav-menu-links a { display: flex; align-items: center; min-height: 2.75rem; color: var(--ink); font-weight: 400; }
 .app-nav[aria-label="Administration"] a[aria-current="page"], .app-nav[aria-label="Check-in"] a[aria-current="page"] {
   color: var(--burgundy-dark);
   font-weight: 700;
@@ -304,8 +311,11 @@ thead { background: var(--blue-pale); }
 
 @media (max-width: 38rem) {
   .public-site-header { gap: 0.35rem 1rem; padding-block: 0.5rem; }
-  .public-site-header .public-access-nav { column-gap: 0.5rem; row-gap: 0.25rem; }
+  .public-site-header .public-access-nav { width: 100%; margin-left: 0; column-gap: 0.75rem; row-gap: 0.25rem; }
+  .public-site-header .public-access-group { column-gap: 0.5rem; row-gap: 0.25rem; }
   .public-site-header .public-access-label, .public-site-header .public-access-nav a { font-size: 0.875rem; white-space: nowrap; }
+  .admin-nav-menu[open] { flex: 1 1 100%; }
+  .admin-nav-menu[open] > .admin-nav-menu-links { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; width: 100%; margin-top: 0.25rem; padding: 0.25rem 0 0; border: 0; border-top: 1px solid var(--line); }
   .registration-page { margin-top: 0; }
   .event-workflow-toggle { display: block; width: 100%; text-align: left; }
   .event-workflow-links { display: none; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }

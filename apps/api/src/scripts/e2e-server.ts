@@ -21,6 +21,15 @@ const payment = createFakePaymentProvider();
 const app = createApp({ mailer, payment });
 let fixtures: Record<string, string> = {};
 let adminSequence = 0;
+const sampleAssociations = [
+  { name: 'MENA', primaryContactName: 'Morgan Chen', primaryContactEmail: 'contact.mena@example.test' },
+  { name: 'Ariels', primaryContactName: 'Avery Taylor', primaryContactEmail: 'contact.ariels@example.test' },
+  { name: 'Manningham', primaryContactName: 'Mackenzie Lee', primaryContactEmail: 'contact.manningham@example.test' },
+  { name: 'Whitehorse', primaryContactName: 'Willow Ford', primaryContactEmail: 'contact.whitehorse@example.test' },
+  { name: 'Boroondara', primaryContactName: 'Bailey Nguyen', primaryContactEmail: 'contact.boroondara@example.test' },
+];
+const samplePlayerFirstNames = ['Arielle', 'Briar', 'Calla', 'Daphne', 'Elodie', 'Freya', 'Gemma', 'Harlow', 'Indigo', 'Juniper'];
+const samplePlayerLastNames = ['Ashford', 'Bellamy', 'Calder', 'Delaney', 'Ellery', 'Fairchild', 'Gresham'];
 
 async function resetFixtures(): Promise<Record<string, string>> {
   await prisma.parentAccessSession.deleteMany();
@@ -32,10 +41,7 @@ async function resetFixtures(): Promise<Record<string, string>> {
   await prisma.staffUser.deleteMany();
   mailer.sent.splice(0);
   payment.checkouts.splice(0);
-  await prisma.memberAssociation.create({ data: {
-    name: 'MENA', active: true,
-    primaryContactName: 'E2E Association Contact', primaryContactEmail: 'association@example.test',
-  } });
+  await prisma.memberAssociation.createMany({ data: sampleAssociations.map((association) => ({ ...association, active: true })) });
 
   const mainEvent = await prisma.event.create({
     data: { ...eventFixture({
@@ -56,8 +62,9 @@ async function resetFixtures(): Promise<Record<string, string>> {
   for (let index = 0; index < 70; index++) {
     const isTicketPlayer = index === 69;
     const isWaiting = index === 0;
-    const playerFirstName = isTicketPlayer ? 'Ada' : `Player${index + 1}`;
-    const playerLastName = isTicketPlayer ? 'Ticket' : 'Trial';
+    const playerFirstName = isTicketPlayer ? 'Ada' : samplePlayerFirstNames[index % samplePlayerFirstNames.length];
+    const playerLastName = isTicketPlayer ? 'Ticket' : samplePlayerLastNames[Math.floor(index / samplePlayerFirstNames.length)];
+    const association = sampleAssociations[index % sampleAssociations.length];
     const rank1Index = (index * 2 + Math.floor(index / 8)) % COURT_POSITIONS.length;
     const rank2Index = (rank1Index + 1 + (index % 3)) % COURT_POSITIONS.length;
     const rank3Index = (rank2Index + 1 + (index % 2)) % COURT_POSITIONS.length;
@@ -70,7 +77,7 @@ async function resetFixtures(): Promise<Record<string, string>> {
         parentEmail: isTicketPlayer ? 'PARENT1@example.test' : `parent${index + 1}@example.test`,
         parentEmailVerifiedAt: new Date(),
         dateOfBirth: new Date('2012-04-02T00:00:00Z'),
-        memberAssociation: 'MENA',
+        memberAssociation: association.name,
         rank1Position: COURT_POSITIONS[rank1Index],
         rank2Position: COURT_POSITIONS[rank2Index],
         rank3Position: index % 4 === 0 ? null : COURT_POSITIONS[rank3Index],
