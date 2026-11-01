@@ -14,6 +14,7 @@ describe('E2E server database guard', () => {
         env: {
           ...process.env,
           NODE_ENV: 'test',
+          APP_ENV: 'testing',
           PAYMENT_PROVIDER: 'fake',
           DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_dev',
           WEB_ORIGIN: 'http://localhost:5173',

@@ -6,8 +6,8 @@ import { expireUnverifiedPendingCheckouts } from '../registrations/checkout';
 async function main(): Promise<void> {
   const app = createApp();
   try {
-    if (app.testDeps.env.NODE_ENV !== 'production' || app.testDeps.env.PAYMENT_PROVIDER !== 'stripe') {
-      throw new Error('Checkout cutover requires NODE_ENV=production and PAYMENT_PROVIDER=stripe');
+    if (app.testDeps.env.APP_ENV !== 'production' || app.testDeps.env.NODE_ENV !== 'production' || app.testDeps.env.PAYMENT_PROVIDER !== 'stripe') {
+      throw new Error('Checkout cutover requires APP_ENV=production, NODE_ENV=production and PAYMENT_PROVIDER=stripe');
     }
     if (app.testDeps.integrationSettings?.mode === 'infisical') await app.testDeps.reloadIntegrations?.();
     if ('checkouts' in app.testDeps.payment) throw new Error('Stripe credentials are not configured');

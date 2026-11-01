@@ -38,11 +38,11 @@ export class IntegrationSettings {
   private connectionUpdatedAt: string | null = null;
 
   constructor(private readonly env: Env, private readonly fetcher: typeof fetch = fetch) {
-    const configured = env.NODE_ENV !== 'test' && Boolean(
+    const configured = env.APP_ENV === 'production' && Boolean(
       env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET &&
       env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT,
     );
-    this.mode = configured ? 'infisical' : env.NODE_ENV === 'production' ? 'environment' : 'fake';
+    this.mode = configured ? 'infisical' : env.APP_ENV === 'production' ? 'environment' : 'fake';
     this.connection = configured ? {
       apiUrl: env.INFISICAL_API_URL.replace(/\/+$/, ''),
       projectId: env.INFISICAL_PROJECT_ID.trim(),

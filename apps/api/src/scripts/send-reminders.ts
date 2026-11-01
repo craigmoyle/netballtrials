@@ -11,10 +11,10 @@ async function main(): Promise<void> {
   const app = createApp();
   try {
     if (app.testDeps.integrationSettings?.mode === 'infisical') await app.testDeps.reloadIntegrations?.();
-    if (app.testDeps.env.NODE_ENV === 'production' && (!('provider' in app.testDeps.mailer) || app.testDeps.mailer.provider !== 'gmail-api')) {
+    if (app.testDeps.env.APP_ENV === 'production' && (!('provider' in app.testDeps.mailer) || app.testDeps.mailer.provider !== 'gmail-api')) {
       throw new Error('Production reminders require configured Gmail credentials.');
     }
-    if (app.testDeps.env.NODE_ENV !== 'production' && !dryRun) {
+    if (app.testDeps.env.APP_ENV !== 'production' && !dryRun) {
       throw new Error('Non-production reminder runs require --dry-run');
     }
     const result = await sendDueReminders(

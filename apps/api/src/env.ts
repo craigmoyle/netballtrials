@@ -6,6 +6,7 @@ const envSchema = z
       .string()
       .default('postgresql://postgres:postgres@localhost:5432/netballtrials'),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
+    APP_ENV: z.enum(['testing', 'production']).optional(),
     PAYMENT_PROVIDER: z.enum(['stripe', 'fake']).optional(),
     WEB_ORIGIN: z.url().default('http://localhost:5173'),
     API_PUBLIC_URL: z.url().default('http://localhost:3000'),
@@ -36,11 +37,27 @@ const envSchema = z
         message: 'STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured together',
       });
     }
-    if (env.NODE_ENV === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
+    const appEnv = env.APP_ENV ?? (env.NODE_ENV === 'production' ? 'production' : 'testing');
+    let databaseName = '';
+    try { databaseName = decodeURIComponent(new URL(env.DATABASE_URL).pathname.split('/').filter(Boolean).at(-1) ?? ''); }
+    catch { /* DATABASE_URL validation is handled by Prisma at startup. */ }
+    if (appEnv === 'testing' && env.NODE_ENV === 'production' && !databaseName.endsWith('_test')) {
+      context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'A hosted test deployment must use a database name ending in _test' });
+    }
+    if (appEnv === 'production' && databaseName.endsWith('_test')) {
+      context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'A production deployment cannot use a _test database' });
+    }
+    if (appEnv === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
       context.addIssue({ code: 'custom', path: ['STRIPE_SECRET_KEY'], message: 'Production requires a live Stripe secret key (sk_live_)' });
     }
 
-    const provider = env.PAYMENT_PROVIDER ?? (env.NODE_ENV === 'test' ? 'fake' : 'stripe');
+    const provider = env.PAYMENT_PROVIDER ?? (appEnv === 'testing' ? 'fake' : 'stripe');
+    if (appEnv === 'production' && env.NODE_ENV !== 'production') {
+      context.addIssue({ code: 'custom', path: ['NODE_ENV'], message: 'A production deployment requires NODE_ENV=production' });
+    }
+    if (appEnv === 'testing' && env.NODE_ENV === 'production' && provider !== 'fake') {
+      context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'A test deployment running with NODE_ENV=production must use the fake payment provider' });
+    }
     const hasInfisicalConfig = Boolean(env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT);
     if (provider === 'stripe' && (!hasStripeSecret || !hasWebhookSecret) && !hasInfisicalConfig) {
       context.addIssue({
@@ -49,7 +66,7 @@ const envSchema = z
         message: 'Stripe payment requires both Stripe credentials or a configured Infisical secret store',
       });
     }
-    if (provider === 'fake' && env.NODE_ENV === 'production') {
+    if (provider === 'fake' && appEnv === 'production') {
       context.addIssue({
         code: 'custom',
         path: ['PAYMENT_PROVIDER'],
@@ -70,7 +87,7 @@ const envSchema = z
         message: 'API_PUBLIC_URL must use HTTPS in production',
       });
     }
-    if (env.NODE_ENV === 'production' && (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) && !hasInfisicalConfig) {
+    if (appEnv === 'production' && (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) && !hasInfisicalConfig) {
       context.addIssue({ code: 'custom', path: ['GMAIL_REFRESH_TOKEN'], message: 'Production requires Gmail OAuth credentials or a configured Infisical secret store' });
     }
     if (env.NODE_ENV === 'production' && env.SESSION_COOKIE_SECURE !== 'true') {
@@ -85,6 +102,7 @@ const envSchema = z
 export type Env = {
   DATABASE_URL: string;
   NODE_ENV: 'development' | 'test' | 'production';
+  APP_ENV: 'testing' | 'production';
   PAYMENT_PROVIDER: 'stripe' | 'fake';
   WEB_ORIGIN: string;
   API_PUBLIC_URL: string;
@@ -113,7 +131,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = envSchema.parse(source);
   return {
     ...parsed,
-    PAYMENT_PROVIDER: parsed.PAYMENT_PROVIDER ?? (parsed.NODE_ENV === 'test' ? 'fake' : 'stripe'),
+    APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'testing'),
+    PAYMENT_PROVIDER: parsed.PAYMENT_PROVIDER ?? ((parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'testing')) === 'testing' ? 'fake' : 'stripe'),
     SESSION_COOKIE_SECURE: parsed.SESSION_COOKIE_SECURE === 'true',
   };
 }

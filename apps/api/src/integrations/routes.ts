@@ -37,7 +37,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
       if (!credentials.stripe || !credentials.gmail) {
         return reply.code(409).send({ error: 'infisical_provider_secrets_missing' });
       }
-      if (deps.env.NODE_ENV === 'production' && !credentials.stripe.secretKey.startsWith('sk_live_')) {
+      if (deps.env.APP_ENV === 'production' && !credentials.stripe.secretKey.startsWith('sk_live_')) {
         return reply.code(400).send({ error: 'stripe_live_key_required' });
       }
       const activate = deps.prepareIntegrationUpdate?.(credentials);
@@ -57,7 +57,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
   app.put('/api/admin/settings/integrations/stripe', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = stripeSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
-    const requiredKeyPrefix = deps.env.NODE_ENV === 'production' ? 'sk_live_' : 'sk_';
+    const requiredKeyPrefix = deps.env.APP_ENV === 'production' ? 'sk_live_' : 'sk_';
     if (!parsed.data.secretKey.startsWith(requiredKeyPrefix) || !parsed.data.webhookSecret.startsWith('whsec_')) {
       return reply.code(400).send({ error: 'stripe_credentials_invalid' });
     }

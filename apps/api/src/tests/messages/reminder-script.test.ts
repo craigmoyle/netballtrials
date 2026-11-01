@@ -14,8 +14,9 @@ describe('send-reminders command safeguards', () => {
       env: {
         ...process.env,
         NODE_ENV: 'production',
+        APP_ENV: 'production',
         PAYMENT_PROVIDER: 'stripe',
-        STRIPE_SECRET_KEY: 'sk_test_not_used',
+        STRIPE_SECRET_KEY: 'sk_live_not_used',
         STRIPE_WEBHOOK_SECRET: 'whsec_not_used',
         SESSION_COOKIE_SECURE: 'true',
         WEB_ORIGIN: 'https://trials.example',
@@ -25,7 +26,7 @@ describe('send-reminders command safeguards', () => {
         GMAIL_CLIENT_ID: '',
         GMAIL_CLIENT_SECRET: '',
         GMAIL_REFRESH_TOKEN: '',
-        DATABASE_URL: testDatabase,
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_prod',
       },
     });
     expect(result.error).toBeUndefined();
@@ -41,6 +42,7 @@ describe('send-reminders command safeguards', () => {
       env: {
         ...process.env,
         NODE_ENV: 'development',
+        APP_ENV: 'testing',
         PAYMENT_PROVIDER: 'fake',
         SESSION_COOKIE_SECURE: 'false',
         WEB_ORIGIN: 'http://localhost:5173',

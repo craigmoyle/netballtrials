@@ -26,6 +26,7 @@ services:
     command: ["npm", "run", "e2e:server", "--workspace", "@netball-trials/api"]
     environment:
       NODE_ENV: test
+      APP_ENV: testing
       PAYMENT_PROVIDER: fake
       DATABASE_URL: postgresql://postgres:postgres@db:5432/netballtrials_test
       WEB_ORIGIN: http://localhost:5173

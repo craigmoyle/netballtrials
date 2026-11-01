@@ -43,7 +43,7 @@ export async function runGeneration(job: GenerationJob): Promise<PlannerResult> 
     };
     const timer = setTimeout(() => void finish({ ok: false, gaps: [{ code: 'no_solution', message: 'Generation exceeded 30 seconds. No draft was saved. Reduce the playing window or adjust the roster and try again.' }] }), DEADLINE_MS);
     worker.once('message', (result: PlannerResult) => void finish(result));
-    worker.once('error', (error) => void finish(undefined, error));
+    worker.once('error', (error) => void finish(undefined, error instanceof Error ? error : new Error(String(error))));
     worker.once('exit', (code) => void finish(undefined, new Error(`Planner worker exited without a result (code ${code})`)));
   });
 }

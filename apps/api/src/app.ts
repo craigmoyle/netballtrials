@@ -96,22 +96,23 @@ declare module 'fastify' {
 export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions = {}): FastifyInstance {
   const env = overrides.env ?? loadEnv();
   const integrationSettings = overrides.integrationSettings ?? new IntegrationSettings(env);
+  const appEnv = env.APP_ENV;
   const hasStripeSecret = env.STRIPE_SECRET_KEY.length > 0;
   const hasWebhookSecret = env.STRIPE_WEBHOOK_SECRET.length > 0;
   const hasGmailCredentials = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN);
-  const readsInfisical = integrationSettings.mode === 'infisical';
+  const readsInfisical = appEnv === 'production' && integrationSettings.mode === 'infisical';
   if (hasStripeSecret !== hasWebhookSecret) {
     throw new Error('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured together');
   }
-  if (env.NODE_ENV === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
+  if (env.NODE_ENV === 'production' && !env.SESSION_COOKIE_SECURE) {
+    throw new Error('SESSION_COOKIE_SECURE must be true in production');
+  }
+  if (appEnv === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
     throw new Error('Production requires a live Stripe secret key (sk_live_)');
   }
-  if (env.NODE_ENV === 'production') {
+  if (appEnv === 'production') {
     if (env.PAYMENT_PROVIDER !== 'stripe' || ((!hasStripeSecret || !hasWebhookSecret) && !readsInfisical)) {
       throw new Error('Production requires Stripe credentials from Infisical or the deployment environment');
-    }
-    if (!env.SESSION_COOKIE_SECURE) {
-      throw new Error('SESSION_COOKIE_SECURE must be true in production');
     }
     if (!hasGmailCredentials && !readsInfisical) {
       throw new Error('Production requires Gmail OAuth credentials from Infisical or the deployment environment');
@@ -121,20 +122,20 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     }
   }
 
-  const payment = overrides.payment ?? (hasStripeSecret && hasWebhookSecret
+  const payment = overrides.payment ?? (appEnv === 'production' && hasStripeSecret && hasWebhookSecret
     ? createStripePaymentProvider({ secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET })
     : createFakePaymentProvider());
-  const mailer = overrides.mailer ?? (hasGmailCredentials
+  const mailer = overrides.mailer ?? (appEnv === 'production' && hasGmailCredentials
     ? createGmailMailer({ clientId: env.GMAIL_CLIENT_ID, clientSecret: env.GMAIL_CLIENT_SECRET, refreshToken: env.GMAIL_REFRESH_TOKEN })
     : createDevMailer([]));
-  if (env.NODE_ENV === 'production' && !readsInfisical && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
+  if (appEnv === 'production' && !readsInfisical && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
     throw new Error('Production requires the Gmail API mail provider');
   }
 
   const database = overrides.prisma ?? defaultPrisma;
   let deps!: AppDeps;
   const prepareIntegrationUpdate = (credentials: Partial<IntegrationCredentials>) => {
-    if (env.NODE_ENV === 'production' && credentials.stripe && !credentials.stripe.secretKey.startsWith('sk_live_')) {
+    if (appEnv === 'production' && credentials.stripe && !credentials.stripe.secretKey.startsWith('sk_live_')) {
       throw new Error('Production requires a live Stripe secret key (sk_live_)');
     }
     const nextPayment = credentials.stripe ? createStripePaymentProvider(credentials.stripe) : null;
@@ -145,7 +146,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     };
   };
   const reloadIntegrations = async () => {
-    if (integrationSettings.mode === 'infisical') {
+    if (readsInfisical) {
       const saved = await database.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } });
       if (saved) integrationSettings.configureConnection({
         apiUrl: saved.apiUrl, projectId: saved.projectId, environment: saved.environment, secretPath: saved.secretPath,
@@ -175,8 +176,8 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   app.decorate('testDeps', deps);
 
   app.addHook('onReady', async () => {
-    if (integrationSettings.mode === 'infisical') await deps.reloadIntegrations?.();
-    if (env.NODE_ENV !== 'production') return;
+    if (readsInfisical) await deps.reloadIntegrations?.();
+    if (appEnv !== 'production') return;
     if (!('provider' in deps.mailer) || deps.mailer.provider !== 'gmail-api' || 'checkouts' in deps.payment) {
       throw new Error('Production requires Stripe and Gmail integrations');
     }
@@ -216,7 +217,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     return payload;
   });
 
-  app.get('/health', async () => ({ status: 'ok' }));
+  app.get('/health', async () => ({ status: 'ok', appEnv: env.APP_ENV }));
 
   registerAuthRoutes(app, deps);
   registerIntegrationRoutes(app, deps);

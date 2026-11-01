@@ -131,6 +131,7 @@ export function apiClient(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ token }),
       }),
+    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production' }>(baseUrl, '/health'),
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),

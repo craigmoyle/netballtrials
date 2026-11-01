@@ -6,11 +6,18 @@ import { IntegrationSettings } from '../../integrations/settings';
 afterEach(() => vi.restoreAllMocks());
 
 function infisicalEnv() {
-  return loadEnv({
-    NODE_ENV: 'development', PAYMENT_PROVIDER: 'fake',
-    INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'machine-id', INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: 'machine-secret',
-    INFISICAL_PROJECT_ID: 'project', INFISICAL_ENVIRONMENT: 'test',
-  } as NodeJS.ProcessEnv);
+  return {
+    ...loadEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_prod',
+      NODE_ENV: 'development', PAYMENT_PROVIDER: 'stripe',
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'machine-id', INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: 'machine-secret',
+      INFISICAL_PROJECT_ID: 'project', INFISICAL_ENVIRONMENT: 'test',
+    } as NodeJS.ProcessEnv),
+    APP_ENV: 'production' as const,
+    WEB_ORIGIN: 'https://trials.example',
+    API_PUBLIC_URL: 'https://api.example',
+    SESSION_COOKIE_SECURE: true,
+  };
 }
 
 describe('Infisical integration runtime', () => {
@@ -19,7 +26,7 @@ describe('Infisical integration runtime', () => {
     const settings = new IntegrationSettings(env);
     expect(settings.mode).toBe('infisical');
     vi.spyOn(settings, 'readCredentials').mockResolvedValue({
-      stripe: { secretKey: 'sk_test_not-a-real-key', webhookSecret: 'whsec_not-a-real-secret' },
+      stripe: { secretKey: 'sk_live_not-a-real-key', webhookSecret: 'whsec_not-a-real-secret' },
       gmail: { clientId: 'client-id', clientSecret: 'client-secret', refreshToken: 'refresh-token' },
     });
     const app = createApp({ env, integrationSettings: settings });
@@ -34,7 +41,7 @@ describe('Infisical integration runtime', () => {
 
   it('blocks production startup when Infisical contains a Stripe test key', async () => {
     const env = loadEnv({
-      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_prod',
       NODE_ENV: 'production', PAYMENT_PROVIDER: 'stripe', WEB_ORIGIN: 'https://trials.example',
       API_PUBLIC_URL: 'https://api.example', SESSION_COOKIE_SECURE: 'true',
       INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'machine-id', INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: 'machine-secret',

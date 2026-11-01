@@ -13,8 +13,10 @@ afterEach(() => {
 });
 
 function env(overrides: Record<string, string> = {}) {
+  const appEnv = overrides.APP_ENV ?? (overrides.NODE_ENV === 'production' ? 'production' : 'testing');
+  const databaseUrl = overrides.DATABASE_URL ?? `postgresql://postgres:postgres@localhost:5432/netballtrials_${appEnv}`;
   return loadEnv({
-    DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
+    DATABASE_URL: databaseUrl,
     NODE_ENV: 'test',
     PAYMENT_PROVIDER: 'fake',
     WEB_ORIGIN: 'http://localhost:5173',
@@ -69,6 +71,24 @@ describe('production runtime boundary', () => {
     }) })).toThrow(/SESSION_COOKIE_SECURE|secure cookie/i);
   });
 
+  it('runs a hosted test deployment in production runtime mode with fake providers', async () => {
+    const env = loadEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
+      NODE_ENV: 'production', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake',
+      WEB_ORIGIN: 'https://test.trials.example', API_PUBLIC_URL: 'https://test-api.trials.example',
+      SESSION_COOKIE_SECURE: 'true',
+    } as NodeJS.ProcessEnv);
+    const app = createApp({ env });
+    try {
+      await app.ready();
+      expect('checkouts' in app.testDeps.payment).toBe(true);
+      expect('provider' in app.testDeps.mailer && app.testDeps.mailer.provider).toBe(false);
+      expect((await app.inject({ method: 'POST', url: '/api/public/fake-checkouts/complete', payload: {} })).statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('allows an explicitly injected fake only in test mode', () => {
     process.env.NODE_ENV = 'test';
     const fake = createFakePaymentProvider();
@@ -110,6 +130,7 @@ describe('production runtime boundary', () => {
     expect(() => createApp({ env: productionEnv, mailer: { send: async () => undefined } })).toThrow(/Gmail API/i);
     expect(() => loadEnv({
       ...process.env,
+      APP_ENV: 'production',
       NODE_ENV: 'production',
       PAYMENT_PROVIDER: 'stripe',
       SESSION_COOKIE_SECURE: 'true',
@@ -122,6 +143,7 @@ describe('production runtime boundary', () => {
       GMAIL_CLIENT_ID: 'client-id',
       GMAIL_CLIENT_SECRET: 'client-secret',
       GMAIL_REFRESH_TOKEN: '',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_prod',
     })).toThrow(/Gmail OAuth/i);
   });
 

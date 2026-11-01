@@ -200,12 +200,24 @@ function DayOfRegistrationRoute({ client }: { client: Client }) {
 
 export function App() {
   const location = useLocation();
+  const [appEnv, setAppEnv] = useState<'testing' | 'production' | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    client.getRuntimeEnvironment()
+      .then(({ appEnv: loaded }) => { if (active) setAppEnv(loaded); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => {
     document.title = pageTitle(location.pathname);
   }, [location.pathname]);
 
   return (
-    <Routes>
+    <>
+      {appEnv === 'testing' ? <div className="environment-banner" role="status">TEST ENVIRONMENT — payments and email are simulated</div> : null}
+      <Routes>
       <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />
       <Route path="/register/:eventId" element={<PageContent><RegisterRoute client={client} /></PageContent>} />
       <Route path="/register/:eventId/pending" element={<PageContent><PendingRoute client={client} /></PageContent>} />
@@ -251,6 +263,7 @@ export function App() {
         <Route path="player-history" element={<PlayerHistoryPage client={client} />} />
       </Route>
       <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></PageContent>} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
