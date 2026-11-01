@@ -9,6 +9,15 @@ export type IntegrationCredentialStatus = {
   gmail: { configured: boolean; updatedAt: string | null };
 };
 
+export const INFISICAL_CLOUD_API_URLS = ['https://us.infisical.com', 'https://eu.infisical.com'] as const;
+
+export type InfisicalConnectionSettings = {
+  apiUrl: string;
+  projectId: string;
+  environment: string;
+  secretPath: string;
+};
+
 export type InfisicalConfig = {
   baseUrl: string;
   clientId: string;

@@ -126,15 +126,22 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     throw new Error('Production requires the Gmail API mail provider');
   }
 
+  const database = overrides.prisma ?? defaultPrisma;
   let deps!: AppDeps;
   const reloadIntegrations = async () => {
+    if (integrationSettings.mode === 'infisical') {
+      const saved = await database.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } });
+      if (saved) integrationSettings.configureConnection({
+        apiUrl: saved.apiUrl, projectId: saved.projectId, environment: saved.environment, secretPath: saved.secretPath,
+      }, saved.updatedAt);
+    }
     const credentials = await integrationSettings.readCredentials();
     if (credentials.stripe) deps.payment = createStripePaymentProvider(credentials.stripe);
     if (credentials.gmail) deps.mailer = createGmailMailer(credentials.gmail);
   };
   deps = {
     env,
-    prisma: overrides.prisma ?? defaultPrisma,
+    prisma: database,
     mailer,
     payment,
     integrationSettings,

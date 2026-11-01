@@ -162,6 +162,15 @@ model ScheduledMessage {
   @@index([eventId, scheduledAt])
 }
 
+model InfisicalConnectionSettings {
+  id          String   @id @default("infisical")
+  apiUrl      String
+  projectId   String
+  environment String
+  secretPath  String   @default("/")
+  updatedAt   DateTime @updatedAt
+}
+
 model SiteAssociationCommunication {
   id            String                 @id @default(cuid())
   anchorEventId String

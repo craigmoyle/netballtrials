@@ -67,7 +67,7 @@ beforeEach(() => {
   apiMocks.listPublicAssociations.mockResolvedValue([]);
   apiMocks.listEvents.mockResolvedValue([]);
   apiMocks.listAssociations.mockResolvedValue([]);
-  apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
+  apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null }, stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
   apiMocks.listSiteAssociationCampaigns.mockResolvedValue([]);
   apiMocks.listCommunicationTemplates.mockResolvedValue([]);
   apiMocks.checkInSettings.mockResolvedValue({ pinConfigured: false, checkInClosedAt: null });
@@ -260,7 +260,7 @@ describe('App route boundaries', () => {
 
   it('shows integration settings without credentials in the test environment', async () => {
     apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
-    apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
+    apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null }, stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
     renderApp('/admin/settings');
 
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();

@@ -461,6 +461,15 @@ export interface SiteAssociationCampaignDTO {
 
 export interface IntegrationStatusDTO {
   mode: 'fake' | 'environment' | 'infisical';
+  infisical: {
+    configured: boolean;
+    connected: boolean;
+    apiUrl: string | null;
+    projectId: string | null;
+    environment: string | null;
+    secretPath: string | null;
+    updatedAt: string | null;
+  };
   stripe: { configured: boolean; updatedAt: string | null };
   gmail: { configured: boolean; updatedAt: string | null };
 }
