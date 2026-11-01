@@ -476,7 +476,7 @@ export async function continueParentCheckout(
   if (!registration) throw new ParentAccessError('registration_locked');
   const checkout = await createRegistrationCheckout(deps, registration, now);
   if (!checkout) throw new ParentAccessError('checkout_unavailable');
-  if (deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.NODE_ENV !== 'production') {
+  if (deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.APP_ENV === 'testing') {
     return { simulationToken: checkout.sessionId };
   }
   return { checkoutUrl: checkout.url };

@@ -10,8 +10,8 @@ import { e2eBindHost } from './e2e-runtime';
 import { COURT_POSITIONS } from '../planner/types';
 import { eventFixture, registrationFixture } from '../tests/helpers/fixtures';
 
-if (process.env.NODE_ENV !== 'test' || !process.env.DATABASE_URL?.endsWith('_test')) {
-  throw new Error('E2E server requires NODE_ENV=test and a DATABASE_URL ending in _test');
+if (process.env.NODE_ENV !== 'test' || process.env.APP_ENV !== 'testing' || !process.env.DATABASE_URL?.endsWith('_test')) {
+  throw new Error('E2E server requires NODE_ENV=test, APP_ENV=testing and a DATABASE_URL ending in _test');
 }
 execFileSync('npx', ['prisma', 'migrate', 'deploy'], { cwd: process.cwd(), env: process.env, stdio: 'inherit' });
 

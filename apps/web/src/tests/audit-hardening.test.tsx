@@ -47,6 +47,7 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(false);
   for (const key of Object.keys(api)) delete api[key];
   Object.assign(api, {
+    getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'production' }),
     me: vi.fn().mockResolvedValue({ user: { id: 'admin', email: 'a@example.invalid' } }),
     logout: vi.fn().mockResolvedValue(null), listEvents: vi.fn().mockResolvedValue([]),
     getEvent: vi.fn().mockResolvedValue(event), getPublicEvent: vi.fn().mockResolvedValue(event),

@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-do
 import { App } from './App';
 
 const apiMocks = vi.hoisted(() => ({
+  getRuntimeEnvironment: vi.fn(),
   me: vi.fn(),
   logout: vi.fn(),
   listEvents: vi.fn(),
@@ -62,6 +63,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'production' });
   apiMocks.logout.mockResolvedValue(undefined);
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
@@ -82,6 +84,14 @@ beforeEach(() => {
   apiMocks.getPlanRevision.mockResolvedValue(null);
   apiMocks.getBlankSheetHtml.mockResolvedValue('<main class="blank-sheet"><section class="sheet">Round: ______</section></main>');
   apiMocks.saveManualRound.mockResolvedValue({ ok: true, plan: null });
+});
+
+describe('Deployment environment banner', () => {
+  it('clearly labels test deployments', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing' });
+    renderApp('/');
+    expect(await screen.findByText(/TEST ENVIRONMENT — payments and email are simulated/i)).toBeInTheDocument();
+  });
 });
 
 describe('Public home page', () => {

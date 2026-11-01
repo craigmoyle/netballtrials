@@ -41,6 +41,7 @@ export default defineConfig({
       env: {
         ...process.env,
         NODE_ENV: 'test',
+        APP_ENV: 'testing',
         PAYMENT_PROVIDER: 'fake',
         DATABASE_URL: databaseUrl,
         WEB_ORIGIN: webOrigin,

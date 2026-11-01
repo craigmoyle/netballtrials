@@ -63,7 +63,7 @@ async function sendDuplicateGuidance(
 export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void {
   registerStripeWebhookRoute(app, deps);
 
-  if (deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.NODE_ENV !== 'production') {
+  if (deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.APP_ENV === 'testing') {
     app.post('/api/public/fake-checkouts/complete', async (req) => {
       const body = req.body as { simulationToken?: unknown } | null;
       const simulationToken = body?.simulationToken;

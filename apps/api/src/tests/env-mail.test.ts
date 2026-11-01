@@ -3,7 +3,7 @@ import { loadEnv } from '../env';
 
 describe('production environment config', () => {
   const base = {
-    DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
+    DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_prod',
     NODE_ENV: 'production',
     PAYMENT_PROVIDER: 'stripe',
     WEB_ORIGIN: 'https://trials.example',
@@ -17,6 +17,13 @@ describe('production environment config', () => {
     const source = { ...base } as NodeJS.ProcessEnv;
     delete source.DATABASE_URL;
     expect(() => loadEnv(source)).toThrow(/DATABASE_URL.*production/i);
+  });
+
+  it('separates hosted test and production databases', () => {
+    expect(() => loadEnv({ ...base, APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake' } as NodeJS.ProcessEnv)).toThrow(/database name ending in _test/i);
+    expect(() => loadEnv({ ...base, APP_ENV: 'production', DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test' } as NodeJS.ProcessEnv))
+      .toThrow(/cannot use a _test database/i);
+    expect(loadEnv({ ...base, APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake', DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test' } as NodeJS.ProcessEnv).APP_ENV).toBe('testing');
   });
 
   it('rejects Stripe test keys in production', () => {

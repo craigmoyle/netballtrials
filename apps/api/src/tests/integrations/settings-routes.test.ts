@@ -33,15 +33,16 @@ describe('integration settings routes', () => {
 
   it('tests and persists non-secret Infisical connection settings without persisting identity credentials', async () => {
     const env = loadEnv({
-      NODE_ENV: 'development', PAYMENT_PROVIDER: 'fake',
+      NODE_ENV: 'development', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake',
       INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'machine-id', INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: 'machine-secret',
-      INFISICAL_PROJECT_ID: 'bootstrap-project', INFISICAL_ENVIRONMENT: 'prod',
+      INFISICAL_PROJECT_ID: 'bootstrap-project', INFISICAL_ENVIRONMENT: 'test',
     } as NodeJS.ProcessEnv);
     const settings = new IntegrationSettings(env);
+    Object.defineProperty(settings, 'mode', { value: 'infisical' });
     vi.spyOn(settings, 'readCredentials').mockResolvedValue({ stripe: null, gmail: null });
     const testConnection = vi.spyOn(settings, 'testConnection')
       .mockResolvedValueOnce({
-        stripe: { secretKey: 'sk_test_fake', webhookSecret: 'whsec_fake' },
+        stripe: { secretKey: 'sk_live_fake', webhookSecret: 'whsec_fake' },
         gmail: { clientId: 'client-id', clientSecret: 'client-secret', refreshToken: 'refresh-token' },
       })
       .mockResolvedValue({ stripe: null, gmail: { clientId: 'client-id', clientSecret: 'client-secret', refreshToken: 'refresh-token' } });
@@ -64,7 +65,7 @@ describe('integration settings routes', () => {
       expect(response.body).not.toContain('machine-secret');
       expect(response.body).not.toContain('client-secret');
       expect(response.body).not.toContain('refresh-token');
-      expect(response.body).not.toContain('sk_test_fake');
+      expect(response.body).not.toContain('sk_live_fake');
       expect(response.body).not.toContain('whsec_fake');
       expect(await prisma.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } })).toMatchObject({
         apiUrl: 'https://eu.infisical.com', projectId: 'target-project', environment: 'test', secretPath: '/netball-trials',
