@@ -117,7 +117,7 @@ describe('Public home page', () => {
     expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('banner')).toContainElement(screen.getByRole('link', { name: 'Trials home' }));
     const accessNav = screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
-    expect(within(accessNav).getByRole('link', { name: 'Manage registrations' })).toHaveAttribute('href', '/manage-registration');
+    expect(within(accessNav).getByRole('link', { name: 'Parents & guardians' })).toHaveAttribute('href', '/manage-registration');
     expect(within(accessNav).getByText('Staff & volunteers')).toBeInTheDocument();
     expect(within(accessNav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(accessNav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
@@ -135,7 +135,6 @@ describe('Public home page', () => {
     expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'After you register' })).toBeInTheDocument();
     expect(screen.getByText(/confirm the parent or guardian email, then complete secure checkout/i)).toBeInTheDocument();
-    expect(within(accessNav).getByRole('link', { name: 'Manage registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(screen.getByRole('link', { name: 'Chisholm Netball website' })).toHaveAttribute('href', 'https://chisholmnetball.com/');
     expect(apiMocks.me).not.toHaveBeenCalled();
   });

@@ -12,7 +12,7 @@ export function ClubLogoLink(): ReactElement {
 export function PublicAccessNav(): ReactElement {
   return (
     <nav className="app-nav public-access-nav" aria-label="Parent, staff and volunteer access">
-      <Link to="/manage-registration">Manage registrations</Link>
+      <Link to="/manage-registration">Parents &amp; guardians</Link>
       <span className="public-access-label">Staff &amp; volunteers</span>
       <Link to="/admin">Staff sign-in</Link>
       <Link to="/check-in">Check-in login</Link>

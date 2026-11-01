@@ -147,7 +147,8 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   const logo = page.getByRole('link', { name: 'Trials home' });
   await expect(logo).toHaveAttribute('href', '/');
   await expect.poll(() => logo.locator('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  const signIn = page.getByRole('navigation', { name: 'Staff and volunteer access' });
+  const signIn = page.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
+  await expect(signIn.getByRole('link', { name: 'Parents & guardians' })).toHaveAttribute('href', '/manage-registration');
   await expect(signIn.getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
   await signIn.getByRole('link', { name: 'Staff sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
