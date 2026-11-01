@@ -32,6 +32,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
 
     const normalizedEmail = normalizeEmail(parsed.data.email);
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
     const key = createHash('sha256')
       .update(`login-link\\0${rateLimitClientKey(req.ip)}\\0${normalizedEmail}`)
       .digest('hex');
@@ -43,6 +44,9 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     // never reveals whether the address is an admin or is being throttled.
     const emailKey = createHash('sha256').update(`login-link-email\0${normalizedEmail}`).digest('hex');
     if (!(await consumeRateLimit(deps.prisma, emailKey, now, LOGIN_LINK_EMAIL_LIMIT, LOGIN_LINK_EMAIL_WINDOW_MS))) {
+      return reply.code(202).send({ status: 'sent' });
+    }
+    if (hostedTestMode && !deps.env.TEST_ADMIN_EMAILS.includes(normalizedEmail)) {
       return reply.code(202).send({ status: 'sent' });
     }
 
@@ -69,6 +73,14 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!result) {
       return reply.code(400).send({ error: 'link_invalid' });
     }
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+    if (hostedTestMode) {
+      const user = await deps.prisma.staffUser.findUnique({ where: { id: result.userId }, select: { email: true } });
+      if (!user || !deps.env.TEST_ADMIN_EMAILS.includes(normalizeEmail(user.email))) {
+        await deps.prisma.session.deleteMany({ where: { tokenHash: hashToken(result.sessionToken) } });
+        return reply.code(400).send({ error: 'link_invalid' });
+      }
+    }
 
     reply.setCookie(SESSION_COOKIE, result.sessionToken, {
       httpOnly: true,
@@ -84,6 +96,11 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/admin/staff/invites', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = inviteSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const email = normalizeEmail(parsed.data.email);
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+    if (hostedTestMode && !deps.env.TEST_ADMIN_EMAILS.includes(email)) {
+      return reply.code(403).send({ error: 'test_admin_not_allowlisted' });
+    }
     await inviteAdmin(
       { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN },
       parsed.data.email,

@@ -30,7 +30,8 @@ export function requireAdmin(deps: AppDeps) {
     }
 
     const user = await deps.prisma.staffUser.findUnique({ where: { id: session.userId } });
-    if (!user) {
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+    if (!user || (hostedTestMode && !deps.env.TEST_ADMIN_EMAILS.includes(user.email.trim().toLowerCase()))) {
       await reply.code(401).send({ error: 'unauthorized' });
       return;
     }

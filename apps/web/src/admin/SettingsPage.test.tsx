@@ -20,6 +20,13 @@ const status = {
   gmail: { configured: true, updatedAt: '2026-10-29T00:00:00.000Z' },
 };
 
+function renderSettings(client: Record<string, unknown>) {
+  render(<SettingsPage client={{
+    getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'production', testIntegrationsEnabled: false }),
+    ...client,
+  } as any} />);
+}
+
 describe('SettingsPage', () => {
   it('edits automatic message copy and reminder lead time with a sample preview', async () => {
     const saved = vi.fn().mockImplementation(async (input) => ({ ...input, updatedAt: '2026-11-03T00:00:00.000Z' }));
@@ -29,7 +36,7 @@ describe('SettingsPage', () => {
       updateAutomaticEmailSettings: saved,
       replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
     };
-    render(<SettingsPage client={client as any} />);
+    renderSettings(client);
 
     fireEvent.change(await screen.findByLabelText('Confirmation subject'), { target: { value: 'Welcome {{playerName}} — {{eventName}}' } });
     fireEvent.change(screen.getByLabelText('Send reminder (hours before event start)'), { target: { value: '48' } });
@@ -54,7 +61,7 @@ describe('SettingsPage', () => {
       replaceStripeIntegration: vi.fn().mockResolvedValue(status),
       replaceGmailIntegration: vi.fn().mockResolvedValue(status),
     };
-    render(<SettingsPage client={client as any} />);
+    renderSettings(client);
 
     expect((await screen.findAllByText(/credentials are configured\. Last updated/i)).length).toBe(2);
     fireEvent.change(screen.getByLabelText('New Stripe secret key'), { target: { value: 'sk_test_new' } });
@@ -74,7 +81,7 @@ describe('SettingsPage', () => {
       updateInfisicalConnection: vi.fn().mockResolvedValue(savedStatus),
       replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
     };
-    render(<SettingsPage client={client as any} />);
+    renderSettings(client);
 
     expect(await screen.findByLabelText('Project ID')).toHaveValue('current-project');
     fireEvent.change(screen.getByLabelText('Infisical Cloud region'), { target: { value: 'https://eu.infisical.com' } });
@@ -91,10 +98,10 @@ describe('SettingsPage', () => {
   });
 
   it('explains how to enable Infisical when the API is using deployment environment credentials', async () => {
-    render(<SettingsPage client={{ getIntegrationSettings: vi.fn().mockResolvedValue({
+    renderSettings({ getIntegrationSettings: vi.fn().mockResolvedValue({
       mode: 'environment', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null },
       stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null },
-    }), getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail) } as any} />);
+    }), getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail) });
 
     expect(await screen.findByRole('heading', { name: 'Infisical secret manager' })).toBeInTheDocument();
     const infisical = screen.getByRole('region', { name: 'Infisical secret manager' });
@@ -105,10 +112,10 @@ describe('SettingsPage', () => {
   });
 
   it('shows fake-provider status without exposing credential fields in test mode', async () => {
-    render(<SettingsPage client={{ getIntegrationSettings: vi.fn().mockResolvedValue({
+    renderSettings({ getIntegrationSettings: vi.fn().mockResolvedValue({
       mode: 'fake', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null },
       stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null },
-    }), getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail) } as any} />);
+    }), getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail) });
 
     expect(await screen.findByText(/uses fake payment and email providers/i)).toBeInTheDocument();
     expect(screen.getByText(/Infisical settings are intentionally disabled here/i)).toBeInTheDocument();

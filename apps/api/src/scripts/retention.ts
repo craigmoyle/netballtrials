@@ -25,6 +25,8 @@ async function main(): Promise<void> {
   console.log(`retention: pruned ${staffArtifacts.tokens} expired Admin login links and ${staffArtifacts.sessions} expired Admin sessions`);
   const buckets = await pruneRateLimitBuckets(prisma, now);
   console.log(`retention: deleted ${buckets} idle rate-limit buckets`);
+  const testOutbox = await prisma.testEmailOutbox.deleteMany({ where: { expiresAt: { lte: now } } });
+  console.log(`retention: deleted ${testOutbox.count} expired test email outbox entries`);
 }
 
 main()

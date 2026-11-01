@@ -66,7 +66,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'production' });
+  apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'production', testAccessRequired: false, testIntegrationsEnabled: false });
   apiMocks.logout.mockResolvedValue(undefined);
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
@@ -92,10 +92,18 @@ beforeEach(() => {
 });
 
 describe('Deployment environment banner', () => {
-  it('clearly labels test deployments', async () => {
-    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing' });
+  it('clearly labels test deployments that use simulated integrations', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: false, testIntegrationsEnabled: false });
     renderApp('/');
     expect(await screen.findByText(/TEST ENVIRONMENT — payments and email are simulated/i)).toBeInTheDocument();
+  });
+
+  it('explains that hosted test integrations use Stripe test mode and restricted email delivery', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'cmoyle@gmail.com' } });
+    apiMocks.listPublicEvents.mockResolvedValue([]);
+    renderApp('/');
+    expect(await screen.findByRole('note')).toHaveTextContent(/TEST ENVIRONMENT — Stripe test mode; email is limited to the approved test mailbox/i);
   });
 });
 
@@ -168,7 +176,7 @@ describe('App route boundaries', () => {
     apiMocks.listEvents.mockResolvedValue([]);
     renderApp('/');
 
-    fireEvent.click(screen.getByRole('link', { name: 'Staff sign-in' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Staff sign-in' }));
 
     expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
@@ -179,11 +187,30 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/');
 
-    fireEvent.click(screen.getByRole('link', { name: 'Staff sign-in' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Staff sign-in' }));
 
     expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates hosted TEST routes even when provider integrations are disabled', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: false });
+    apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
+    renderApp('/register/event-1');
+
+    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(apiMocks.getPublicEvent).not.toHaveBeenCalled();
+  });
+
+  it('gates every test route behind an authenticated test Admin', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+    apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
+    renderApp('/register/event-1');
+
+    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
+    expect(apiMocks.getPublicEvent).not.toHaveBeenCalled();
   });
 
   it('loads public registration without checking admin authentication', async () => {
@@ -580,7 +607,9 @@ describe('App route boundaries', () => {
     }]);
     renderApp('/check-in');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start check-in' }));
+    const start = await screen.findByRole('button', { name: 'Start check-in' });
+    await waitFor(() => expect(start).toBeEnabled());
+    fireEvent.click(start);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Choose a trial.');
     expect(apiMocks.openCheckIn).not.toHaveBeenCalled();

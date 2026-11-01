@@ -34,7 +34,9 @@ const samplePlayerLastNames = ['Ashford', 'Bellamy', 'Calder', 'Delaney', 'Eller
 async function resetFixtures(): Promise<Record<string, string>> {
   await prisma.parentAccessSession.deleteMany();
   await prisma.parentAccessToken.deleteMany();
+  await prisma.testEmailOutbox.deleteMany();
   await prisma.automaticEmailSettings.deleteMany();
+  await prisma.infisicalConnectionSettings.deleteMany();
   await prisma.event.deleteMany();
   await prisma.memberAssociation.deleteMany();
   await prisma.processedStripeEvent.deleteMany();

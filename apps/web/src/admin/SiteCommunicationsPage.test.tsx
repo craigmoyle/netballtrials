@@ -9,7 +9,7 @@ const campaign: SiteAssociationCampaignDTO = {
   id: 'campaign-1', eventIds: ['e1', 'e2'], eventNames: ['Spring Trials', 'Open Trials'], associationIds: ['a1'],
   batchId: 'site-batch-1', subject: 'Trials', body: 'Details', scheduledAt: null, status: 'COMPLETED',
   attempts: 1, error: null, createdAt: '2026-10-31T00:00:00.000Z',
-  deliveries: [{ id: 'mail-1', to: 'association@example.test', status: 'SENT', attempts: 1, sentAt: '2026-10-31T00:00:00.000Z', failedAt: null, error: null, associationName: 'MENA' }],
+  deliveries: [{ id: 'mail-1', to: 'association@example.test', status: 'SENT', simulated: false, attempts: 1, sentAt: '2026-10-31T00:00:00.000Z', failedAt: null, error: null, associationName: 'MENA' }],
 };
 
 function makeClient() {
@@ -59,6 +59,6 @@ describe('SiteCommunicationsPage', () => {
     await waitFor(() => expect(client.sendSiteAssociationCommunication).toHaveBeenCalledWith(expect.objectContaining({
       eventIds: ['e1', 'e2'], associationIds: ['a1'], subject: 'Details for {{associationName}}', text: '{{eventList}}', batchId: expect.any(String),
     })));
-    expect(await screen.findByRole('status')).toHaveTextContent(/message sent to 1 association contact/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/message completed: 1 sent, 0 simulated/i);
   });
 });

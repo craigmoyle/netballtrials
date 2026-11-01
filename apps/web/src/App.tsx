@@ -217,22 +217,52 @@ function DayOfRegistrationRoute({ client }: { client: Client }) {
 export function App() {
   const location = useLocation();
   const [appEnv, setAppEnv] = useState<'testing' | 'production' | null>(null);
+  const [testIntegrationsEnabled, setTestIntegrationsEnabled] = useState(false);
+  const [testAccessRequired, setTestAccessRequired] = useState(false);
+  const [runtimeLoaded, setRuntimeLoaded] = useState(false);
+  const [testAdminAccess, setTestAdminAccess] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
     client.getRuntimeEnvironment()
-      .then(({ appEnv: loaded }) => { if (active) setAppEnv(loaded); })
-      .catch(() => undefined);
+      .then(({ appEnv: loaded, testAccessRequired: testAccess, testIntegrationsEnabled: testIntegrations }) => {
+        if (!active) return;
+        setAppEnv(loaded);
+        setTestAccessRequired(testAccess);
+        setTestIntegrationsEnabled(testIntegrations);
+      })
+      .catch(() => { if (active) { setAppEnv('production'); setTestAccessRequired(true); } })
+      .finally(() => { if (active) setRuntimeLoaded(true); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!testAccessRequired) return;
+    if (['/admin/login', '/admin/verify'].includes(location.pathname)) {
+      setTestAdminAccess(true);
+      return;
+    }
+    let active = true;
+    setTestAdminAccess(null);
+    client.me()
+      .then(() => { if (active) setTestAdminAccess(true); })
+      .catch(() => { if (active) setTestAdminAccess(false); });
+    return () => { active = false; };
+  }, [location.pathname, testAccessRequired]);
 
   useEffect(() => {
     document.title = pageTitle(location.pathname, location.search);
   }, [location.pathname, location.search]);
 
+  if (!runtimeLoaded) return <p role="status">Checking application environment…</p>;
+  if (testAccessRequired && !['/admin/login', '/admin/verify'].includes(location.pathname)) {
+    if (testAdminAccess === null) return <p role="status">Checking test access…</p>;
+    if (!testAdminAccess) return <Navigate to="/admin/login" replace />;
+  }
+
   return (
     <>
-      {appEnv === 'testing' ? <div className="environment-banner" role="note">TEST ENVIRONMENT — payments and email are simulated</div> : null}
+      {appEnv === 'testing' ? <div className="environment-banner" role="note">{testIntegrationsEnabled ? 'TEST ENVIRONMENT — Stripe test mode; email is limited to the approved test mailbox' : 'TEST ENVIRONMENT — payments and email are simulated'}</div> : null}
       <Suspense fallback={<p role="status">Loading page…</p>}>
         <Routes>
       <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />

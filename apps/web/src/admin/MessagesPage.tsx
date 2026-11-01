@@ -19,6 +19,7 @@ function recipientStatus(recipient: CommunicationRecipientDTO): string {
 }
 
 function deliveryStatus(entry: EmailLogDTO): string {
+  if (entry.simulated) return 'simulated (not sent to recipient)';
   if (entry.status === 'FAILED') return `failed: ${entry.error ?? 'delivery rejected'}`;
   if (entry.status === 'AMBIGUOUS') return `outcome unknown: ${entry.error ?? 'provider may have accepted the message'}`;
   return entry.status.toLowerCase();
@@ -165,7 +166,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       const result = await client.sendCommunication(eventId, {
         audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, batchId,
       });
-      setNotice(`${result.sent} sent, ${result.failed} failed${result.ambiguous ? `, ${result.ambiguous} outcome unknown` : ''}.`);
+      setNotice(`${result.sent} sent, ${result.simulated ?? 0} simulated, ${result.failed} failed${result.ambiguous ? `, ${result.ambiguous} outcome unknown` : ''}.`);
       setSelectedIds([]);
       invalidatePreview();
       await load();

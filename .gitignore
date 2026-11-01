@@ -6,6 +6,7 @@ playwright-report/
 test-results/
 
 # Local environment
+.azure/
 .env
 .env.local
 .env.*.local

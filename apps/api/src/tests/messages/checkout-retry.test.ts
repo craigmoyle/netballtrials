@@ -27,7 +27,7 @@ describe('retryPendingCheckouts', () => {
     await prisma.emailLog.update({ where: { id: row.id }, data: { createdAt: old } });
     const original = send.mock.calls[0][0];
     const result = await retryPendingCheckouts(deps, now);
-    expect(result).toEqual({ due: 1, sent: 1, failed: 0, ambiguous: 0, errors: 0 });
+    expect(result).toEqual({ due: 1, sent: 1, simulated: 0, failed: 0, ambiguous: 0, errors: 0 });
     expect(send.mock.calls[1][0]).toEqual(original);
     expect(payment.checkouts).toHaveLength(1);
     expect((await retryPendingCheckouts(deps, now)).due).toBe(0);
@@ -52,7 +52,7 @@ describe('retryPendingCheckouts', () => {
     }
     const before = await prisma.emailLog.findMany({ orderBy: { id: 'asc' } });
     const mailer = createDevMailer([]);
-    expect(await retryPendingCheckouts({ prisma, mailer }, now, { dryRun: true })).toEqual({ due: 2, sent: 0, failed: 0, ambiguous: 0, errors: 0 });
+    expect(await retryPendingCheckouts({ prisma, mailer }, now, { dryRun: true })).toEqual({ due: 2, sent: 0, simulated: 0, failed: 0, ambiguous: 0, errors: 0 });
     expect(await prisma.emailLog.findMany({ orderBy: { id: 'asc' } })).toEqual(before);
     expect(mailer.sent).toHaveLength(0);
     const send = vi.fn().mockRejectedValue(new GmailDeliveryError('OAuth failed', undefined, { notSent: true }));

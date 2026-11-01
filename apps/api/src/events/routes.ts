@@ -83,7 +83,9 @@ export function registerEventRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const event = await deps.prisma.event.findUnique({ where: { id } });
     if (!event) return reply.code(404).send({ error: 'not_found' });
-    const policyUrl = `${deps.env.API_PUBLIC_URL}/api/public/events/${id}/policy-document`;
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+    const publicApiOrigin = (hostedTestMode ? deps.env.WEB_ORIGIN : deps.env.API_PUBLIC_URL).replace(/\/$/, '');
+    const policyUrl = `${publicApiOrigin}/api/public/events/${id}/policy-document`;
     await deps.prisma.$transaction(async (tx) => {
       await tx.eventPolicyDocument.upsert({
         where: { eventId: id },

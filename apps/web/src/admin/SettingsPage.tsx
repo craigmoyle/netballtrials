@@ -3,10 +3,12 @@ import type { AutomaticEmailSettingsDTO, IntegrationStatusDTO } from '@netball-t
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { HelpTip } from './HelpTip';
 import { emailPreview } from './automatic-email-preview';
+import { TestEmailOutboxPanel } from './TestEmailOutboxPanel';
 
 export function SettingsPage({ client }: { client: Client }) {
   const [settings, setSettings] = useState<IntegrationStatusDTO | null>(null);
   const [automaticEmail, setAutomaticEmail] = useState<AutomaticEmailSettingsDTO | null>(null);
+  const [testIntegrationsEnabled, setTestIntegrationsEnabled] = useState(false);
   const [infisicalApiUrl, setInfisicalApiUrl] = useState('https://us.infisical.com');
   const [infisicalProjectId, setInfisicalProjectId] = useState('');
   const [infisicalEnvironment, setInfisicalEnvironment] = useState('');
@@ -25,9 +27,10 @@ export function SettingsPage({ client }: { client: Client }) {
     setLoading(true);
     setError(null);
     try {
-      const [loaded, loadedEmail] = await Promise.all([client.getIntegrationSettings(), client.getAutomaticEmailSettings()]);
+      const [loaded, loadedEmail, runtime] = await Promise.all([client.getIntegrationSettings(), client.getAutomaticEmailSettings(), client.getRuntimeEnvironment()]);
       setSettings(loaded);
       setAutomaticEmail(loadedEmail);
+      setTestIntegrationsEnabled(runtime.testIntegrationsEnabled);
       if (loaded.infisical.configured) {
         setInfisicalApiUrl(loaded.infisical.apiUrl ?? 'https://us.infisical.com');
         setInfisicalProjectId(loaded.infisical.projectId ?? '');
@@ -205,6 +208,7 @@ export function SettingsPage({ client }: { client: Client }) {
         ) : <p role="status">Automatic email settings are unavailable. Reload the page to try again.</p>}
         {automaticEmail?.updatedAt ? <p>Last updated {new Date(automaticEmail.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.</p> : null}
       </section>
+      {testIntegrationsEnabled ? <TestEmailOutboxPanel client={client} /> : null}
       <section className="site-settings-section" aria-labelledby="stripe-integration-heading">
         <h2 id="stripe-integration-heading">Stripe payments</h2>
         <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'Credential status is unavailable until Infisical is reachable.' : settings?.stripe.configured ? 'Credentials are configured.' : 'Credentials are not configured.'}{settings?.stripe.updatedAt ? ` Last updated ${new Date(settings.stripe.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>

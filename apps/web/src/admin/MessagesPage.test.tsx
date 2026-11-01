@@ -24,7 +24,7 @@ function renderPage(overrides: Record<string, unknown> = {}) {
       count: input.recipientIds.length,
       recipients: recipients.participants.filter((recipient) => input.recipientIds.includes(recipient.id) && recipient.registrationStatus === 'PAID'),
     })),
-    sendCommunication: vi.fn().mockResolvedValue({ batchId: 'batch-1', sent: 2, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
+    sendCommunication: vi.fn().mockResolvedValue({ batchId: 'batch-1', sent: 2, simulated: 0, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
     scheduleCommunication: vi.fn().mockResolvedValue({ id: 'scheduled-1', eventId: 'event-1', audience: 'participants', recipientIds: ['p1'], batchId: 'scheduled-batch', subject: 'Trial update', body: 'See you soon', scheduledAt: '2027-01-15T23:30:00Z', status: 'SCHEDULED', attempts: 0, error: null }),
     cancelScheduledCommunication: vi.fn().mockResolvedValue({ status: 'CANCELLED' }),
     saveCommunicationTemplate: vi.fn().mockResolvedValue({ id: 'template-1', name: 'Trial update', audience: 'participants', subject: 'Trial update', body: 'See you soon', createdAt: '', updatedAt: '' }),
@@ -81,13 +81,13 @@ describe('CommunicationsPage', () => {
     await waitFor(() => expect(client.sendCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({
       audience: 'participants', recipientIds: ['p1', 'p2'], subject: 'Trial update', text: 'Bring water.', batchId: expect.any(String),
     })));
-    expect(await screen.findByText('2 sent, 0 failed.')).toBeInTheDocument();
+    expect(await screen.findByText('2 sent, 0 simulated, 0 failed.')).toBeInTheDocument();
   });
 
   it('reuses the same idempotency key when an immediate send response is lost', async () => {
     const client = renderPage({
       sendCommunication: vi.fn().mockRejectedValueOnce(new Error('network response lost'))
-        .mockResolvedValue({ batchId: 'batch-1', sent: 2, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
+        .mockResolvedValue({ batchId: 'batch-1', sent: 2, simulated: 0, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
     });
     await screen.findByText('Ada Lovelace');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' }));
@@ -104,7 +104,7 @@ describe('CommunicationsPage', () => {
     const second = client.sendCommunication.mock.calls[1]![1].batchId;
     expect(first).toEqual(expect.any(String));
     expect(second).toBe(first);
-    expect(await screen.findByText('2 sent, 0 failed.')).toBeInTheDocument();
+    expect(await screen.findByText('2 sent, 0 simulated, 0 failed.')).toBeInTheDocument();
   });
 
   it('saves and applies audience-specific email templates', async () => {

@@ -1,0 +1,25 @@
+name: netballtrials-test
+metadata:
+  template: netballtrials-azure-test@0.1.0
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  api:
+    project: .
+    language: js
+    host: containerapp
+    module: modules/app-stack
+    docker:
+      path: ./Dockerfile.azure
+      context: .
+      registry: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}
+      platform: linux/amd64
+      remoteBuild: true
+  web:
+    project: apps/web
+    dist: dist
+    language: js
+    host: staticwebapp
+    module: modules/app-stack

@@ -56,6 +56,22 @@ describe('Gmail OAuth mail provider', () => {
     expect(mime).toContain(Buffer.from('BEGIN:VCALENDAR').toString('base64'));
   });
 
+  it('uses the deployment-configured sender and reply-to addresses', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      return url.includes('/token') ? response({ access_token: 'access-token', expires_in: 3600 }) : response({ id: 'sent' });
+    });
+    const mailer = createGmailMailer({ ...config, from: 'cmoyle@gmail.com', replyTo: 'cmoyle@gmail.com' }, fetcher as typeof fetch);
+    await mailer.send({ to: 'cmoyle@gmail.com', subject: 'Test', text: 'Test body' });
+
+    const raw = (JSON.parse(String(requests[1]!.init!.body)) as { raw: string }).raw;
+    const mime = Buffer.from(raw, 'base64url').toString('utf8');
+    expect(mime).toContain('From: cmoyle@gmail.com');
+    expect(mime).toContain('Reply-To: cmoyle@gmail.com');
+  });
+
   it('refreshes an access token once after Gmail rejects it with 401', async () => {
     const authorizations: string[] = [];
     let tokenNumber = 0;

@@ -9,12 +9,15 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
     APP_ENV: z.enum(['testing', 'production']).optional(),
     PAYMENT_PROVIDER: z.enum(['stripe', 'fake']).optional(),
+    ENABLE_TEST_INTEGRATIONS: z.enum(['true', 'false']).default('false'),
+    TEST_ADMIN_EMAILS: z.string().default(''),
+    TEST_EMAIL_ALLOWLIST: z.string().default(''),
     WEB_ORIGIN: z.url().default('http://localhost:5173'),
     API_PUBLIC_URL: z.url().default('http://localhost:3000'),
     TRUST_PROXY: z.string().default(''),
     SESSION_COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
-    MAIL_FROM: z.literal('chisholmnetball@gmail.com').default('chisholmnetball@gmail.com'),
-    MAIL_REPLY_TO: z.literal('chisholmnetball@gmail.com').default('chisholmnetball@gmail.com'),
+    MAIL_FROM: z.email().default('chisholmnetball@gmail.com'),
+    MAIL_REPLY_TO: z.email().default('chisholmnetball@gmail.com'),
     GMAIL_CLIENT_ID: z.string().default(''),
     GMAIL_CLIENT_SECRET: z.string().default(''),
     GMAIL_REFRESH_TOKEN: z.string().default(''),
@@ -40,6 +43,10 @@ const envSchema = z
     }
     const appEnv = env.APP_ENV ?? (env.NODE_ENV === 'production' ? 'production' : 'testing');
     const databaseName = databaseNameFromUrl(env.DATABASE_URL) ?? '';
+    const testAdminEmails = env.TEST_ADMIN_EMAILS.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+    const testEmailAllowlist = env.TEST_EMAIL_ALLOWLIST.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+    const hostedTestMode = appEnv === 'testing' && env.NODE_ENV === 'production';
+    const testIntegrationsEnabled = env.ENABLE_TEST_INTEGRATIONS === 'true';
     if (appEnv === 'testing' && env.NODE_ENV === 'production' && !databaseName.endsWith('_test')) {
       context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'A hosted test deployment must use a database name ending in _test' });
     }
@@ -49,15 +56,40 @@ const envSchema = z
     if (appEnv === 'production' && hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_live_')) {
       context.addIssue({ code: 'custom', path: ['STRIPE_SECRET_KEY'], message: 'Production requires a live Stripe secret key (sk_live_)' });
     }
+    if (appEnv === 'production' && (env.MAIL_FROM !== 'chisholmnetball@gmail.com' || env.MAIL_REPLY_TO !== 'chisholmnetball@gmail.com')) {
+      context.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'Production email must use the Chisholm Netball sender address' });
+    }
 
     const provider = env.PAYMENT_PROVIDER ?? (appEnv === 'testing' ? 'fake' : 'stripe');
     if (appEnv === 'production' && env.NODE_ENV !== 'production') {
       context.addIssue({ code: 'custom', path: ['NODE_ENV'], message: 'A production deployment requires NODE_ENV=production' });
     }
-    if (appEnv === 'testing' && env.NODE_ENV === 'production' && provider !== 'fake') {
-      context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'A test deployment running with NODE_ENV=production must use the fake payment provider' });
+    if (testIntegrationsEnabled && (appEnv !== 'testing' || env.NODE_ENV !== 'production')) {
+      context.addIssue({ code: 'custom', path: ['ENABLE_TEST_INTEGRATIONS'], message: 'Test integrations can only be enabled in a hosted testing deployment' });
+    }
+    if (appEnv === 'testing' && env.NODE_ENV === 'production' && provider !== 'fake' && !testIntegrationsEnabled) {
+      context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Hosted test deployments use fake providers unless test integrations are explicitly enabled' });
+    }
+    if (hostedTestMode && (testAdminEmails.length === 0 || testAdminEmails.length > 5 || new Set(testAdminEmails).size !== testAdminEmails.length || testAdminEmails.some((email) => !z.email().safeParse(email).success))) {
+      context.addIssue({ code: 'custom', path: ['TEST_ADMIN_EMAILS'], message: 'Hosted test access requires one to five unique Admin email addresses' });
+    }
+    if (testIntegrationsEnabled) {
+      if (provider !== 'stripe') context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Test integration mode requires PAYMENT_PROVIDER=stripe with Stripe test credentials' });
+      if (hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_test_')) context.addIssue({ code: 'custom', path: ['STRIPE_SECRET_KEY'], message: 'Test integration mode requires an sk_test_ Stripe key' });
+      if (testEmailAllowlist.length !== 1 || testEmailAllowlist[0] !== 'cmoyle@gmail.com' || !testAdminEmails.includes('cmoyle@gmail.com')) {
+        context.addIssue({ code: 'custom', path: ['TEST_EMAIL_ALLOWLIST'], message: 'Only cmoyle@gmail.com may receive real test email and must be in the Admin allowlist' });
+      }
+      if (!testEmailAllowlist.includes(env.MAIL_FROM.toLowerCase()) || !testEmailAllowlist.includes(env.MAIL_REPLY_TO.toLowerCase())) {
+        context.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'Test sender and reply-to addresses must be included in TEST_EMAIL_ALLOWLIST' });
+      }
     }
     const hasInfisicalConfig = Boolean(env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT);
+    if (testIntegrationsEnabled && (!hasInfisicalConfig || env.INFISICAL_ENVIRONMENT.trim().toLowerCase() !== 'test')) {
+      context.addIssue({ code: 'custom', path: ['INFISICAL_ENVIRONMENT'], message: 'Test integrations require a dedicated Infisical machine identity and the test namespace' });
+    }
+    if (testIntegrationsEnabled && (hasStripeSecret || env.GMAIL_CLIENT_ID || env.GMAIL_CLIENT_SECRET || env.GMAIL_REFRESH_TOKEN)) {
+      context.addIssue({ code: 'custom', path: ['INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET'], message: 'Test provider credentials must come from the dedicated Infisical test namespace, not environment values' });
+    }
     if (provider === 'stripe' && (!hasStripeSecret || !hasWebhookSecret) && !hasInfisicalConfig) {
       context.addIssue({
         code: 'custom',
@@ -103,6 +135,9 @@ export type Env = {
   NODE_ENV: 'development' | 'test' | 'production';
   APP_ENV: 'testing' | 'production';
   PAYMENT_PROVIDER: 'stripe' | 'fake';
+  ENABLE_TEST_INTEGRATIONS: boolean;
+  TEST_ADMIN_EMAILS: string[];
+  TEST_EMAIL_ALLOWLIST: string[];
   WEB_ORIGIN: string;
   API_PUBLIC_URL: string;
   TRUST_PROXY: string;
@@ -132,6 +167,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     ...parsed,
     APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'testing'),
     PAYMENT_PROVIDER: parsed.PAYMENT_PROVIDER ?? ((parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'testing')) === 'testing' ? 'fake' : 'stripe'),
+    ENABLE_TEST_INTEGRATIONS: parsed.ENABLE_TEST_INTEGRATIONS === 'true',
+    TEST_ADMIN_EMAILS: parsed.TEST_ADMIN_EMAILS.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean),
+    TEST_EMAIL_ALLOWLIST: parsed.TEST_EMAIL_ALLOWLIST.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean),
     SESSION_COOKIE_SECURE: parsed.SESSION_COOKIE_SECURE === 'true',
   };
 }

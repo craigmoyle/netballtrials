@@ -60,6 +60,20 @@ describe('Infisical integration runtime', () => {
     }
   });
 
+  it('prevents hosted test settings from selecting another Infisical namespace', async () => {
+    const env = loadEnv({
+      DATABASE_URL: 'postgresql://test:test@db.example/netballtrials_test', NODE_ENV: 'production', APP_ENV: 'testing',
+      PAYMENT_PROVIDER: 'stripe', SESSION_COOKIE_SECURE: 'true', WEB_ORIGIN: 'https://test.example', API_PUBLIC_URL: 'https://api.test.example',
+      ENABLE_TEST_INTEGRATIONS: 'true', TEST_ADMIN_EMAILS: 'cmoyle@gmail.com', TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com',
+      MAIL_FROM: 'cmoyle@gmail.com', MAIL_REPLY_TO: 'cmoyle@gmail.com',
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'test-client-id', INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: 'test-client-secret',
+      INFISICAL_PROJECT_ID: 'test-project', INFISICAL_ENVIRONMENT: 'test',
+    } as NodeJS.ProcessEnv);
+    const settings = new IntegrationSettings(env);
+    await expect(settings.testConnection({ apiUrl: 'https://us.infisical.com', projectId: 'test-project', environment: 'prod', secretPath: '/' }))
+      .rejects.toThrow(/dedicated Infisical test namespace/i);
+  });
+
   it('keeps connection details available when Infisical is unreachable so Admins can repair them', async () => {
     const settings = new IntegrationSettings(infisicalEnv(), async () => { throw new Error('offline'); });
     const status = await settings.status();

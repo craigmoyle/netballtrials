@@ -102,7 +102,9 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
       const result = await client.sendSiteAssociationCommunication({
         eventIds: selectedEventIds, associationIds: selectedAssociationIds, subject, text, batchId,
       });
-      setNotice(result.status === 'COMPLETED' ? `Message sent to ${result.deliveries.length} association contacts.` : `Message status: ${result.status.toLowerCase()}. Review delivery history below.`);
+      const sent = result.deliveries.filter((delivery) => delivery.status === 'SENT' && !delivery.simulated).length;
+      const simulated = result.deliveries.filter((delivery) => delivery.simulated).length;
+      setNotice(result.status === 'COMPLETED' ? `Message completed: ${sent} sent, ${simulated} simulated.` : `Message status: ${result.status.toLowerCase()}. Review delivery history below.`);
       invalidatePreview();
       setSelectedAssociationIds([]);
       await load();
@@ -274,7 +276,7 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
             {campaigns.length ? <ul>{campaigns.map((campaign) => (
               <li key={campaign.id}>
                 <strong>{campaign.subject}</strong> — {campaign.eventNames.join(', ')} — {campaign.status.toLowerCase()}
-                <p>{campaign.deliveries.length} association contact(s) · {campaign.deliveries.filter((delivery) => delivery.status === 'SENT').length} sent · {campaign.deliveries.filter((delivery) => delivery.status === 'FAILED').length} failed</p>
+                <p>{campaign.deliveries.length} association contact(s) · {campaign.deliveries.filter((delivery) => delivery.status === 'SENT' && !delivery.simulated).length} sent · {campaign.deliveries.filter((delivery) => delivery.simulated).length} simulated · {campaign.deliveries.filter((delivery) => delivery.status === 'FAILED').length} failed</p>
                 {campaign.scheduledAt && campaign.status === 'SCHEDULED' ? <p>Scheduled {new Date(campaign.scheduledAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })} <button type="button" className="button-secondary" disabled={busy} onClick={() => void cancelCampaign(campaign.id)}>Cancel scheduled message</button></p> : null}
                 {campaign.deliveries.some((delivery) => delivery.status === 'FAILED') ? <button type="button" className="button-secondary" disabled={busy} onClick={() => void retryCampaign(campaign)}>Retry failed deliveries</button> : null}
               </li>

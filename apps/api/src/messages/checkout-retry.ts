@@ -9,7 +9,7 @@ export async function retryPendingCheckouts(
   deps: { prisma: PrismaClient; mailer: EmailProvider },
   now: Date,
   options: { dryRun?: boolean } = {},
-): Promise<{ due: number; sent: number; failed: number; ambiguous: number; errors: number }> {
+): Promise<{ due: number; sent: number; simulated: number; failed: number; ambiguous: number; errors: number }> {
   const candidates = await deps.prisma.emailLog.findMany({
     where: {
       kind: 'checkout',
@@ -24,13 +24,14 @@ export async function retryPendingCheckouts(
   const rows = candidates.filter((row) =>
     row.registration?.parentEmail.toLowerCase() === row.to.toLowerCase() && !isPastRetentionCutoff(row.event.eventDate, now),
   );
-  const result = { due: rows.length, sent: 0, failed: 0, ambiguous: 0, errors: 0 };
+  const result = { due: rows.length, sent: 0, simulated: 0, failed: 0, ambiguous: 0, errors: 0 };
   if (options.dryRun) return result;
 
   for (const row of rows) {
     try {
       const delivery = await retryFailedDeliveries(deps, row.eventId, row.batchId, [row.id], now, { maxAttempts: AUTOMATIC_RETRY_LIMIT });
       result.sent += delivery.sentThisRun;
+      result.simulated += delivery.simulatedThisRun;
       result.failed += delivery.failedThisRun;
       result.ambiguous += delivery.ambiguousThisRun;
     } catch {

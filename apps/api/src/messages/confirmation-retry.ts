@@ -9,6 +9,7 @@ const WEBHOOK_GRACE_MS = 2 * 60_000;
 export type ConfirmationRetryResult = {
   due: number;
   sent: number;
+  simulated: number;
   failed: number;
   ambiguous: number;
   errors: number;
@@ -36,7 +37,7 @@ export async function retryPendingConfirmations(
     orderBy: { createdAt: 'asc' },
   });
   const rows = candidates.filter((row) => row.registration?.parentEmail.toLowerCase() === row.to.toLowerCase());
-  const result: ConfirmationRetryResult = { due: rows.length, sent: 0, failed: 0, ambiguous: 0, errors: 0 };
+  const result: ConfirmationRetryResult = { due: rows.length, sent: 0, simulated: 0, failed: 0, ambiguous: 0, errors: 0 };
   if (options.dryRun) return result;
 
   for (const row of rows) {
@@ -62,8 +63,9 @@ export async function retryPendingConfirmations(
           { maxAttempts: AUTOMATIC_RETRY_LIMIT },
         );
       }
-      const after = await deps.prisma.emailLog.findUnique({ where: { id: row.id }, select: { status: true } });
-      if (after?.status === 'SENT') result.sent += 1;
+      const after = await deps.prisma.emailLog.findUnique({ where: { id: row.id }, select: { status: true, simulated: true } });
+      if (after?.status === 'SENT' && after.simulated) result.simulated += 1;
+      else if (after?.status === 'SENT') result.sent += 1;
       else if (after?.status === 'FAILED') result.failed += 1;
       else if (after?.status === 'AMBIGUOUS') result.ambiguous += 1;
     } catch {

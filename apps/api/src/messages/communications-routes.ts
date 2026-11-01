@@ -233,7 +233,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
       await retryFailedDeliveries({ prisma: deps.prisma, mailer: deps.mailer }, id, batchId, retryIds, now, { includeAmbiguous: parsed.data.includeAmbiguous });
     }
     const summary = await getDeliverySummary(deps.prisma, batchId);
-    if (summary.sent > 0 && summary.failed === 0 && summary.ambiguous === 0 && summary.pending === 0) {
+    if (summary.sent + summary.simulated > 0 && summary.failed === 0 && summary.ambiguous === 0 && summary.pending === 0) {
       await deps.prisma.scheduledMessage.updateMany({
         where: { eventId: id, batchId, status: 'FAILED' },
         data: { status: 'COMPLETED', completedAt: now, error: null },
@@ -251,7 +251,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     return rows.map((row) => ({
       id: row.id, registrationId: row.registrationId, associationId: row.associationId,
       senderUserId: row.senderUserId, batchId: row.batchId, to: row.to, subject: row.subject,
-      body: row.body, kind: row.kind, status: row.status, attempts: row.attempts,
+      body: row.body, kind: row.kind, status: row.status, simulated: row.simulated, attempts: row.attempts,
       createdAt: row.createdAt.toISOString(), lastAttemptAt: row.lastAttemptAt?.toISOString() ?? null,
       sentAt: row.sentAt?.toISOString() ?? null, failedAt: row.failedAt?.toISOString() ?? null, error: row.error,
     }));

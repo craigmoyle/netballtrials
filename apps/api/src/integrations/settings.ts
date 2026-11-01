@@ -38,11 +38,12 @@ export class IntegrationSettings {
   private connectionUpdatedAt: string | null = null;
 
   constructor(private readonly env: Env, private readonly fetcher: typeof fetch = fetch) {
-    const configured = env.APP_ENV === 'production' && Boolean(
+    const integrationsEnabled = env.APP_ENV === 'production' || env.ENABLE_TEST_INTEGRATIONS;
+    const configured = integrationsEnabled && Boolean(
       env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET &&
       env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT,
     );
-    this.mode = configured ? 'infisical' : env.APP_ENV === 'production' ? 'environment' : 'fake';
+    this.mode = configured ? 'infisical' : integrationsEnabled ? 'environment' : 'fake';
     this.connection = configured ? {
       apiUrl: env.INFISICAL_API_URL.replace(/\/+$/, ''),
       projectId: env.INFISICAL_PROJECT_ID.trim(),
@@ -64,6 +65,9 @@ export class IntegrationSettings {
   }
 
   private validateConnection(connection: InfisicalConnectionSettings): void {
+    if (this.env.ENABLE_TEST_INTEGRATIONS && connection.environment.trim().toLowerCase() !== 'test') {
+      throw new Error('Hosted test integrations must use the dedicated Infisical test namespace.');
+    }
     if (!INFISICAL_CLOUD_API_URLS.includes(connection.apiUrl as typeof INFISICAL_CLOUD_API_URLS[number]) ||
         !connection.projectId.trim() || !connection.environment.trim() || !connection.secretPath.startsWith('/')) {
       throw new Error('Invalid Infisical connection settings.');

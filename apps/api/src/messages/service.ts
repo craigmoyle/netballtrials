@@ -8,11 +8,13 @@ import { isPastRetentionCutoff } from '../retention/service';
 export type DeliverySummary = {
   batchId: string;
   sent: number;
+  simulated: number;
   failed: number;
   ambiguous: number;
   pending: number;
   deliveryIds: string[];
   sentThisRun: number;
+  simulatedThisRun: number;
   failedThisRun: number;
   ambiguousThisRun: number;
 };
@@ -185,7 +187,7 @@ async function dispatchOne(
   now: Date,
   allowAmbiguous = false,
   maxAttempts?: number,
-): Promise<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> {
+): Promise<'SENT' | 'SIMULATED' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> {
   const retryable: EmailDeliveryState[] = allowAmbiguous
     ? ['PENDING', 'FAILED', 'AMBIGUOUS']
     : ['PENDING', 'FAILED'];
@@ -228,8 +230,9 @@ async function dispatchOne(
     OR: [{ status: 'SENDING' }, { status: 'AMBIGUOUS', error: INTERRUPTED_SEND }],
   };
 
+  let simulated = false;
   try {
-    await deps.mailer.send(restoreMessage(claimed));
+    simulated = (await deps.mailer.send(restoreMessage(claimed))) === 'simulated';
   } catch (error) {
     const outcome = safeError(error);
     await deps.prisma.emailLog.updateMany({
@@ -242,7 +245,7 @@ async function dispatchOne(
   try {
     const markedSent = await deps.prisma.emailLog.updateMany({
       where: completion,
-      data: { status: 'SENT', sentAt: now, failedAt: null, error: null },
+      data: { status: 'SENT', simulated, sentAt: simulated ? null : now, failedAt: null, error: null },
     });
     if (markedSent.count !== 1) {
       await deps.prisma.emailLog.updateMany({
@@ -251,7 +254,7 @@ async function dispatchOne(
       });
       return 'AMBIGUOUS';
     }
-    return 'SENT';
+    return simulated ? 'SIMULATED' : 'SENT';
   } catch {
     try {
       await deps.prisma.emailLog.updateMany({
@@ -281,15 +284,17 @@ async function expireSendingLease(prisma: PrismaClient, batchId: string, now: Da
 }
 
 export async function getDeliverySummary(prisma: PrismaClient, batchId: string): Promise<DeliverySummary> {
-  const rows = await prisma.emailLog.findMany({ where: { batchId }, select: { id: true, status: true } });
+  const rows = await prisma.emailLog.findMany({ where: { batchId }, select: { id: true, status: true, simulated: true } });
   return {
     batchId,
-    sent: rows.filter((row) => row.status === 'SENT').length,
+    sent: rows.filter((row) => row.status === 'SENT' && !row.simulated).length,
+    simulated: rows.filter((row) => row.status === 'SENT' && row.simulated).length,
     failed: rows.filter((row) => row.status === 'FAILED').length,
     ambiguous: rows.filter((row) => row.status === 'AMBIGUOUS').length,
     pending: rows.filter((row) => row.status === 'PENDING' || row.status === 'SENDING').length,
     deliveryIds: rows.map((row) => row.id),
     sentThisRun: 0,
+    simulatedThisRun: 0,
     failedThisRun: 0,
     ambiguousThisRun: 0,
   };
@@ -301,18 +306,19 @@ async function dispatchBatch(
   now: Date,
   allowAmbiguous = false,
   maxAttempts?: number,
-): Promise<Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>> {
+): Promise<Array<'SENT' | 'SIMULATED' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>> {
   // Bound both provider requests and transactions waiting on the per-event lock.
-  const outcomes: Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> = [];
+  const outcomes: Array<'SENT' | 'SIMULATED' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'> = [];
   for (let start = 0; start < rows.length; start += 5) {
     outcomes.push(...await Promise.all(rows.slice(start, start + 5).map((row) => dispatchOne(deps, row, now, allowAmbiguous, maxAttempts))));
   }
   return outcomes;
 }
 
-function runCounts(results: Array<'SENT' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>) {
+function runCounts(results: Array<'SENT' | 'SIMULATED' | 'FAILED' | 'AMBIGUOUS' | 'SKIPPED'>) {
   return {
     sentThisRun: results.filter((result) => result === 'SENT').length,
+    simulatedThisRun: results.filter((result) => result === 'SIMULATED').length,
     failedThisRun: results.filter((result) => result === 'FAILED').length,
     ambiguousThisRun: results.filter((result) => result === 'AMBIGUOUS').length,
   };

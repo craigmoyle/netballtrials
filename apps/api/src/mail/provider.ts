@@ -17,6 +17,8 @@ export interface EmailMessage {
   inlineImages?: InlineEmailImage[];
 }
 
+export type EmailSendResult = 'simulated';
+
 export interface EmailProvider {
-  send(message: EmailMessage): Promise<void>;
+  send(message: EmailMessage): Promise<void | EmailSendResult>;
 }

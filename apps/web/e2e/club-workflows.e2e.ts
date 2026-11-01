@@ -391,7 +391,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText(/68 distinct email recipients will receive this message/i)).toBeVisible();
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Send now to 68' }).click();
-  await expect(page.getByText('68 sent, 0 failed.')).toBeVisible();
+  await expect(page.getByText('68 sent, 0 simulated, 0 failed.')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 

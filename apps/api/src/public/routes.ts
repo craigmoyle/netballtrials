@@ -124,10 +124,12 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
     const ticket = await getTicket(deps.prisma, registration.qrToken);
     if (!ticket) return { status: registration.status };
     const token = encodeURIComponent(registration.qrToken);
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+    const publicApiOrigin = (hostedTestMode ? deps.env.WEB_ORIGIN : deps.env.API_PUBLIC_URL).replace(/\/$/, '');
     return {
       status: registration.status,
       ticketPath: `/ticket/${token}`,
-      calendarUrl: `${deps.env.API_PUBLIC_URL.replace(/\/$/, '')}/api/public/ticket/${token}/calendar`,
+      calendarUrl: `${publicApiOrigin}/api/public/ticket/${token}/calendar`,
       ticket,
     };
   });

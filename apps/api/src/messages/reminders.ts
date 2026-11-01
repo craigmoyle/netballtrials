@@ -23,6 +23,7 @@ function eventDateBounds(now: Date, leadHours: number): { gte: Date; lte: Date }
 
 export type ReminderRunResult = {
   sent: number;
+  simulated: number;
   failed: number;
   ambiguous: number;
   events: number;
@@ -42,6 +43,7 @@ export async function sendDueReminders(
     orderBy: [{ eventDate: 'asc' }, { id: 'asc' }],
   });
   let sent = 0;
+  let simulated = 0;
   let failed = 0;
   let ambiguous = 0;
   let eventsDue = 0;
@@ -81,6 +83,7 @@ export async function sendDueReminders(
         { kind: 'reminder', batchId, maxAttempts: AUTOMATIC_RETRY_LIMIT },
       );
       sent += result.sentThisRun;
+      simulated += result.simulatedThisRun;
       failed += result.failedThisRun;
       ambiguous += result.ambiguousThisRun;
     } catch (error) {
@@ -114,5 +117,5 @@ export async function sendDueReminders(
     }
   }
 
-  return { sent, failed, ambiguous, events: eventsDue, errors };
+  return { sent, simulated, failed, ambiguous, events: eventsDue, errors };
 }

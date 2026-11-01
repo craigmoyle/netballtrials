@@ -471,7 +471,16 @@ export interface SiteAssociationCampaignDTO {
   attempts: number;
   error: string | null;
   createdAt: string;
-  deliveries: Array<Pick<EmailLogDTO, 'id' | 'to' | 'status' | 'attempts' | 'sentAt' | 'failedAt' | 'error'> & { associationName: string | null }>;
+  deliveries: Array<Pick<EmailLogDTO, 'id' | 'to' | 'status' | 'simulated' | 'attempts' | 'sentAt' | 'failedAt' | 'error'> & { associationName: string | null }>;
+}
+
+export interface TestEmailOutboxDTO {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 export interface AutomaticEmailSettingsDTO {
@@ -523,6 +532,7 @@ export interface EmailLogDTO {
   body: string;
   kind: string;
   status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'AMBIGUOUS' | 'ANONYMIZED';
+  simulated: boolean;
   attempts: number;
   createdAt: string;
   lastAttemptAt: string | null;

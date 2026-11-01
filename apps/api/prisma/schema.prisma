@@ -181,6 +181,18 @@ model AutomaticEmailSettings {
   updatedAt          DateTime @updatedAt
 }
 
+model TestEmailOutbox {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  body      String
+  html      String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
 model SiteAssociationCommunication {
   id            String                 @id @default(cuid())
   anchorEventId String
@@ -499,6 +511,7 @@ model EmailLog {
   sentAt         DateTime?
   failedAt       DateTime?
   error          String?
+  simulated      Boolean             @default(false)
 
   @@index([eventId, sentAt])
   @@index([batchId, status])

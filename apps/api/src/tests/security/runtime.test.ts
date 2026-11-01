@@ -74,7 +74,7 @@ describe('production runtime boundary', () => {
   it('runs a hosted test deployment in production runtime mode with fake providers', async () => {
     const env = loadEnv({
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
-      NODE_ENV: 'production', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake',
+      NODE_ENV: 'production', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake', TEST_ADMIN_EMAILS: 'cmoyle@gmail.com',
       WEB_ORIGIN: 'https://test.trials.example', API_PUBLIC_URL: 'https://test-api.trials.example',
       SESSION_COOKIE_SECURE: 'true',
     } as NodeJS.ProcessEnv);
@@ -83,7 +83,9 @@ describe('production runtime boundary', () => {
       await app.ready();
       expect('checkouts' in app.testDeps.payment).toBe(true);
       expect('provider' in app.testDeps.mailer && app.testDeps.mailer.provider).toBe(false);
-      expect((await app.inject({ method: 'POST', url: '/api/public/fake-checkouts/complete', payload: {} })).statusCode).toBe(200);
+      const health = await app.inject({ method: 'GET', url: '/api/health' });
+      expect(health.json()).toMatchObject({ testAccessRequired: true, testIntegrationsEnabled: false });
+      expect((await app.inject({ method: 'POST', url: '/api/public/fake-checkouts/complete', payload: {} })).statusCode).toBe(401);
     } finally {
       await app.close();
     }

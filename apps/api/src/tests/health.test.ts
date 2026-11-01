@@ -6,7 +6,7 @@ describe('GET /health', () => {
     const app = createApp();
     const res = await app.inject({ method: 'GET', url });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok', appEnv: 'testing' });
+    expect(res.json()).toEqual({ status: 'ok', appEnv: 'testing', testAccessRequired: false, testIntegrationsEnabled: false });
     await app.close();
   });
 });

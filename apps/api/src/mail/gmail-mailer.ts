@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import type { EmailMessage, EmailProvider } from './provider';
 
-const SENDER = 'chisholmnetball@gmail.com';
+const DEFAULT_SENDER = 'chisholmnetball@gmail.com';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
@@ -24,6 +24,8 @@ type GmailConfig = {
   clientId: string;
   clientSecret: string;
   refreshToken: string;
+  from?: string;
+  replyTo?: string;
 };
 
 type TokenResponse = { access_token?: unknown; expires_in?: unknown };
@@ -33,6 +35,8 @@ export function createGmailMailer(
   fetcher: typeof fetch = fetch,
 ): EmailProvider & { provider: 'gmail-api' } {
   const composer = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: 'unix' });
+  const from = config.from?.trim() || DEFAULT_SENDER;
+  const replyTo = config.replyTo?.trim() || from;
   let accessToken: string | null = null;
   let expiresAt = 0;
   let refreshInFlight: Promise<string> | null = null;
@@ -85,8 +89,8 @@ export function createGmailMailer(
       let raw: Buffer;
       try {
         const composed = await composer.sendMail({
-          from: SENDER,
-          replyTo: SENDER,
+          from,
+          replyTo,
           to: message.to,
           subject: message.subject,
           text: message.text,

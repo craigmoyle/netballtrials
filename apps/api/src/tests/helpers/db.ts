@@ -12,7 +12,9 @@ export async function resetDb(): Promise<void> {
   await prisma.scheduledMessage.deleteMany();
   await prisma.emailLog.deleteMany();
   await prisma.emailTemplate.deleteMany();
+  await prisma.testEmailOutbox.deleteMany();
   await prisma.automaticEmailSettings.deleteMany();
+  await prisma.infisicalConnectionSettings.deleteMany();
   await prisma.reviewItem.deleteMany();
   await prisma.roundSlot.deleteMany();
   await prisma.roundPlan.deleteMany();

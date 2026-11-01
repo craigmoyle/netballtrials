@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -131,7 +131,7 @@ export function apiClient(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ token }),
       }),
-    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production' }>(baseUrl, '/api/health'),
+    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production'; testAccessRequired: boolean; testIntegrationsEnabled: boolean }>(baseUrl, '/api/health'),
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
@@ -284,10 +284,12 @@ export function apiClient(baseUrl: string) {
     previewCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[] }) =>
       request<{ count: number; recipients: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/preview`, { method: 'POST', body: JSON.stringify(input) }),
     sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; batchId: string }) =>
-      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(baseUrl, `/api/admin/events/${eventId}/communications/send`, { method: 'POST', body: JSON.stringify(input) }),
+      request<{ batchId: string; sent: number; simulated: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(baseUrl, `/api/admin/events/${eventId}/communications/send`, { method: 'POST', body: JSON.stringify(input) }),
     getIntegrationSettings: () => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations'),
     getAutomaticEmailSettings: () => request<AutomaticEmailSettingsDTO>(baseUrl, '/api/admin/settings/automatic-email'),
     updateAutomaticEmailSettings: (input: Omit<AutomaticEmailSettingsDTO, 'updatedAt'>) => request<AutomaticEmailSettingsDTO>(baseUrl, '/api/admin/settings/automatic-email', { method: 'PUT', body: JSON.stringify(input) }),
+    listTestEmailOutbox: () => request<TestEmailOutboxDTO[]>(baseUrl, '/api/admin/test-email-outbox'),
+    clearTestEmailOutbox: () => request<void>(baseUrl, '/api/admin/test-email-outbox', { method: 'DELETE' }),
     updateInfisicalConnection: (input: { apiUrl: string; projectId: string; environment: string; secretPath: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/infisical', { method: 'PUT', body: JSON.stringify(input) }),
     replaceStripeIntegration: (input: { secretKey: string; webhookSecret: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/stripe', { method: 'PUT', body: JSON.stringify(input) }),
     replaceGmailIntegration: (input: { clientId: string; clientSecret: string; refreshToken: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/gmail', { method: 'PUT', body: JSON.stringify(input) }),
@@ -300,7 +302,7 @@ export function apiClient(baseUrl: string) {
       request<SiteAssociationCampaignDTO>(baseUrl, '/api/admin/communications/site/schedule', { method: 'POST', body: JSON.stringify(input) }),
     cancelSiteAssociationCommunication: (id: string) => request<{ status: string }>(baseUrl, `/api/admin/communications/site/campaigns/${id}/cancel`, { method: 'POST' }),
     retrySiteAssociationCommunication: (id: string, deliveryIds: string[], includeAmbiguous = false) =>
-      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number }>(baseUrl, `/api/admin/communications/site/campaigns/${id}/retry`, { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) }),
+      request<{ batchId: string; sent: number; simulated: number; failed: number; ambiguous: number; pending: number }>(baseUrl, `/api/admin/communications/site/campaigns/${id}/retry`, { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) }),
     listCommunicationTemplates: () => request<EmailTemplateDTO[]>(baseUrl, '/api/admin/communications/templates'),
     saveCommunicationTemplate: (input: { name: string; audience: 'participants' | 'associations'; subject: string; body: string }) =>
       request<EmailTemplateDTO>(baseUrl, '/api/admin/communications/templates', { method: 'POST', body: JSON.stringify(input) }),
@@ -313,7 +315,7 @@ export function apiClient(baseUrl: string) {
     cancelScheduledCommunication: (eventId: string, id: string) => request<{ status: string }>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}/cancel`, { method: 'POST' }),
     listCommunicationDeliveries: (eventId: string) => request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/deliveries`),
     retryCommunication: (eventId: string, batchId: string, deliveryIds: string[], includeAmbiguous = false) =>
-      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number }>(baseUrl, `/api/admin/events/${eventId}/communications/${batchId}/retry`, { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) }),
+      request<{ batchId: string; sent: number; simulated: number; failed: number; ambiguous: number; pending: number }>(baseUrl, `/api/admin/events/${eventId}/communications/${batchId}/retry`, { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) }),
   };
 }
 
