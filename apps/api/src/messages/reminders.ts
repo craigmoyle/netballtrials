@@ -4,6 +4,7 @@ import { mailRegistrationEligibility } from '../mail/lifecycle';
 import { localDateTimeToUtc } from '../time/melbourne';
 import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage } from './service';
 import { buildTrialCalendar } from '../registrations/calendar';
+import { getAutomaticEmailSettings, renderAutomaticEmailSubject, renderAutomaticEmailTemplate } from './automatic-email-settings';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -11,11 +12,12 @@ export function eventStartInstant(eventDate: Date, startTime: string): Date {
   return localDateTimeToUtc(eventDate, startTime);
 }
 
-function eventDateBounds(now: Date): { gte: Date; lte: Date } {
+function eventDateBounds(now: Date, leadHours: number): { gte: Date; lte: Date } {
   const startOfUtcDate = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const horizonDays = Math.ceil(leadHours / 24) + 2;
   return {
     gte: new Date(startOfUtcDate - DAY_MS),
-    lte: new Date(startOfUtcDate + 2 * DAY_MS),
+    lte: new Date(startOfUtcDate + horizonDays * DAY_MS),
   };
 }
 
@@ -32,8 +34,10 @@ export async function sendDueReminders(
   now: Date,
   options: { dryRun?: boolean } = {},
 ): Promise<ReminderRunResult> {
+  const settings = await getAutomaticEmailSettings(deps.prisma);
+  const leadWindowMs = settings.reminderLeadHours * 60 * 60 * 1000;
   const events = await deps.prisma.event.findMany({
-    where: { eventDate: eventDateBounds(now) },
+    where: { eventDate: eventDateBounds(now, settings.reminderLeadHours) },
     select: { id: true, name: true, eventDate: true, venue: true, startTime: true, endTime: true, gameStartTime: true, createdAt: true },
     orderBy: [{ eventDate: 'asc' }, { id: 'asc' }],
   });
@@ -46,7 +50,7 @@ export async function sendDueReminders(
   for (const event of events) {
     const start = eventStartInstant(event.eventDate, event.startTime);
     const delta = start.getTime() - now.getTime();
-    if (delta <= 0 || delta > DAY_MS) continue;
+    if (delta <= 0 || delta > leadWindowMs) continue;
 
     // One event's failure must not stop reminders for the others.
     try {
@@ -60,8 +64,13 @@ export async function sendDueReminders(
         deps,
         event.id,
         {
-          subject: `Reminder: ${event.name}`,
-          text: `${event.name} is at ${event.venue} on ${event.eventDate.toISOString().slice(0, 10)} at ${event.startTime}. See you there.`,
+          subject: renderAutomaticEmailSubject(settings.reminderSubject, { eventName: event.name }),
+          text: renderAutomaticEmailTemplate(settings.reminderBody, {
+            eventName: event.name,
+            venue: event.venue,
+            eventDate: event.eventDate.toISOString().slice(0, 10),
+            startTime: event.startTime,
+          }),
           attachments: [{
             filename: `${event.id}.ics`,
             contentType: 'text/calendar; charset=utf-8; method=PUBLISH',

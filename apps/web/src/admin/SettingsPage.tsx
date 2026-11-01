@@ -1,9 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { IntegrationStatusDTO } from '@netball-trials/types';
-import type { ApiClient as Client } from '../api/client';
+import type { AutomaticEmailSettingsDTO, IntegrationStatusDTO } from '@netball-trials/types';
+import { ApiError, type ApiClient as Client } from '../api/client';
+import { HelpTip } from './HelpTip';
+import { emailPreview } from './automatic-email-preview';
 
 export function SettingsPage({ client }: { client: Client }) {
   const [settings, setSettings] = useState<IntegrationStatusDTO | null>(null);
+  const [automaticEmail, setAutomaticEmail] = useState<AutomaticEmailSettingsDTO | null>(null);
   const [infisicalApiUrl, setInfisicalApiUrl] = useState('https://us.infisical.com');
   const [infisicalProjectId, setInfisicalProjectId] = useState('');
   const [infisicalEnvironment, setInfisicalEnvironment] = useState('');
@@ -22,8 +25,9 @@ export function SettingsPage({ client }: { client: Client }) {
     setLoading(true);
     setError(null);
     try {
-      const loaded = await client.getIntegrationSettings();
+      const [loaded, loadedEmail] = await Promise.all([client.getIntegrationSettings(), client.getAutomaticEmailSettings()]);
       setSettings(loaded);
+      setAutomaticEmail(loadedEmail);
       if (loaded.infisical.configured) {
         setInfisicalApiUrl(loaded.infisical.apiUrl ?? 'https://us.infisical.com');
         setInfisicalProjectId(loaded.infisical.projectId ?? '');
@@ -56,6 +60,25 @@ export function SettingsPage({ client }: { client: Client }) {
       setNotice('Infisical connection verified and saved. Universal Auth credentials remain deployment-managed.');
     } catch {
       setError('Could not verify or save Infisical settings. Check the machine identity scope and ensure both STRIPE_INTEGRATION and GMAIL_INTEGRATION exist at the selected path.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveAutomaticEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!automaticEmail || busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { updatedAt: _updatedAt, ...input } = automaticEmail;
+      setAutomaticEmail(await client.updateAutomaticEmailSettings(input));
+      setNotice('Automatic email settings saved. Existing deliveries keep their original content.');
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.message === 'invalid_email_template') {
+        setError(`Check placeholders in ${reason.fields?.join(', ') || 'the email templates'}. Required event details must stay in the message.`);
+      } else setError('Could not save automatic email settings. Check the message fields and try again.');
     } finally {
       setBusy(false);
     }
@@ -111,10 +134,14 @@ export function SettingsPage({ client }: { client: Client }) {
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {settings?.mode === 'fake' ? (
-        <p className="message-confirmation">This test environment uses fake payment and email providers. Real credentials cannot be added here.</p>
+        <p className="message-confirmation">This test environment uses fake payment and email providers. Real credentials and Infisical settings are intentionally disabled here; configure them on the production API deployment.</p>
       ) : null}
       {settings?.mode === 'environment' ? (
-        <p className="message-confirmation">Integration credentials are managed by the deployment environment. Add Infisical Universal Auth credentials there to enable connection settings here.</p>
+        <section className="site-settings-section" aria-labelledby="infisical-integration-heading">
+          <h2 id="infisical-integration-heading">Infisical secret manager</h2>
+          <p>Infisical is not enabled for this API deployment, so connection fields are not editable here. To enable them, configure these four variables on the API service: <code>INFISICAL_UNIVERSAL_AUTH_CLIENT_ID</code>, <code>INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET</code>, <code>INFISICAL_PROJECT_ID</code> and <code>INFISICAL_ENVIRONMENT</code>.</p>
+          <p>Keep the Universal Auth client ID and secret in your hosting provider’s secret settings—not in this form. After configuring the values for a production deployment, restart or redeploy the API. You can then manage the Infisical region, project, environment and secret path here.</p>
+        </section>
       ) : null}
       {settings?.mode === 'infisical' ? (
         <section className="site-settings-section" aria-labelledby="infisical-integration-heading">
@@ -139,6 +166,45 @@ export function SettingsPage({ client }: { client: Client }) {
           </form>
         </section>
       ) : null}
+      <section className="site-settings-section automatic-email-settings" aria-labelledby="automatic-email-heading">
+        <div className="admin-page-title-row"><h2 id="automatic-email-heading">Automatic email messages</h2><HelpTip label="Confirmation and reminder emails">These messages are sent by the app after payment and before a trial. Ticket links, the QR image and calendar attachment stay in place.</HelpTip></div>
+        <p>Update the subject and plain-text copy for registration confirmations and event reminders. Use the listed fields to insert event and player details.</p>
+        {automaticEmail ? (
+          <form onSubmit={(event) => void saveAutomaticEmail(event)}>
+            <fieldset disabled={busy}>
+              <legend>Successful registration</legend>
+              <p className="template-field-help">Required in the message: <code>{'{{playerName}}'}</code>, <code>{'{{eventName}}'}</code>, <code>{'{{eventDate}}'}</code>, <code>{'{{gameStartTime}}'}</code> and <code>{'{{venue}}'}</code>. The ticket, manage-registration and policy links, QR code and calendar file are added automatically.</p>
+              <label htmlFor="confirmation-email-subject">Confirmation subject</label>
+              <input id="confirmation-email-subject" maxLength={200} value={automaticEmail.confirmationSubject} onChange={(event) => setAutomaticEmail({ ...automaticEmail, confirmationSubject: event.target.value })} />
+              <label htmlFor="confirmation-email-body">Message</label>
+              <textarea id="confirmation-email-body" rows={5} maxLength={3000} value={automaticEmail.confirmationBody} onChange={(event) => setAutomaticEmail({ ...automaticEmail, confirmationBody: event.target.value })} />
+              <details className="automatic-email-preview">
+                <summary>Preview with sample details</summary>
+                <p><strong>{emailPreview(automaticEmail, 'confirmation').subject}</strong></p>
+                <pre>{emailPreview(automaticEmail, 'confirmation').body}</pre>
+                <p>Ticket links, the QR code and calendar attachment appear in the sent email.</p>
+              </details>
+            </fieldset>
+            <fieldset disabled={busy}>
+              <legend>Event reminder</legend>
+              <p className="template-field-help">Use <code>{'{{eventName}}'}</code>, <code>{'{{eventDate}}'}</code>, <code>{'{{startTime}}'}</code> and <code>{'{{venue}}'}</code>. The calendar attachment is added automatically.</p>
+              <label htmlFor="reminder-email-subject">Reminder subject</label>
+              <input id="reminder-email-subject" maxLength={200} value={automaticEmail.reminderSubject} onChange={(event) => setAutomaticEmail({ ...automaticEmail, reminderSubject: event.target.value })} />
+              <label htmlFor="reminder-email-body">Message</label>
+              <textarea id="reminder-email-body" rows={4} maxLength={3000} value={automaticEmail.reminderBody} onChange={(event) => setAutomaticEmail({ ...automaticEmail, reminderBody: event.target.value })} />
+              <details className="automatic-email-preview">
+                <summary>Preview with sample details</summary>
+                <p><strong>{emailPreview(automaticEmail, 'reminder').subject}</strong></p>
+                <pre>{emailPreview(automaticEmail, 'reminder').body}</pre>
+              </details>
+              <div className="automatic-email-label-row"><label htmlFor="reminder-lead-hours">Send reminder (hours before event start)</label><HelpTip label="Reminder timing">The reminder job sends once an event enters this lead-time window. Keep the job scheduled at least every 15 minutes; the actual send can be up to 15 minutes after the window opens.</HelpTip></div>
+              <input id="reminder-lead-hours" type="number" min={1} max={168} step={1} value={automaticEmail.reminderLeadHours} onChange={(event) => setAutomaticEmail({ ...automaticEmail, reminderLeadHours: Number(event.target.value) })} />
+            </fieldset>
+            <button type="submit" disabled={busy || !automaticEmail.confirmationSubject.trim() || !automaticEmail.confirmationBody.trim() || !automaticEmail.reminderSubject.trim() || !automaticEmail.reminderBody.trim() || automaticEmail.reminderLeadHours < 1 || automaticEmail.reminderLeadHours > 168}>{busy ? 'Saving…' : 'Save automatic email settings'}</button>
+          </form>
+        ) : <p role="status">Automatic email settings are unavailable. Reload the page to try again.</p>}
+        {automaticEmail?.updatedAt ? <p>Last updated {new Date(automaticEmail.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.</p> : null}
+      </section>
       <section className="site-settings-section" aria-labelledby="stripe-integration-heading">
         <h2 id="stripe-integration-heading">Stripe payments</h2>
         <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'Credential status is unavailable until Infisical is reachable.' : settings?.stripe.configured ? 'Credentials are configured.' : 'Credentials are not configured.'}{settings?.stripe.updatedAt ? ` Last updated ${new Date(settings.stripe.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>

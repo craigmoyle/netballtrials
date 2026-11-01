@@ -48,6 +48,7 @@ export function ScanPage({ client }: { client: Client }) {
   const lastToken = useRef('');
   const busyRef = useRef(false);
   const sessionIsActive = useRef<(() => boolean) | null>(null);
+  const deactivateSession = useRef<(() => void) | null>(null);
   const audioContexts = useRef(new Set<AudioContext>());
 
   const processToken = useCallback(async (token: string, isActive: () => boolean) => {
@@ -67,8 +68,10 @@ export function ScanPage({ client }: { client: Client }) {
       announce(scanned, audioContexts.current);
     } catch (error) {
       if (!isActive()) return;
-      if (checkInSessionEnded(error)) navigate('/check-in', { replace: true });
-      else setError('Scan failed. Check the connection, then retry this code or use manual lookup.');
+      if (checkInSessionEnded(error)) {
+        deactivateSession.current?.();
+        navigate('/check-in', { replace: true });
+      } else setError('Scan failed. Check the connection, then retry this code or use manual lookup.');
     } finally {
       if (isActive()) {
         busyRef.current = false;
@@ -82,6 +85,19 @@ export function ScanPage({ client }: { client: Client }) {
     let controls: { stop: () => void } | undefined;
     const isActive = () => !stopped;
     sessionIsActive.current = isActive;
+    const deactivate = () => {
+      if (stopped) return;
+      stopped = true;
+      sessionIsActive.current = null;
+      busyRef.current = false;
+      try { controls?.stop(); } catch { /* best effort */ }
+      controls = undefined;
+      for (const context of audioContexts.current) {
+        if (context.state !== 'closed') void context.close().catch(() => undefined);
+      }
+      audioContexts.current.clear();
+    };
+    deactivateSession.current = deactivate;
 
     void (async () => {
       try {
@@ -109,14 +125,8 @@ export function ScanPage({ client }: { client: Client }) {
     })();
 
     return () => {
-      stopped = true;
-      sessionIsActive.current = null;
-      busyRef.current = false;
-      try { controls?.stop(); } catch { /* best effort */ }
-      for (const context of audioContexts.current) {
-        if (context.state !== 'closed') void context.close().catch(() => undefined);
-      }
-      audioContexts.current.clear();
+      deactivate();
+      if (deactivateSession.current === deactivate) deactivateSession.current = null;
     };
   }, [processToken]);
 
@@ -151,8 +161,10 @@ export function ScanPage({ client }: { client: Client }) {
       notifyCheckInUpdated();
     } catch (error) {
       if (!isActive()) return;
-      if (checkInSessionEnded(error)) navigate('/check-in', { replace: true });
-      else setError('Could not undo the check-in. Refresh and try again.');
+      if (checkInSessionEnded(error)) {
+        deactivateSession.current?.();
+        navigate('/check-in', { replace: true });
+      } else setError('Could not undo the check-in. Refresh and try again.');
     } finally {
       if (isActive()) {
         busyRef.current = false;

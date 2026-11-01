@@ -9,28 +9,17 @@ export function measureOpponentVariety(slots: RoundSlotDTO[]) {
     games.set(key, game);
   }
 
-  const byPlayer = new Map<string, Map<string, number>>();
-  const pairMeetings = new Map<string, number>();
+  const pairMeetings = new Map<string, { playerAId: string; playerBId: string; meetings: number }>();
   for (const { team0, team1 } of games.values()) {
     for (const playerId of team0) {
       for (const opponentId of team1) {
-        const opponents = byPlayer.get(playerId) ?? new Map<string, number>();
-        opponents.set(opponentId, (opponents.get(opponentId) ?? 0) + 1);
-        byPlayer.set(playerId, opponents);
-        const reverse = byPlayer.get(opponentId) ?? new Map<string, number>();
-        reverse.set(playerId, (reverse.get(playerId) ?? 0) + 1);
-        byPlayer.set(opponentId, reverse);
-        const pair = [playerId, opponentId].sort().join('|');
-        pairMeetings.set(pair, (pairMeetings.get(pair) ?? 0) + 1);
+        const [playerAId, playerBId] = playerId < opponentId ? [playerId, opponentId] : [opponentId, playerId];
+        const pairKey = JSON.stringify([playerAId, playerBId]);
+        const pair = pairMeetings.get(pairKey);
+        pairMeetings.set(pairKey, { playerAId, playerBId, meetings: (pair?.meetings ?? 0) + 1 });
       }
     }
   }
 
-  return {
-    byPlayer: new Map([...byPlayer].map(([id, meetings]) => [id, {
-      uniqueOpponents: meetings.size,
-      repeatMeetings: [...meetings.values()].reduce((total, count) => total + count - 1, 0),
-    }])),
-    repeatedPairs: [...pairMeetings.values()].reduce((total, count) => total + count - 1, 0),
-  };
+  return { repeatedPairings: [...pairMeetings.values()].filter((pair) => pair.meetings > 1) };
 }

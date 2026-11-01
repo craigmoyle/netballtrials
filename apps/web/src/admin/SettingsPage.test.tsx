@@ -4,6 +4,15 @@ import { SettingsPage } from './SettingsPage';
 
 afterEach(cleanup);
 
+const automaticEmail = {
+  confirmationSubject: 'Trial registration confirmed: {{playerName}} ({{eventName}})',
+  confirmationBody: '{{playerName}} is registered for {{eventName}}.\nWhen: {{eventDate}} at {{gameStartTime}}\nWhere: {{venue}}',
+  reminderSubject: 'Reminder: {{eventName}}',
+  reminderBody: '{{eventName}} is at {{venue}} on {{eventDate}} at {{startTime}}. See you there.',
+  reminderLeadHours: 24,
+  updatedAt: null,
+};
+
 const status = {
   mode: 'infisical' as const,
   infisical: { configured: true, connected: true, apiUrl: 'https://us.infisical.com', projectId: 'current-project', environment: 'prod', secretPath: '/netball-trials', updatedAt: null },
@@ -12,9 +21,36 @@ const status = {
 };
 
 describe('SettingsPage', () => {
+  it('edits automatic message copy and reminder lead time with a sample preview', async () => {
+    const saved = vi.fn().mockImplementation(async (input) => ({ ...input, updatedAt: '2026-11-03T00:00:00.000Z' }));
+    const client = {
+      getIntegrationSettings: vi.fn().mockResolvedValue(status),
+      getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
+      updateAutomaticEmailSettings: saved,
+      replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
+    };
+    render(<SettingsPage client={client as any} />);
+
+    fireEvent.change(await screen.findByLabelText('Confirmation subject'), { target: { value: 'Welcome {{playerName}} — {{eventName}}' } });
+    fireEvent.change(screen.getByLabelText('Send reminder (hours before event start)'), { target: { value: '48' } });
+    fireEvent.click(screen.getAllByText('Preview with sample details')[0]!.closest('summary')!);
+    expect(screen.getByText(/Sample Player is registered for Sample Trials/i)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Save automatic email settings' }));
+
+    await waitFor(() => expect(saved).toHaveBeenCalledWith({
+      confirmationSubject: 'Welcome {{playerName}} — {{eventName}}',
+      confirmationBody: automaticEmail.confirmationBody,
+      reminderSubject: automaticEmail.reminderSubject,
+      reminderBody: automaticEmail.reminderBody,
+      reminderLeadHours: 48,
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent(/Automatic email settings saved/i);
+  });
+
   it('lets Admins replace integration credentials without revealing saved values', async () => {
     const client = {
       getIntegrationSettings: vi.fn().mockResolvedValue(status),
+      getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
       replaceStripeIntegration: vi.fn().mockResolvedValue(status),
       replaceGmailIntegration: vi.fn().mockResolvedValue(status),
     };
@@ -34,6 +70,7 @@ describe('SettingsPage', () => {
     const savedStatus = { ...status, infisical: { ...status.infisical, apiUrl: 'https://eu.infisical.com', projectId: 'new-project', environment: 'test', secretPath: '/netball-trials' } };
     const client = {
       getIntegrationSettings: vi.fn().mockResolvedValue(status),
+      getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
       updateInfisicalConnection: vi.fn().mockResolvedValue(savedStatus),
       replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
     };
@@ -53,13 +90,28 @@ describe('SettingsPage', () => {
     expect(screen.queryByLabelText(/Universal Auth client secret/i)).not.toBeInTheDocument();
   });
 
+  it('explains how to enable Infisical when the API is using deployment environment credentials', async () => {
+    render(<SettingsPage client={{ getIntegrationSettings: vi.fn().mockResolvedValue({
+      mode: 'environment', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null },
+      stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null },
+    }), getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail) } as any} />);
+
+    expect(await screen.findByRole('heading', { name: 'Infisical secret manager' })).toBeInTheDocument();
+    const infisical = screen.getByRole('region', { name: 'Infisical secret manager' });
+    expect(infisical).toHaveTextContent(/not enabled for this API deployment/i);
+    expect(infisical).toHaveTextContent(/INFISICAL_UNIVERSAL_AUTH_CLIENT_ID.*INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET.*INFISICAL_PROJECT_ID.*INFISICAL_ENVIRONMENT/);
+    expect(screen.queryByLabelText('Project ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Universal Auth client secret/i)).not.toBeInTheDocument();
+  });
+
   it('shows fake-provider status without exposing credential fields in test mode', async () => {
     render(<SettingsPage client={{ getIntegrationSettings: vi.fn().mockResolvedValue({
       mode: 'fake', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null },
       stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null },
-    }) } as any} />);
+    }), getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail) } as any} />);
 
     expect(await screen.findByText(/uses fake payment and email providers/i)).toBeInTheDocument();
+    expect(screen.getByText(/Infisical settings are intentionally disabled here/i)).toBeInTheDocument();
     expect(screen.queryByLabelText('New Stripe secret key')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('New Gmail OAuth refresh token')).not.toBeInTheDocument();
   });

@@ -112,6 +112,33 @@ describe('buildConfirmation', () => {
     expect(email.html).toContain('https://example.com/policy?x=1&amp;y=2');
   });
 
+  it('uses the saved confirmation copy while keeping the ticket, QR, policy and calendar details', async () => {
+    await resetDb();
+    const event = await prisma.event.create({ data: eventFixture() });
+    const registration = await prisma.registration.create({
+      data: { ...registrationFixture(event.id), status: 'PAID', qrToken: 'automatic-email-template-token' },
+    });
+    await prisma.automaticEmailSettings.create({
+      data: {
+        id: 'automatic',
+        confirmationSubject: 'Welcome {{playerName}} to {{eventName}}',
+        confirmationBody: 'Kia ora {{playerName}} — {{eventName}}\n{{eventDate}} at {{gameStartTime}}, {{venue}}',
+        reminderSubject: 'Reminder: {{eventName}}',
+        reminderBody: '{{eventName}} is at {{venue}} on {{eventDate}} at {{startTime}}.',
+        reminderLeadHours: 24,
+      },
+    });
+    const mailer = createDevMailer([]);
+    await sendConfirmation({ prisma, mailer }, registration, event, 'https://trials.example/ticket/automatic-email-template-token');
+
+    const message = mailer.sent[0];
+    expect(message.subject).toBe('Welcome Ada Lovelace to 15/U Ladies');
+    expect(message.text).toContain('Kia ora Ada Lovelace — 15/U Ladies\n2026-09-12 at 09:00, SNC');
+    expect(message.text).toContain('Manage registrations: https://trials.example/manage-registration');
+    expect(message.html).toContain('src="cid:ticket-qr"');
+    expect(message.attachments?.[0].filename).toBe(`${registration.id}.ics`);
+  });
+
   it('sends a real inline QR and attached Melbourne calendar through EmailProvider', async () => {
     const mailer = createDevMailer([]);
     await sendConfirmation(

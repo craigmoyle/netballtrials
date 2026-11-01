@@ -7,6 +7,19 @@ afterEach(() => { cleanup(); });
 
 describe('EventWorkflowNav', () => {
   it.each([
+    ['/admin/events/e1/games', 'Full Game List'],
+    ['/admin/events/e1/games?view=position', 'Position View'],
+    ['/admin/events/e1/games?view=statistics', 'Player Statistics'],
+    ['/admin/events/e1/games?view=reference', 'Player Reference'],
+    ['/admin/events/e1/round-sheets', 'Round handouts'],
+  ])('links the %s route to its Planning view', (path, label) => {
+    render(<MemoryRouter initialEntries={[path]}><EventWorkflowNav eventId="e1" /></MemoryRouter>);
+    const nav = screen.getByRole('navigation', { name: 'Event workflows' });
+    const planning = within(nav).getByRole('group', { name: 'Planning' });
+    expect(within(planning).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it.each([
     ['/admin/events/e1/check-in', 'Admin check-in'],
     ['/admin/events/e1/day-of-registration', 'Day-of registration'],
   ])('marks the current special trial-day route %s', (path, label) => {
@@ -37,6 +50,11 @@ describe('EventWorkflowNav', () => {
     expect(within(registrationGroup).getByRole('link', { name: 'Review queue' })).toBeInTheDocument();
     expect(within(registrationGroup).getByRole('link', { name: 'Incomplete registrations' })).toHaveAttribute('href', '/admin/events/e1/incomplete');
     expect(within(planningGroup).getByRole('link', { name: 'Plan rounds' })).toBeInTheDocument();
+    expect(within(planningGroup).getByRole('link', { name: 'Full Game List' })).toHaveAttribute('href', '/admin/events/e1/games');
+    expect(within(planningGroup).getByRole('link', { name: 'Position View' })).toHaveAttribute('href', '/admin/events/e1/games?view=position');
+    expect(within(planningGroup).getByRole('link', { name: 'Player Statistics' })).toHaveAttribute('href', '/admin/events/e1/games?view=statistics');
+    expect(within(planningGroup).getByRole('link', { name: 'Player Reference' })).toHaveAttribute('href', '/admin/events/e1/games?view=reference');
+    expect(within(planningGroup).getByRole('link', { name: 'Round handouts' })).toHaveAttribute('href', '/admin/events/e1/round-sheets');
     expect(within(planningGroup).getByRole('link', { name: 'Print selector sheets' })).toBeInTheDocument();
     expect(within(communicationsGroup).getByRole('link', { name: 'Event communications' })).toHaveAttribute('href', '/admin/events/e1/communications');
     expect(within(trialDayGroup).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in?eventId=e1');
@@ -48,7 +66,7 @@ describe('EventWorkflowNav', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(links).toHaveClass('is-open');
-    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Incomplete registrations', 'Plan rounds', 'Full Game List', 'Print selector sheets', 'Event communications', 'Volunteer check-in']) {
+    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Incomplete registrations', 'Plan rounds', 'Full Game List', 'Position View', 'Player Statistics', 'Player Reference', 'Round handouts', 'Print selector sheets', 'Event communications', 'Volunteer check-in']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });

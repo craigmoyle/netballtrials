@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, ScheduledMessageDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
+import { HelpTip } from './HelpTip';
 
 type Audience = 'participants' | 'associations';
 type FilterStatus = 'all' | 'PAID' | 'PENDING' | 'EXPIRED' | 'FAILED' | 'WITHDRAWN' | 'checked-in' | 'not-checked-in';
@@ -314,7 +315,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       </section>
 
       <section aria-labelledby="compose-heading">
-        <h2 id="compose-heading">Compose message</h2>
+        <div className="admin-page-title-row"><h2 id="compose-heading">Compose message</h2><HelpTip label="Template fields">Fields are filled for each recipient when you preview and send. Use playerNames when one household may have more than one registered player.</HelpTip></div>
         <p><label htmlFor="template-select">Use a saved template</label><select id="template-select" value="" onChange={(event) => selectTemplate(event.target.value)}><option value="">Choose a template</option>{templates.filter((template) => template.audience === audience).map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></p>
         <p><label htmlFor="subject">Subject</label><input id="subject" maxLength={200} value={subject} onChange={(event) => { setSubject(event.target.value); invalidatePreview(); }} /></p>
         <p><label htmlFor="message-body">Message</label><textarea id="message-body" maxLength={5000} value={text} onChange={(event) => { setText(event.target.value); invalidatePreview(); }} /></p>
@@ -337,6 +338,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
           <p><button type="button" disabled={busy} onClick={() => void send()}>{busy ? 'Sending...' : `Send now to ${previewRecipients.length}`}</button></p>
           <fieldset className="form-group">
             <legend>Schedule this message</legend>
+            <div className="communication-schedule-help"><HelpTip label="Scheduled messages">The send time uses Australia/Melbourne. The delivery job checks for due messages on its next run.</HelpTip></div>
             <p><label htmlFor="scheduled-local">Send at (Australia/Melbourne)</label><input id="scheduled-local" type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></p>
             <button type="button" className="button-secondary" disabled={busy || !scheduleAt} onClick={() => void schedule()}>Schedule email</button>
           </fieldset>

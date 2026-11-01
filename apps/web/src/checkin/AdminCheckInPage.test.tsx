@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AdminCheckInPage } from './AdminCheckInPage';
 
@@ -50,6 +50,6 @@ describe('AdminCheckInPage', () => {
     expect(await screen.findByRole('heading', { name: 'Scanner ready' })).toBeInTheDocument();
     expect(openAdminCheckIn).toHaveBeenCalledTimes(1);
     expect(openAdminCheckIn).toHaveBeenCalledWith('event-1');
-    expect(screen.getByLabelText('Current path')).toHaveTextContent('/check-in/scan');
+    await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/check-in/scan'));
   });
 });

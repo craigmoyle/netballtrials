@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { melbourneDateKey, type EventStatus } from '@netball-trials/types';
 import type { ApiClient as Client } from '../api/client';
 import { EventCourtColors } from './EventCourtColors';
+import { HelpTip } from './HelpTip';
 
 export function EventControls({
   client,
@@ -123,7 +124,7 @@ export function EventControls({
 
   return (
     <section className="event-controls" aria-labelledby="event-controls-heading">
-      <h2 id="event-controls-heading">Event controls</h2>
+      <div className="admin-page-title-row"><h2 id="event-controls-heading">Event controls</h2><HelpTip label="Registration and check-in access">Opening registration lets families submit applications. The volunteer PIN is shared with approved volunteers and stored as a hash; closing check-in revokes their active sessions.</HelpTip></div>
       {(pinConfigured !== null && !checkInClosedAt) || canRegisterDayOf ? (
         <nav aria-label="Event actions" className="workflow-links">
           {pinConfigured !== null && !checkInClosedAt ? <Link to={`/admin/events/${eventId}/check-in`}>Admin check-in</Link> : null}

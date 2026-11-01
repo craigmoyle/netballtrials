@@ -8,8 +8,11 @@ const apiMocks = vi.hoisted(() => ({
   me: vi.fn(),
   logout: vi.fn(),
   listEvents: vi.fn(),
+  getRegistrationOverview: vi.fn(),
   listAssociations: vi.fn(),
   getIntegrationSettings: vi.fn(),
+  getAutomaticEmailSettings: vi.fn(),
+  updateAutomaticEmailSettings: vi.fn(),
   listSiteAssociationCampaigns: vi.fn(),
   listCommunicationTemplates: vi.fn(),
   getEvent: vi.fn(),
@@ -68,8 +71,10 @@ beforeEach(() => {
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
   apiMocks.listEvents.mockResolvedValue([]);
+  apiMocks.getRegistrationOverview.mockResolvedValue([]);
   apiMocks.listAssociations.mockResolvedValue([]);
   apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null }, stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
+  apiMocks.getAutomaticEmailSettings.mockResolvedValue({ confirmationSubject: 'Trial registration confirmed: {{playerName}} ({{eventName}})', confirmationBody: '{{playerName}} is registered for {{eventName}}.\nWhen: {{eventDate}} at {{gameStartTime}}\nWhere: {{venue}}', reminderSubject: 'Reminder: {{eventName}}', reminderBody: '{{eventName}} is at {{venue}} on {{eventDate}} at {{startTime}}. See you there.', reminderLeadHours: 24, updatedAt: null });
   apiMocks.listSiteAssociationCampaigns.mockResolvedValue([]);
   apiMocks.listCommunicationTemplates.mockResolvedValue([]);
   apiMocks.checkInSettings.mockResolvedValue({ pinConfigured: false, checkInClosedAt: null });
@@ -241,8 +246,10 @@ describe('App route boundaries', () => {
     expect(screen.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
     const adminNavigation = screen.getByRole('navigation', { name: 'Administration' });
     expect(within(adminNavigation).getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/admin/events');
+    expect(within(adminNavigation).getByRole('link', { name: 'Registrations' })).toHaveAttribute('href', '/admin/registrations');
     expect(within(adminNavigation).getByRole('link', { name: 'Communications' })).toHaveAttribute('href', '/admin/communications');
     expect(within(adminNavigation).getByRole('link', { name: 'Player history' })).toHaveAttribute('href', '/admin/player-history');
+    expect(within(adminNavigation).getByRole('link', { name: 'Help' })).toHaveAttribute('href', '/admin/help');
     const setupMenu = within(adminNavigation).getByText('Club setup');
     fireEvent.click(setupMenu);
     expect(within(adminNavigation).getByRole('link', { name: 'Member associations' })).toHaveAttribute('href', '/admin/associations');
@@ -258,6 +265,26 @@ describe('App route boundaries', () => {
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/new');
     await waitFor(() => expect(document.title).toBe('New event | Chisholm Netball Trials'));
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads the Admin help page from global navigation', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    renderApp('/admin/help');
+
+    expect(await screen.findByRole('heading', { name: 'Admin help' })).toBeInTheDocument();
+    const adminNav = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(adminNav).getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.title).toBe('Admin help | Chisholm Netball Trials'));
+  });
+
+  it('loads the all-open-events registration overview for an Admin', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    renderApp('/admin/registrations');
+
+    expect(await screen.findByRole('heading', { name: 'Registration overview' })).toBeInTheDocument();
+    const adminNav = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(adminNav).getByRole('link', { name: 'Registrations' })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.title).toBe('Registration overview | Chisholm Netball Trials'));
   });
 
   it('loads the site-level association communications workspace for an Admin', async () => {
@@ -320,13 +347,37 @@ describe('App route boundaries', () => {
     expect(within(eventNav).getByRole('link', { name: 'Full Game List' })).toHaveAttribute('aria-current', 'page');
     expect(within(eventNav).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in?eventId=event-1');
     expect(within(eventNav).getByRole('link', { name: 'Event settings' })).toHaveAttribute('href', '/admin/events/event-1');
-    expect(within(eventNav).getAllByRole('link')).toHaveLength(10);
+    expect(within(eventNav).getAllByRole('link')).toHaveLength(14);
     expect(screen.getByRole('link', { name: 'Open Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(apiMocks.getPublishedPlan).toHaveBeenCalledWith('event-1');
     expect(apiMocks.getGameRoster).toHaveBeenCalledWith('event-1');
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events/event-1/games');
     await waitFor(() => expect(document.title).toBe('Full Game List | Chisholm Netball Trials'));
+  });
+
+  it('loads a selected Planning view from the URL and updates its title', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    renderApp('/admin/events/event-1/games?view=statistics');
+
+    expect(await screen.findByRole('heading', { name: 'Player Statistics' })).toBeInTheDocument();
+    const eventNav = screen.getByRole('navigation', { name: 'Event workflows' });
+    const eventToolsToggle = within(eventNav).getByRole('button', { name: 'Event tools: Player Statistics' });
+    fireEvent.click(eventToolsToggle);
+    expect(within(eventNav).getByRole('link', { name: 'Player Statistics' })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.title).toBe('Player Statistics | Chisholm Netball Trials'));
+  });
+
+  it('loads round handouts through the protected Planning route', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    apiMocks.getEvent.mockResolvedValue({ id: 'event-1', name: '15/U Ladies', eventDate: '2027-09-12T00:00:00.000Z', venue: 'SNC', gameStartTime: '09:00' });
+    apiMocks.getPublishedPlan.mockResolvedValue(null);
+    renderApp('/admin/events/event-1/round-sheets');
+
+    expect(await screen.findByText(/publish a round plan before printing handouts/i)).toBeInTheDocument();
+    const eventNav = screen.getByRole('navigation', { name: 'Event workflows' });
+    expect(within(eventNav).getByRole('link', { name: 'Round handouts' })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.title).toBe('Round handouts | Chisholm Netball Trials'));
   });
 
   it('loads the standalone blank game sheet through the protected Admin route', async () => {

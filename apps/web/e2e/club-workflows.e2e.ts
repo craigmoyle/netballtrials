@@ -573,6 +573,46 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   expect(pageErrors).toEqual([]);
 });
 
+test('registration overview compares open events and links to Admin help', async ({ page, request }, testInfo) => {
+  await signIn(page, request);
+  await page.goto('/admin/registrations');
+  await expect(page.getByRole('heading', { name: 'Registration overview' })).toBeVisible();
+  const table = page.getByRole('table', { name: 'Open event registration totals' });
+  await expect(table).toBeVisible();
+  const eventRow = table.getByRole('row', { name: /E2E 15\/U Ladies/ });
+  await expect(eventRow.getByRole('cell').nth(2)).toHaveText('70');
+  await expect(eventRow.getByRole('cell').nth(5)).toHaveText('No comparison');
+  await page.screenshot({ path: testInfo.outputPath('registration-overview-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath('registration-overview-mobile.png'), fullPage: true });
+  await expectAccessible(page);
+  await page.getByRole('link', { name: 'Help', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Admin help' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Planning and printing' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await expectAccessible(page);
+});
+
+test('Admin can edit automatic email copy and reminder lead time from Settings', async ({ page, request }, testInfo) => {
+  await signIn(page, request);
+  await openAdminSetup(page, 'Settings');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('automatic-email-settings-desktop.png'), fullPage: true });
+  await page.getByLabel('Reminder subject').fill('Reminder: {{eventName}} is coming up');
+  await page.getByLabel('Send reminder (hours before event start)').fill('48');
+  await page.getByText('Preview with sample details').last().click();
+  await expect(page.getByText('Reminder: Sample Trials is coming up')).toBeVisible();
+  await page.getByRole('button', { name: 'Save automatic email settings' }).click();
+  await expect(page.getByRole('status')).toContainText('Automatic email settings saved');
+  const saved = await adminGet(page, request, `${API_ORIGIN}/api/admin/settings/automatic-email`).then((response) => response.json());
+  expect(saved).toMatchObject({ reminderSubject: 'Reminder: {{eventName}} is coming up', reminderLeadHours: 48 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath('automatic-email-settings-mobile.png'), fullPage: true });
+  await expectAccessible(page);
+});
+
 test('Full Game List supports the 390px viewport and accessible round editing', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, request);
@@ -637,6 +677,52 @@ test('Full Game List supports the 390px viewport and accessible round editing', 
   expect(latest.id).toBe(publishedBefore.id);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expectAccessible(page);
+});
+
+test('Round handouts print one sheet per round and preview both orientations', async ({ page, request }, testInfo) => {
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
+  await openEventTool(page, 'Plan rounds');
+  await page.getByRole('button', { name: 'Generate draft' }).click();
+  await page.getByRole('button', { name: 'Publish revision' }).click();
+  let publishedRounds = 0;
+  await expect.poll(async () => {
+    const response = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`);
+    if (!response.ok()) return 0;
+    publishedRounds = (await response.json()).rounds ?? 0;
+    return publishedRounds;
+  }).toBeGreaterThan(0);
+
+  await openEventTool(page, 'Round handouts');
+  await expect(page.getByRole('heading', { name: 'Round handouts' })).toBeVisible();
+  const sheets = page.locator('.round-print-sheet');
+  await expect(sheets).toHaveCount(publishedRounds);
+  await expect(page.getByRole('radio', { name: 'Landscape' })).toBeChecked();
+  await page.screenshot({ path: testInfo.outputPath('round-handouts-landscape.png'), fullPage: true });
+  await page.emulateMedia({ media: 'print' });
+  const landscapePdf = await page.pdf({ preferCSSPageSize: true });
+  await writeFile(testInfo.outputPath('round-handouts-landscape.pdf'), landscapePdf);
+  const landscapePdfText = landscapePdf.toString('latin1');
+  const landscapePages = [...landscapePdfText.matchAll(/\/Type\s*\/Page\b/g)];
+  const landscapeBoxes = [...landscapePdfText.matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)];
+  expect(landscapePages).toHaveLength(publishedRounds);
+  expect(landscapeBoxes.length).toBeGreaterThan(0);
+  expect(Number(landscapeBoxes[0]![1])).toBeGreaterThan(Number(landscapeBoxes[0]![2]));
+
+  await page.emulateMedia({ media: 'screen' });
+  await page.getByRole('radio', { name: 'Portrait' }).check();
+  await expect(page.locator('.round-sheet-preview')).toHaveAttribute('data-orientation', 'portrait');
+  await page.screenshot({ path: testInfo.outputPath('round-handouts-portrait.png'), fullPage: true });
+  await expectAccessible(page);
+  await page.emulateMedia({ media: 'print' });
+  const portraitPdf = await page.pdf({ preferCSSPageSize: true });
+  const portraitPdfText = portraitPdf.toString('latin1');
+  const portraitPages = [...portraitPdfText.matchAll(/\/Type\s*\/Page\b/g)];
+  const portraitBoxes = [...portraitPdfText.matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)];
+  expect(portraitPages).toHaveLength(publishedRounds);
+  expect(portraitBoxes.length).toBeGreaterThan(0);
+  expect(Number(portraitBoxes[0]![2])).toBeGreaterThan(Number(portraitBoxes[0]![1]));
+  await writeFile(testInfo.outputPath('round-handouts-portrait.pdf'), portraitPdf);
 });
 
 test('Admin manages a live plan safely after a late arrival and early leaver', async ({ page, request }) => {
@@ -827,7 +913,8 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   const reportRoster = JSON.stringify(await adminGet(page, request, `${eventUrl}/game-roster`).then((response) => response.json()));
   expect(reportRoster).not.toMatch(/parentEmail|parentName|amountCents|paymentIntentId|checkoutSessionId/i);
   expect(JSON.stringify(finalPlan)).not.toMatch(/parentEmail|parentName|parentMobile|amountCents|paymentIntentId|checkoutSessionId/i);
-  await page.getByRole('button', { name: 'Player Statistics' }).click();
+  await openEventTool(page, 'Player Statistics');
+  await expect(page.getByRole('heading', { name: 'Player Statistics', level: 1 })).toBeVisible();
   const statistics = page.getByRole('table', { name: 'Player Statistics' });
   await expect(statistics).toBeVisible();
   const earlyStats = statistics.getByRole('row', { name: new RegExp(playerOneName) });
@@ -843,7 +930,8 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
     await expectAccessible(page);
   }
 
-  await page.getByRole('button', { name: 'Player Reference' }).click();
+  await openEventTool(page, 'Player Reference');
+  await expect(page.getByRole('heading', { name: 'Player Reference', level: 1 })).toBeVisible();
   const reference = page.getByRole('table', { name: 'Player Reference' });
   await expect(reference).toBeVisible();
   const earlyReference = await reference.getByRole('row', { name: new RegExp(playerOneName) }).getByRole('cell').allTextContents();

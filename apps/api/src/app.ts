@@ -16,10 +16,12 @@ import { registerAssociationRoutes } from './associations/routes';
 import { registerBibColorRoutes } from './colors/routes';
 import { registerPublicRoutes } from './public/routes';
 import { registerAdminRegistrationRoutes } from './registrations/admin-routes';
+import { registerRegistrationOverviewRoutes } from './registrations/overview-routes';
 import { registerCheckInRoutes } from './checkin/routes';
 import { registerPlannerRoutes } from './planner/routes';
 import { registerReviewRoutes } from './review/routes';
 import { registerCommunicationRoutes } from './messages/communications-routes';
+import { registerAutomaticEmailSettingsRoutes } from './messages/automatic-email-settings-routes';
 import { registerSiteAssociationRoutes } from './messages/site-association-routes';
 import { registerPlayerHistoryRoutes } from './history/routes';
 import { registerRosterRoutes } from './roster/routes';
@@ -241,11 +243,13 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
 
   registerAuthRoutes(app, deps);
   registerIntegrationRoutes(app, deps);
+  registerAutomaticEmailSettingsRoutes(app, deps);
   registerEventRoutes(app, deps);
   registerAssociationRoutes(app, deps);
   registerBibColorRoutes(app, deps);
   registerPublicRoutes(app, deps);
   registerAdminRegistrationRoutes(app, deps);
+  registerRegistrationOverviewRoutes(app, deps);
   registerCheckInRoutes(app, deps);
   registerPlannerRoutes(app, deps);
   registerReviewRoutes(app, deps);

@@ -3,6 +3,8 @@ import type { EmailProvider } from '../mail/provider';
 import { sendEmailToRecipient } from '../messages/service';
 import { buildTrialCalendar } from './calendar';
 import { qrPng } from './qr';
+import type { AutomaticEmailSettingsDTO } from '@netball-trials/types';
+import { DEFAULT_AUTOMATIC_EMAIL_SETTINGS, getAutomaticEmailSettings, renderAutomaticEmailSubject, renderAutomaticEmailTemplate } from '../messages/automatic-email-settings';
 
 export type ConfirmationInput = {
   playerName: string;
@@ -33,15 +35,17 @@ function escapeHtml(value: string): string {
   })[character]!);
 }
 
-export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
+export function buildConfirmation(
+  input: ConfirmationInput,
+  template: Pick<AutomaticEmailSettingsDTO, 'confirmationSubject' | 'confirmationBody'> = DEFAULT_AUTOMATIC_EMAIL_SETTINGS,
+): ConfirmationEmail {
   const { playerName, event, ticketUrl, qrCid, policyUrl } = input;
   const manageUrl = new URL('/manage-registration', ticketUrl).toString();
-  const when = `${event.eventDate} at ${event.gameStartTime}`;
-  const subject = `Trial registration confirmed: ${playerName} (${event.name})`;
+  const values = { playerName, eventName: event.name, eventDate: event.eventDate, venue: event.venue, gameStartTime: event.gameStartTime };
+  const subject = renderAutomaticEmailSubject(template.confirmationSubject, values);
+  const body = renderAutomaticEmailTemplate(template.confirmationBody, values);
   const text = [
-    `${playerName} is registered for ${event.name}.`,
-    `When: ${when}`,
-    `Where: ${event.venue}`,
+    body,
     '',
     `Your QR ticket: ${ticketUrl}`,
     `Manage registrations: ${manageUrl}`,
@@ -49,12 +53,12 @@ export function buildConfirmation(input: ConfirmationInput): ConfirmationEmail {
     '',
     'A calendar file is attached so you can add the trial to your calendar.',
   ].join('\n');
+  const htmlBody = escapeHtml(body).replace(/\r?\n/g, '<br />');
   const html = `<!doctype html>
 <html lang="en">
   <body>
     <h1>Registration confirmed</h1>
-    <p>${escapeHtml(playerName)} is registered for ${escapeHtml(event.name)}.</p>
-    <p>When: ${escapeHtml(when)}<br />Where: ${escapeHtml(event.venue)}</p>
+    <p>${htmlBody}</p>
     <p><img src="cid:${escapeHtml(qrCid)}" alt="Check-in QR code" width="240" height="240" /></p>
     <p><a href="${escapeHtml(ticketUrl)}">Your QR ticket</a></p>
     <p><a href="${escapeHtml(manageUrl)}">Manage registrations</a></p>
@@ -91,13 +95,14 @@ export async function sendConfirmation(
   const eventDate = event.eventDate.toISOString().slice(0, 10);
   // A stable stamp keeps retried confirmations byte-identical to the first attempt.
   const calendar = buildTrialCalendar(event, `${registration.id}@chisholmnetball.com`, registration.paidAt ?? undefined);
+  const template = deps.prisma ? await getAutomaticEmailSettings(deps.prisma) : DEFAULT_AUTOMATIC_EMAIL_SETTINGS;
   const email = buildConfirmation({
     playerName: `${registration.playerFirstName} ${registration.playerLastName}`.trim(),
     event: { name: event.name, eventDate, venue: event.venue, gameStartTime: event.gameStartTime },
     ticketUrl,
     qrCid: 'ticket-qr',
     policyUrl: registration.policyReference,
-  });
+  }, template);
   const token = registration.qrToken;
   if (!token) throw new Error('Cannot email a ticket without a paid QR token');
 

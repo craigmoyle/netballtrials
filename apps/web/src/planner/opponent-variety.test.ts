@@ -10,22 +10,22 @@ function game(round: number, team0: string[], team1: string[]): RoundSlotDTO[] {
 }
 
 describe('measureOpponentVariety', () => {
-  it('counts unique opponents and repeat meetings per player and across the plan', () => {
+  it('lists only opponent pairs that meet more than once and includes their total meetings', () => {
     const result = measureOpponentVariety([
       ...game(1, ['a', 'b'], ['c', 'd']),
       ...game(2, ['a', 'b'], ['c', 'd']),
       ...game(3, ['a', 'b'], ['e', 'f']),
     ]);
-    expect(result.byPlayer.get('a')).toEqual({ uniqueOpponents: 4, repeatMeetings: 2 });
-    expect(result.byPlayer.get('c')).toEqual({ uniqueOpponents: 2, repeatMeetings: 2 });
-    expect(result.repeatedPairs).toBe(4);
+    expect(result.repeatedPairings).toEqual([
+      { playerAId: 'a', playerBId: 'c', meetings: 2 },
+      { playerAId: 'a', playerBId: 'd', meetings: 2 },
+      { playerAId: 'b', playerBId: 'c', meetings: 2 },
+      { playerAId: 'b', playerBId: 'd', meetings: 2 },
+    ]);
   });
 
-  it('does not count teammates as opponents and returns zero for a player without games', () => {
+  it('does not report single-meeting opponent pairs as repeats', () => {
     const result = measureOpponentVariety(game(1, ['a', 'b'], ['c', 'd']));
-    expect(result.byPlayer.get('a')?.uniqueOpponents).toBe(2);
-    expect(result.byPlayer.get('a')?.uniqueOpponents).not.toBe(3);
-    expect(result.byPlayer.has('resting-player')).toBe(false);
-    expect(result.repeatedPairs).toBe(0);
+    expect(result.repeatedPairings).toEqual([]);
   });
 });

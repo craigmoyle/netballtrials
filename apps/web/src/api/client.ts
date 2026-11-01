@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -136,6 +136,7 @@ export function apiClient(baseUrl: string) {
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
     listEvents: () => request<EventDTO[]>(baseUrl, '/api/admin/events'),
+    getRegistrationOverview: () => request<RegistrationOverviewEventDTO[]>(baseUrl, '/api/admin/registration-overview'),
     searchPlayerHistory: (playerName: string, dateOfBirth: string) =>
       request<PlayerHistoryEntryDTO[]>(baseUrl, `/api/admin/player-history?playerName=${encodeURIComponent(playerName)}&dateOfBirth=${encodeURIComponent(dateOfBirth)}`),
     getEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}`),
@@ -285,6 +286,8 @@ export function apiClient(baseUrl: string) {
     sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; batchId: string }) =>
       request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(baseUrl, `/api/admin/events/${eventId}/communications/send`, { method: 'POST', body: JSON.stringify(input) }),
     getIntegrationSettings: () => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations'),
+    getAutomaticEmailSettings: () => request<AutomaticEmailSettingsDTO>(baseUrl, '/api/admin/settings/automatic-email'),
+    updateAutomaticEmailSettings: (input: Omit<AutomaticEmailSettingsDTO, 'updatedAt'>) => request<AutomaticEmailSettingsDTO>(baseUrl, '/api/admin/settings/automatic-email', { method: 'PUT', body: JSON.stringify(input) }),
     updateInfisicalConnection: (input: { apiUrl: string; projectId: string; environment: string; secretPath: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/infisical', { method: 'PUT', body: JSON.stringify(input) }),
     replaceStripeIntegration: (input: { secretKey: string; webhookSecret: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/stripe', { method: 'PUT', body: JSON.stringify(input) }),
     replaceGmailIntegration: (input: { clientId: string; clientSecret: string; refreshToken: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/gmail', { method: 'PUT', body: JSON.stringify(input) }),

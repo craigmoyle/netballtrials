@@ -171,6 +171,16 @@ model InfisicalConnectionSettings {
   updatedAt   DateTime @updatedAt
 }
 
+model AutomaticEmailSettings {
+  id                 String   @id @default("automatic")
+  confirmationSubject String
+  confirmationBody   String
+  reminderSubject    String
+  reminderBody       String
+  reminderLeadHours  Int      @default(24)
+  updatedAt          DateTime @updatedAt
+}
+
 model SiteAssociationCommunication {
   id            String                 @id @default(cuid())
   anchorEventId String

@@ -1,39 +1,44 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient, type ApiClient as Client } from './api/client';
 import { AdminLayout } from './AdminLayout';
 import { EventWorkflowNav } from './admin/EventWorkflowNav';
-import { EventOperationsPage } from './admin/EventOperationsPage';
-import { LoginPage } from './routes/LoginPage';
-import { VerifyPage } from './routes/VerifyPage';
-import { EventsPage } from './routes/EventsPage';
-import { EventFormPage } from './routes/EventFormPage';
-import { RegisterPage } from './routes/RegisterPage';
-import { RegistrationPendingPage } from './routes/RegistrationPendingPage';
-import { TicketPage } from './routes/TicketPage';
-import { CheckInPage } from './checkin/CheckInPage';
-import { AdminCheckInPage } from './checkin/AdminCheckInPage';
-import { CheckInLayout } from './checkin/CheckInLayout';
-import { ScanPage } from './checkin/ScanPage';
-import { LookupPanel } from './checkin/LookupPanel';
-import { PlannerPage } from './planner/PlannerPage';
-import { FullGameListPage } from './planner/FullGameListPage';
-import { SheetsPage } from './planner/SheetsPage';
-import { BlankSheetPage } from './planner/BlankSheetPage';
-import { ReviewPage } from './admin/ReviewPage';
-import { MessagesPage } from './admin/MessagesPage';
-import { RosterPage } from './admin/RosterPage';
-import { RegistrationChangeHistoryPage } from './admin/RegistrationChangeHistoryPage';
-import { AssociationsPage } from './admin/AssociationsPage';
-import { BibColorsPage } from './admin/BibColorsPage';
-import { StaffAccessPage } from './admin/StaffAccessPage';
-import { PlayerHistoryPage } from './admin/PlayerHistoryPage';
-import { IncompleteRegistrationsPage } from './admin/IncompleteRegistrationsPage';
-import { SiteCommunicationsPage } from './admin/SiteCommunicationsPage';
-import { SettingsPage } from './admin/SettingsPage';
-import { PublicHomePage } from './routes/PublicHomePage';
-import { ParentAccessPage } from './routes/ParentAccessPage';
 import { PublicSiteHeader } from './SiteNavigation';
+import { GAME_VIEWS, gameViewFromSearch } from './planner/game-views';
+
+const EventOperationsPage = lazy(() => import('./admin/EventOperationsPage').then((module) => ({ default: module.EventOperationsPage })));
+const LoginPage = lazy(() => import('./routes/LoginPage').then((module) => ({ default: module.LoginPage })));
+const VerifyPage = lazy(() => import('./routes/VerifyPage').then((module) => ({ default: module.VerifyPage })));
+const EventsPage = lazy(() => import('./routes/EventsPage').then((module) => ({ default: module.EventsPage })));
+const EventFormPage = lazy(() => import('./routes/EventFormPage').then((module) => ({ default: module.EventFormPage })));
+const RegisterPage = lazy(() => import('./routes/RegisterPage').then((module) => ({ default: module.RegisterPage })));
+const RegistrationPendingPage = lazy(() => import('./routes/RegistrationPendingPage').then((module) => ({ default: module.RegistrationPendingPage })));
+const TicketPage = lazy(() => import('./routes/TicketPage').then((module) => ({ default: module.TicketPage })));
+const CheckInPage = lazy(() => import('./checkin/CheckInPage').then((module) => ({ default: module.CheckInPage })));
+const AdminCheckInPage = lazy(() => import('./checkin/AdminCheckInPage').then((module) => ({ default: module.AdminCheckInPage })));
+const CheckInLayout = lazy(() => import('./checkin/CheckInLayout').then((module) => ({ default: module.CheckInLayout })));
+const ScanPage = lazy(() => import('./checkin/ScanPage').then((module) => ({ default: module.ScanPage })));
+const LookupPanel = lazy(() => import('./checkin/LookupPanel').then((module) => ({ default: module.LookupPanel })));
+const PlannerPage = lazy(() => import('./planner/PlannerPage').then((module) => ({ default: module.PlannerPage })));
+const FullGameListPage = lazy(() => import('./planner/FullGameListPage').then((module) => ({ default: module.FullGameListPage })));
+const SheetsPage = lazy(() => import('./planner/SheetsPage').then((module) => ({ default: module.SheetsPage })));
+const BlankSheetPage = lazy(() => import('./planner/BlankSheetPage').then((module) => ({ default: module.BlankSheetPage })));
+const RoundSheetsPage = lazy(() => import('./planner/RoundSheetsPage').then((module) => ({ default: module.RoundSheetsPage })));
+const ReviewPage = lazy(() => import('./admin/ReviewPage').then((module) => ({ default: module.ReviewPage })));
+const MessagesPage = lazy(() => import('./admin/MessagesPage').then((module) => ({ default: module.MessagesPage })));
+const RosterPage = lazy(() => import('./admin/RosterPage').then((module) => ({ default: module.RosterPage })));
+const RegistrationChangeHistoryPage = lazy(() => import('./admin/RegistrationChangeHistoryPage').then((module) => ({ default: module.RegistrationChangeHistoryPage })));
+const AssociationsPage = lazy(() => import('./admin/AssociationsPage').then((module) => ({ default: module.AssociationsPage })));
+const BibColorsPage = lazy(() => import('./admin/BibColorsPage').then((module) => ({ default: module.BibColorsPage })));
+const StaffAccessPage = lazy(() => import('./admin/StaffAccessPage').then((module) => ({ default: module.StaffAccessPage })));
+const PlayerHistoryPage = lazy(() => import('./admin/PlayerHistoryPage').then((module) => ({ default: module.PlayerHistoryPage })));
+const IncompleteRegistrationsPage = lazy(() => import('./admin/IncompleteRegistrationsPage').then((module) => ({ default: module.IncompleteRegistrationsPage })));
+const SiteCommunicationsPage = lazy(() => import('./admin/SiteCommunicationsPage').then((module) => ({ default: module.SiteCommunicationsPage })));
+const SettingsPage = lazy(() => import('./admin/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const RegistrationOverviewPage = lazy(() => import('./admin/RegistrationOverviewPage').then((module) => ({ default: module.RegistrationOverviewPage })));
+const AdminHelpPage = lazy(() => import('./admin/AdminHelpPage').then((module) => ({ default: module.AdminHelpPage })));
+const PublicHomePage = lazy(() => import('./routes/PublicHomePage').then((module) => ({ default: module.PublicHomePage })));
+const ParentAccessPage = lazy(() => import('./routes/ParentAccessPage').then((module) => ({ default: module.ParentAccessPage })));
 
 const client = apiClient(import.meta.env.VITE_API_URL ?? '');
 
@@ -56,13 +61,15 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/roster$/, 'Event roster'],
   [/^\/admin\/events\/[^/]+\/incomplete$/, 'Incomplete registrations'],
   [/^\/admin\/communications$/, 'Communications'],
+  [/^\/admin\/registrations$/, 'Registration overview'],
+  [/^\/admin\/help$/, 'Admin help'],
   [/^\/admin\/settings$/, 'Settings'],
   [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/bib-colors$/, 'Bib colors'],
   [/^\/admin\/staff$/, 'Staff access'],
   [/^\/admin\/player-history$/, 'Player history'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
-  [/^\/admin\/events\/[^/]+\/games$/, 'Full Game List'],
+  [/^\/admin\/events\/[^/]+\/round-sheets$/, 'Round handouts'],
   [/^\/admin\/events\/[^/]+\/sheets\/blank$/, 'Blank game sheet'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
   [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
@@ -72,8 +79,11 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin/, 'Administration'],
 ];
 
-function pageTitle(pathname: string): string {
-  return `${TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? 'Page not found'} | Chisholm Netball Trials`;
+function pageTitle(pathname: string, search = ''): string {
+  const gameView = /^\/admin\/events\/[^/]+\/games$/.test(pathname)
+    ? GAME_VIEWS.find((view) => view.id === gameViewFromSearch(search))?.label
+    : undefined;
+  return `${gameView ?? TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? 'Page not found'} | Chisholm Netball Trials`;
 }
 
 function ProtectedAdmin({ client }: { client: Client }) {
@@ -150,6 +160,12 @@ function BlankSheetRoute({ client }: { client: Client }) {
   return <BlankSheetPage client={client} eventId={id} />;
 }
 
+function RoundSheetsRoute({ client }: { client: Client }) {
+  const { id } = useParams();
+  if (!id) return <Navigate to="/admin/events" replace />;
+  return <RoundSheetsPage client={client} eventId={id} />;
+}
+
 function ReviewRoute({ client }: { client: Client }) {
   const { id } = useParams();
   if (!id) return <Navigate to="/admin/events" replace />;
@@ -211,13 +227,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.title = pageTitle(location.pathname);
-  }, [location.pathname]);
+    document.title = pageTitle(location.pathname, location.search);
+  }, [location.pathname, location.search]);
 
   return (
     <>
       {appEnv === 'testing' ? <div className="environment-banner" role="note">TEST ENVIRONMENT — payments and email are simulated</div> : null}
-      <Routes>
+      <Suspense fallback={<p role="status">Loading page…</p>}>
+        <Routes>
       <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />
       <Route path="/register/:eventId" element={<PageContent><RegisterRoute client={client} /></PageContent>} />
       <Route path="/register/:eventId/pending" element={<PageContent><PendingRoute client={client} /></PageContent>} />
@@ -249,6 +266,7 @@ export function App() {
           <Route path="day-of-registration" element={<DayOfRegistrationRoute client={client} />} />
           <Route path="plan" element={<PlannerRoute client={client} />} />
           <Route path="games" element={<GamesRoute client={client} />} />
+          <Route path="round-sheets" element={<RoundSheetsRoute client={client} />} />
           <Route path="sheets/blank" element={<BlankSheetRoute client={client} />} />
           <Route path="sheets" element={<SheetsRoute client={client} />} />
           <Route path="review" element={<ReviewRoute client={client} />} />
@@ -256,6 +274,8 @@ export function App() {
           <Route path="messages" element={<MessagesRoute client={client} />} />
         </Route>
         <Route path="communications" element={<SiteCommunicationsPage client={client} />} />
+        <Route path="registrations" element={<RegistrationOverviewPage client={client} />} />
+        <Route path="help" element={<AdminHelpPage />} />
         <Route path="settings" element={<SettingsPage client={client} />} />
         <Route path="associations" element={<AssociationsPage client={client} />} />
         <Route path="bib-colors" element={<BibColorsPage client={client} />} />
@@ -263,7 +283,8 @@ export function App() {
         <Route path="player-history" element={<PlayerHistoryPage client={client} />} />
       </Route>
       <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></PageContent>} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </>
   );
 }

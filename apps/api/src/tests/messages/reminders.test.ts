@@ -5,6 +5,7 @@ import { sendDueReminders, eventStartInstant } from '../../messages/reminders';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { GmailDeliveryError } from '../../mail/gmail-mailer';
+import { DEFAULT_AUTOMATIC_EMAIL_SETTINGS } from '../../messages/automatic-email-settings';
 
 beforeEach(resetDb);
 
@@ -78,6 +79,30 @@ describe('Melbourne event start and reminders', () => {
     await sendDueReminders({ prisma, mailer }, new Date(+now + 60_000));
     expect(mailer.sent).toHaveLength(1);
     expect(await prisma.emailLog.count()).toBe(1);
+  });
+
+  it('uses the configured lead time and reminder template', async () => {
+    const event = await prisma.event.create({
+      data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', gameStartTime: '09:00' },
+    });
+    await paid(event.id, 'anne@example.com', 'Ada');
+    await prisma.automaticEmailSettings.create({
+      data: {
+        id: 'automatic',
+        confirmationSubject: DEFAULT_AUTOMATIC_EMAIL_SETTINGS.confirmationSubject,
+        confirmationBody: DEFAULT_AUTOMATIC_EMAIL_SETTINGS.confirmationBody,
+        reminderSubject: 'See you at {{eventName}}',
+        reminderBody: '{{eventName}} starts at {{startTime}} at {{venue}} on {{eventDate}}.',
+        reminderLeadHours: 48,
+      },
+    });
+    const mailer = createDevMailer([]);
+    const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-09T22:30:00Z'));
+    expect(result).toMatchObject({ sent: 1, events: 1 });
+    expect(mailer.sent[0]).toMatchObject({
+      subject: `See you at ${event.name}`,
+      text: `${event.name} starts at 08:30 at SNC on 2026-09-12.`,
+    });
   });
 
   it('uses event arrival time rather than game start time for the due window', async () => {

@@ -4,6 +4,7 @@ import { defaultAgeRange } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
 import { useUnsavedSignOut } from '../useUnsavedSignOut';
+import { HelpTip } from '../admin/HelpTip';
 
 type FormState = Record<string, string>;
 
@@ -332,6 +333,9 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
         {FIELD_GROUPS.map((group) => (
           <fieldset className="form-group" key={group.legend} disabled={busy}>
             <legend>{group.legend}</legend>
+            {group.legend === 'Event details' ? <div className="field-group-help"><HelpTip label="Event times">Arrival time is when players should arrive. Start time is when games begin. Finish time sets the end of the planning window.</HelpTip></div> : null}
+            {group.legend === 'Trial format' ? <div className="field-group-help"><HelpTip label="Courts and game length">Each court holds two seven-player teams. These durations determine how many rounds fit before the finish time.</HelpTip></div> : null}
+            {group.legend === 'Selection settings' ? <div className="field-group-help"><HelpTip label="Selection minimums">Each number is the minimum games a player should receive at that ranked position. The planner reports when the checked-in roster cannot meet every minimum.</HelpTip></div> : null}
             {group.fields.map((field) => {
               const invalid = fieldErrors.includes(field.name);
               return (

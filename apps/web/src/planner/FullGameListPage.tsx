@@ -1,21 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { Link, useBlocker } from 'react-router-dom';
+import { Link, useBlocker, useSearchParams } from 'react-router-dom';
 import { POSITIONS, type EventCourtColorDTO, type EventDTO, type GamePlayerDTO, type ManualRoundInputDTO, type ManualSuffixInputDTO, type PlanRevisionSummaryDTO, type PlannerGapDTO, type RoundPlanDTO, type RoundPlanPlayerDTO, type RoundSlotDTO, type PlanSlotInputDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { useUnsavedSignOut } from '../useUnsavedSignOut';
+import { HelpTip } from '../admin/HelpTip';
 import { measureOpponentVariety } from './opponent-variety';
+import { GAME_VIEWS, gameViewFromSearch, type GameView } from './game-views';
 
-type ViewMode = 'team' | 'position' | 'statistics' | 'reference';
+type ViewMode = GameView;
 type DisplayPlayer = { playerName: string; bibNumber: number | null };
 
 const POSITION_INDEX = new Map(POSITIONS.map((position, index) => [position, index]));
-const GAME_VIEWS: Array<{ id: ViewMode; label: string }> = [
-  { id: 'team', label: 'Full Game List' },
-  { id: 'position', label: 'Position View' },
-  { id: 'statistics', label: 'Player Statistics' },
-  { id: 'reference', label: 'Player Reference' },
-];
-
 function slotKey(slot: { round: number; court: number; position: string; team: number }): string {
   return `${slot.round}:${slot.court}:${slot.position}:${slot.team}`;
 }
@@ -50,7 +45,14 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedRound, setSelectedRound] = useState(1);
   const [teamViewRound, setTeamViewRound] = useState<number | 'all'>('all');
-  const [viewMode, setViewMode] = useState<ViewMode>('team');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewMode = gameViewFromSearch(searchParams.toString());
+  function setViewMode(view: ViewMode) {
+    const next = new URLSearchParams(searchParams);
+    if (view === 'team') next.delete('view');
+    else next.set('view', view);
+    setSearchParams(next, { replace: true });
+  }
   const [editing, setEditing] = useState(false);
   const [editedSlots, setEditedSlots] = useState<PlanSlotInputDTO[]>([]);
   const [playerToMove, setPlayerToMove] = useState('');
@@ -93,7 +95,6 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     setHistoryOpen(false);
     setSelectedRound(1);
     setTeamViewRound('all');
-    setViewMode('team');
     setEditing(false);
     setEditedSlots([]);
     setPlayerToMove('');
@@ -682,16 +683,20 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
   }
 
   function renderPlayerStatistics() {
+    const courtNumbers = Array.from({ length: availablePlan?.courts ?? 0 }, (_, index) => index + 1);
+    const repeatedPairings = opponentStats.repeatedPairings
+      .map((pair) => ({ ...pair, playerA: playerDetails(pair.playerAId), playerB: playerDetails(pair.playerBId) }))
+      .sort((a, b) => b.meetings - a.meetings || a.playerA.playerName.localeCompare(b.playerA.playerName) || a.playerB.playerName.localeCompare(b.playerB.playerName));
+
     return (
       <section className="player-report" aria-labelledby="player-statistics-heading">
-        <h2 id="player-statistics-heading">Player Statistics</h2>
-        <p>Other counts assignments outside the player's recorded choices. Unique opponents counts distinct opposing players; repeat meetings counts additional times the same opponents meet.</p>
-        <p>Repeated opponent pairings across this schedule: {opponentStats.repeatedPairs}.</p>
+        <div className="admin-page-title-row"><h2 id="player-statistics-heading">Player Statistics</h2><HelpTip label="Opponent meetings">A pairing appears when two players meet as opponents at least twice. Meetings shows the total number of games between them.</HelpTip></div>
+        <p>Other counts assignments outside a player's recorded choices. Court columns show how often each player appeared on that court.</p>
         <p className="player-report-scroll-note">Scroll horizontally to view all columns.</p>
         <div className="table-scroll" role="region" aria-label="Scrollable player statistics" tabIndex={0}>
           <table className="player-statistics-table">
             <caption>Player Statistics</caption>
-            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th></tr></thead>
+            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th>{courtNumbers.map((court) => <th scope="col" key={court}>Court {court}</th>)}</tr></thead>
             <tbody>{reportPlayers.map((player) => {
               const slots = assignmentsByPlayer.get(player.registrationId) ?? [];
               const counts = { rank1: 0, rank2: 0, rank3: 0, other: 0 };
@@ -701,11 +706,25 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
                 else if (player.rank3Position && slot.position === player.rank3Position) counts.rank3 += 1;
                 else counts.other += 1;
               }
-              const variety = opponentStats.byPlayer.get(player.registrationId) ?? { uniqueOpponents: 0, repeatMeetings: 0 };
-              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td><td>{variety.uniqueOpponents}</td><td>{variety.repeatMeetings}</td></tr>;
+              const courtCounts = new Map<number, number>();
+              for (const slot of slots) courtCounts.set(slot.court, (courtCounts.get(slot.court) ?? 0) + 1);
+              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td>{courtNumbers.map((court) => <td key={court}>{courtCounts.get(court) ?? 0}</td>)}</tr>;
             })}</tbody>
           </table>
         </div>
+        <section className="repeat-opponent-report" aria-labelledby="repeat-opponent-heading">
+          <h3 id="repeat-opponent-heading">Repeated opponent pairings</h3>
+          <p>Each row shows players who met as opponents more than once. Meetings is their total number of games against each other.</p>
+          {repeatedPairings.length > 0 ? (
+            <div className="table-scroll" role="region" aria-label="Scrollable repeated opponent pairings" tabIndex={0}>
+              <table>
+                <caption>Repeated opponent pairings</caption>
+                <thead><tr><th scope="col">Player</th><th scope="col">Player Number</th><th scope="col">Opponent</th><th scope="col">Opponent Number</th><th scope="col">Meetings</th></tr></thead>
+                <tbody>{repeatedPairings.map((pair) => <tr key={`${pair.playerAId}:${pair.playerBId}`}><th scope="row">{pair.playerA.playerName}</th><td>{pair.playerA.bibNumber ?? '—'}</td><td>{pair.playerB.playerName}</td><td>{pair.playerB.bibNumber ?? '—'}</td><td>{pair.meetings}</td></tr>)}</tbody>
+              </table>
+            </div>
+          ) : <p>No repeat opponent pairings in this plan.</p>}
+        </section>
       </section>
     );
   }
@@ -739,6 +758,7 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     : viewMode === 'position' || editing ? [selectedRound]
       : suffixEditing || teamViewRound === 'all' ? Array.from({ length: availablePlan.rounds }, (_, index) => index + 1)
         : [teamViewRound];
+  const viewLabel = GAME_VIEWS.find((view) => view.id === viewMode)?.label ?? 'Full Game List';
 
   return (
     <section className="full-game-page">
@@ -766,16 +786,7 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
 
         <section className="full-game-content" aria-labelledby="full-game-title">
           <header className="full-game-header">
-            <div><h1 id="full-game-title">Full Game List</h1>{event ? <p>{event.division} {event.section} · {event.courts} courts</p> : null}</div>
-            {!loading && availablePlan ? (
-              <nav className="game-view-nav" aria-label="Game views">
-                {GAME_VIEWS.map((view) => (
-                  <button key={view.id} type="button" aria-pressed={viewMode === view.id} disabled={editing || suffixEditing} onClick={() => setViewMode(view.id)}>
-                    {view.label}
-                  </button>
-                ))}
-              </nav>
-            ) : null}
+            <div><h1 id="full-game-title">{viewLabel}</h1>{event ? <p>{event.division} {event.section} · {event.courts} courts</p> : null}</div>
           </header>
 
           {loading ? (

@@ -59,6 +59,21 @@ export interface EventDTO {
   status: EventStatus;
 }
 
+export interface RegistrationOverviewEventDTO {
+  id: string;
+  name: string;
+  competitionYear: number;
+  division: string;
+  section: string;
+  eventDate: string;
+  startTime: string;
+  paidRegistrations: number;
+  paidWithdrawals: number;
+  pendingRegistrations: number;
+  daysUntilStart: number;
+  priorYears: Array<{ competitionYear: number; paidRegistrationsAtSameLeadTime: number }>;
+}
+
 export interface PublicAssociationDTO {
   id: string;
   name: string;
@@ -457,6 +472,15 @@ export interface SiteAssociationCampaignDTO {
   error: string | null;
   createdAt: string;
   deliveries: Array<Pick<EmailLogDTO, 'id' | 'to' | 'status' | 'attempts' | 'sentAt' | 'failedAt' | 'error'> & { associationName: string | null }>;
+}
+
+export interface AutomaticEmailSettingsDTO {
+  confirmationSubject: string;
+  confirmationBody: string;
+  reminderSubject: string;
+  reminderBody: string;
+  reminderLeadHours: number;
+  updatedAt: string | null;
 }
 
 export interface IntegrationStatusDTO {

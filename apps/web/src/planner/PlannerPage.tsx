@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { EventDTO, PlannerGapDTO, PlannerPreviewDTO, RoundPlanDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
+import { HelpTip } from '../admin/HelpTip';
 
 type PlanAction = { ok: true; plan: RoundPlanDTO } | { ok: false; gaps: PlannerGapDTO[] };
 
@@ -121,7 +122,7 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
 
   return (
     <section>
-      <h1>Round planner</h1>
+      <div className="admin-page-title-row"><h1>Round planner</h1><HelpTip label="Drafts and publishing">Generate creates a draft for review. The live schedule changes only when you publish that revision.</HelpTip></div>
       <p>{event.name} · {event.division} {event.section}</p>
       <p>
         Current settings: {event.courts} courts, {event.playMinutes}-minute games, {event.changeoverMinutes}-minute changeover; rank minimums {event.rank1Min}/{event.rank2Min}/{event.rank3Min}; playing window {event.gameStartTime}–{event.endTime}.

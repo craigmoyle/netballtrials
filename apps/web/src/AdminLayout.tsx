@@ -52,8 +52,10 @@ export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: 
         <ClubLogoLink />
         <nav className="app-nav admin-nav" aria-label="Administration">
           <Link to="/admin/events" aria-current={pathname.startsWith('/admin/events') ? 'page' : undefined}>Events</Link>
+          <Link to="/admin/registrations" aria-current={pathname === '/admin/registrations' ? 'page' : undefined}>Registrations</Link>
           <Link to="/admin/communications" aria-current={pathname === '/admin/communications' ? 'page' : undefined}>Communications</Link>
           <Link to="/admin/player-history" aria-current={pathname === '/admin/player-history' ? 'page' : undefined}>Player history</Link>
+          <Link to="/admin/help" aria-current={pathname === '/admin/help' ? 'page' : undefined}>Help</Link>
           <details ref={setupMenu} className="admin-nav-menu">
             <summary>{currentSetup ? `Club setup: ${currentSetup.label}` : 'Club setup'}</summary>
             <div className="admin-nav-menu-links">
