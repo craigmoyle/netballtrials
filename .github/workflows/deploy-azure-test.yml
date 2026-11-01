@@ -61,7 +61,7 @@ jobs:
           name: netballtrials-test-web
           path: apps/web/dist
       - name: Sign in with workload identity federation
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
