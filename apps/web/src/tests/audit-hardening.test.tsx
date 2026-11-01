@@ -8,7 +8,7 @@ import { ApiError } from '../api/client';
 const api = vi.hoisted(() => ({} as Record<string, any>));
 const camera = vi.hoisted(() => ({ decode: vi.fn() }));
 vi.mock('../api/client', async (original) => ({ ...await original(), apiClient: () => api }));
-vi.mock('@zxing/browser', () => ({ BrowserMultiFormatReader: class {
+vi.mock('@zxing/browser', () => ({ BrowserQRCodeReader: class {
   decodeFromVideoDevice(...args: any[]) { return camera.decode(...args); }
 } }));
 const routers: ReturnType<typeof createMemoryRouter>[] = [];

@@ -448,8 +448,9 @@ thead { background: var(--blue-pale); }
 .registration-overview-history summary { min-height: 2.75rem; display: flex; align-items: center; color: var(--burgundy); font-weight: 650; cursor: pointer; }
 .registration-overview-history table { min-width: 24rem; margin-block: 0.75rem; }
 .help-tip { position: relative; display: inline-block; vertical-align: middle; margin-inline: 0.2rem; }
-.help-tip > summary { display: grid; width: 1.65rem; height: 1.65rem; place-items: center; list-style: none; color: var(--burgundy); background: var(--paper); border: 1px solid var(--line); border-radius: 50%; font-size: 0.9rem; font-weight: 700; line-height: 1; cursor: pointer; }
+.help-tip > summary { display: grid; width: 2.75rem; height: 2.75rem; padding: 0; place-items: center; list-style: none; color: transparent; background: transparent; border: 0; border-radius: 50%; font-size: 0; cursor: pointer; }
 .help-tip > summary::-webkit-details-marker { display: none; }
+.help-tip > summary > span { display: grid; width: 1.65rem; height: 1.65rem; place-items: center; color: var(--burgundy); background: var(--paper); border: 1px solid var(--line); border-radius: 50%; font-size: 0.9rem; font-weight: 700; line-height: 1; }
 .help-tip-content { position: absolute; z-index: 20; top: calc(100% + 0.3rem); left: 0; width: min(24rem, calc(100vw - 3rem)); padding: 0.75rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); font-size: 0.9rem; font-weight: 400; line-height: 1.45; }
 .help-tip-content strong { display: block; margin-bottom: 0.25rem; }
 .field-group-help { margin: 0 0 0.5rem; }

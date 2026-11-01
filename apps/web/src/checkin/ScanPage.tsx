@@ -101,9 +101,9 @@ export function ScanPage({ client }: { client: Client }) {
 
     void (async () => {
       try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const { BrowserQRCodeReader } = await import('@zxing/browser');
         if (stopped) return;
-        const reader = new BrowserMultiFormatReader();
+        const reader = new BrowserQRCodeReader();
         const video = document.getElementById('scan-video') as HTMLVideoElement | null;
         if (!video) return;
         const started = await reader.decodeFromVideoDevice(undefined, video, (decoded) => {

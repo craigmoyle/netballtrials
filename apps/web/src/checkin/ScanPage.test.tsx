@@ -7,7 +7,7 @@ import { CheckInLayout } from './CheckInLayout';
 
 const scanner = vi.hoisted(() => ({ decode: vi.fn() }));
 vi.mock('@zxing/browser', () => ({
-  BrowserMultiFormatReader: class {
+  BrowserQRCodeReader: class {
     decodeFromVideoDevice(...args: any[]) { return scanner.decode(...args); }
   },
 }));

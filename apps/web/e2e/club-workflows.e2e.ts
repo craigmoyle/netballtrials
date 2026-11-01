@@ -585,6 +585,9 @@ test('registration overview compares open events and links to Admin help', async
   await page.screenshot({ path: testInfo.outputPath('registration-overview-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const helpTipBounds = await page.locator('.registration-overview-page .help-tip > summary').boundingBox();
+  expect(helpTipBounds?.width).toBeGreaterThanOrEqual(44);
+  expect(helpTipBounds?.height).toBeGreaterThanOrEqual(44);
   await page.screenshot({ path: testInfo.outputPath('registration-overview-mobile.png'), fullPage: true });
   await expectAccessible(page);
   await page.getByRole('link', { name: 'Help', exact: true }).click();
