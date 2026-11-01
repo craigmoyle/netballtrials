@@ -171,6 +171,22 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   expect(externalRequests).toEqual([]);
 });
 
+test('inactive Communications tabs remain text links on hover', async ({ page, request }) => {
+  await signIn(page, request);
+  await page.getByRole('link', { name: 'Communications', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Events to include' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  const associationTab = page.getByRole('button', { name: 'Association messages' });
+  const templatesTab = page.getByRole('button', { name: 'Email templates' });
+  await expect(associationTab).toHaveAttribute('aria-pressed', 'true');
+  await expect(templatesTab).toHaveAttribute('aria-pressed', 'false');
+  await templatesTab.hover();
+  await expect(templatesTab).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(templatesTab).toHaveCSS('color', 'rgb(60, 16, 37)');
+  await expect(associationTab).toHaveCSS('font-weight', '700');
+});
+
 test('Vite hot-reloads edits to the mounted web stylesheet', async ({ page }) => {
   const stylesheet = fileURLToPath(new URL('../src/styles.css', import.meta.url));
   const original = await readFile(stylesheet, 'utf8');
