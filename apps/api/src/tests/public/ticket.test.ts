@@ -38,6 +38,15 @@ describe('public ticket', () => {
     expect(res.body).toContain('DTSTART:20260911T230000Z');
     expect(res.body).toContain('DTEND:20260912T020000Z');
   });
+  it('hides ticket and calendar details after the retention cutoff before cleanup runs', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
+    const token = 'expired-retention-ticket-token-123456789012';
+    await prisma.registration.create({ data: { ...registrationFixture(event.id), status: 'PAID', checkoutSessionId: 'old-retention-session', qrToken: token } });
+    expect((await app.inject({ method: 'GET', url: `/api/public/ticket/${token}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/api/public/ticket/${token}/calendar` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/public/checkout-sessions/old-retention-session/status' })).json()).toEqual({ status: 'PAID' });
+  });
+
   it('returns 404 for an unpaid registration token', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     const reg = await prisma.registration.create({ data: { ...registrationFixture(event.id), status: 'PENDING', qrToken: null } });

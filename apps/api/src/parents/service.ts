@@ -25,6 +25,10 @@ export class ParentAccessError extends Error {
   }
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
+}
+
 function parentEmailRateKey(email: string): string {
   return createHash('sha256').update(`parent-login-email\0${email}`).digest('hex');
 }
@@ -315,82 +319,91 @@ export async function updateParentRegistration(
   patch: ParentRegistrationUpdate,
   now = new Date(),
 ): Promise<ParentRegistrationDTO> {
-  return prisma.$transaction(async (tx) => {
-    const registration = await tx.registration.findFirst({
-      where: {
-        id: registrationId,
-        parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
-        parentEmailVerifiedAt: { not: null },
-        anonymizedAt: null,
-      },
-      include: { event: true },
-    });
-    if (!registration) throw new ParentAccessError('not_found');
-    const currentDto = parentRegistrationDto(registration, now);
-    if (!currentDto.canEdit) throw new ParentAccessError('registration_locked');
-
-    const playerFirstName = patch.playerFirstName ?? registration.playerFirstName;
-    const playerLastName = patch.playerLastName ?? registration.playerLastName;
-    const playerNameNormalized = normalizePlayerName(playerFirstName, playerLastName);
-    const rank1Position = patch.rank1Position ?? registration.rank1Position;
-    const rank2Position = patch.rank2Position === undefined ? registration.rank2Position : patch.rank2Position;
-    const rank3Position = patch.rank3Position === undefined ? registration.rank3Position : patch.rank3Position;
-    if (!positionsAreDistinct({
-      rank1Position,
-      rank2Position: rank2Position ?? undefined,
-      rank3Position: rank3Position ?? undefined,
-    }) || (rank3Position !== null && rank3Position !== undefined && !rank2Position)) {
-      throw new ParentAccessError('invalid_positions');
-    }
-    if (playerNameNormalized !== registration.playerNameNormalized) {
-      const duplicate = await tx.registration.findFirst({
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "Registration"
+        WHERE "id" = ${registrationId}
+          AND LOWER("parentEmail") = LOWER(${normalizeEmail(email)})
+          AND "parentEmailVerifiedAt" IS NOT NULL
+          AND "anonymizedAt" IS NULL
+        FOR UPDATE
+      `);
+      const registration = await tx.registration.findFirst({
         where: {
-          eventId: registration.eventId,
-          playerNameNormalized,
-          dateOfBirth: registration.dateOfBirth,
-          status: { in: ['PENDING', 'PAID'] },
+          id: registrationId,
+          parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
+          parentEmailVerifiedAt: { not: null },
           anonymizedAt: null,
-          id: { not: registration.id },
         },
-        select: { id: true },
+        include: { event: true },
       });
-      if (duplicate) throw new ParentAccessError('duplicate_player');
-    }
+      if (!registration) throw new ParentAccessError('not_found');
+      const currentDto = parentRegistrationDto(registration, now);
+      if (!currentDto.canEdit) throw new ParentAccessError('registration_locked');
 
-    const values = {
-      ...patch,
-      playerNameNormalized,
-    };
-    const changedFields = Object.keys(patch).filter((field) => {
-      const oldValue = registration[field as keyof typeof registration];
-      return oldValue !== patch[field as keyof ParentRegistrationUpdate];
-    });
-    if (changedFields.length === 0) return currentDto;
+      const playerFirstName = patch.playerFirstName ?? registration.playerFirstName;
+      const playerLastName = patch.playerLastName ?? registration.playerLastName;
+      const playerNameNormalized = normalizePlayerName(playerFirstName, playerLastName);
+      const rank1Position = patch.rank1Position ?? registration.rank1Position;
+      const rank2Position = patch.rank2Position === undefined ? registration.rank2Position : patch.rank2Position;
+      const rank3Position = patch.rank3Position === undefined ? registration.rank3Position : patch.rank3Position;
+      if (!positionsAreDistinct({
+        rank1Position,
+        rank2Position: rank2Position ?? undefined,
+        rank3Position: rank3Position ?? undefined,
+      }) || (rank3Position !== null && rank3Position !== undefined && !rank2Position)) {
+        throw new ParentAccessError('invalid_positions');
+      }
+      if (playerNameNormalized !== registration.playerNameNormalized) {
+        const duplicate = await tx.registration.findFirst({
+          where: {
+            eventId: registration.eventId,
+            playerNameNormalized,
+            dateOfBirth: registration.dateOfBirth,
+            status: { in: ['PENDING', 'PAID'] },
+            anonymizedAt: null,
+            id: { not: registration.id },
+          },
+          select: { id: true },
+        });
+        if (duplicate) throw new ParentAccessError('duplicate_player');
+      }
 
-    const updatedCount = await tx.registration.updateMany({
-      where: {
-        id: registration.id,
-        parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
-        parentEmailVerifiedAt: { not: null },
-        anonymizedAt: null,
-        status: { in: ['PENDING', 'PAID'] },
-        checkedInAt: null,
-        bibNumber: null,
-        event: { is: { status: 'OPEN', checkInClosedAt: null } },
-      },
-      data: values,
+      const values = { ...patch, playerNameNormalized };
+      const changedFields = Object.keys(patch).filter((field) =>
+        registration[field as keyof typeof registration] !== patch[field as keyof ParentRegistrationUpdate],
+      );
+      if (changedFields.length === 0) return currentDto;
+
+      const updatedCount = await tx.registration.updateMany({
+        where: {
+          id: registration.id,
+          parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
+          parentEmailVerifiedAt: { not: null },
+          anonymizedAt: null,
+          status: { in: ['PENDING', 'PAID'] },
+          checkedInAt: null,
+          bibNumber: null,
+          event: { is: { status: 'OPEN', checkInClosedAt: null } },
+        },
+        data: values,
+      });
+      if (updatedCount.count !== 1) throw new ParentAccessError('registration_locked');
+      const updated = await tx.registration.findUniqueOrThrow({ where: { id: registration.id }, include: { event: true } });
+      const changeData = Object.fromEntries(changedFields.map((field) => [field, {
+        from: registration[field as keyof typeof registration],
+        to: patch[field as keyof ParentRegistrationUpdate],
+      }]));
+      await tx.registrationChangeLog.create({
+        data: { registrationId: registration.id, actorType: 'PARENT', changedFields, changeData: changeData as Prisma.InputJsonObject },
+      });
+      return parentRegistrationDto(updated, now);
     });
-    if (updatedCount.count !== 1) throw new ParentAccessError('registration_locked');
-    const updated = await tx.registration.findUniqueOrThrow({ where: { id: registration.id }, include: { event: true } });
-    const changeData = Object.fromEntries(changedFields.map((field) => [field, {
-      from: registration[field as keyof typeof registration],
-      to: patch[field as keyof ParentRegistrationUpdate],
-    }]));
-    await tx.registrationChangeLog.create({
-      data: { registrationId: registration.id, actorType: 'PARENT', changedFields, changeData: changeData as Prisma.InputJsonObject },
-    });
-    return parentRegistrationDto(updated, now);
-  });
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new ParentAccessError('duplicate_player');
+    throw error;
+  }
 }
 
 export async function withdrawParentRegistration(

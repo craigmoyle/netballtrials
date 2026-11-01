@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, type EmailDeliveryState, type PrismaClient } from '@prisma/client';
 import { melbourneDateKey } from '@netball-trials/types';
 import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
+import { ORPHANED_PAYMENT_REVIEW_REASON } from '../review/service';
 
 const ANONYMIZED_DOB = new Date('1900-01-01T00:00:00.000Z');
 
@@ -88,7 +89,9 @@ export async function anonymizeExpiredRegistrations(
         });
         if (claimed.count !== 1) continue;
 
-        await tx.reviewItem.deleteMany({ where: { registrationId: registration.id } });
+        await tx.reviewItem.deleteMany({
+          where: { registrationId: registration.id, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
+        });
         await tx.registrationChangeLog.deleteMany({ where: { registrationId: registration.id } });
         await tx.roundPlanPlayer.updateMany({
           where: { registrationId: registration.id },
@@ -117,7 +120,9 @@ export async function anonymizeExpiredRegistrations(
             "updatedAt" = ${now}
         WHERE "eventId" = ${eventId} AND "status" <> 'ANONYMIZED'
       `);
-      await tx.reviewItem.deleteMany({ where: { eventId } });
+      await tx.reviewItem.deleteMany({
+        where: { eventId, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
+      });
       await tx.scheduledMessage.deleteMany({ where: { eventId } });
       await tx.siteAssociationCommunication.deleteMany({ where: { anchorEventId: eventId } });
       await tx.checkInSession.deleteMany({ where: { eventId } });
@@ -212,7 +217,9 @@ export async function anonymizeIncompleteRegistrations(
         if (claimed.count !== 1) continue;
         await tx.parentAccessToken.deleteMany({ where: { registrationId: registration.id } });
         await tx.registrationChangeLog.deleteMany({ where: { registrationId: registration.id } });
-        await tx.reviewItem.deleteMany({ where: { registrationId: registration.id } });
+        await tx.reviewItem.deleteMany({
+          where: { registrationId: registration.id, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
+        });
         await tx.roundPlanPlayer.updateMany({
           where: { registrationId: registration.id },
           data: { registrationId: anonymizedRef, playerName: 'Former participant', bibNumber: null },

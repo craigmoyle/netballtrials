@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
@@ -70,6 +70,17 @@ describe('event communications routes', () => {
       payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Changed', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
     });
     expect(conflict.statusCode).toBe(409);
+  });
+
+  it('does not expose participant contacts after the retention cutoff', async () => {
+    const oldEvent = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Old event association', primaryContactEmail: 'association@example.test' } });
+    await prisma.registration.create({ data: registrationFixture(oldEvent.id, { status: 'PAID', parentEmail: 'private@example.test' }) });
+    const response = await app.inject({ method: 'GET', url: `/api/admin/events/${oldEvent.id}/communications/recipients`, cookies: { nt_session: cookie } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().participants).toEqual([]);
+    expect(response.json().associations).toEqual([expect.objectContaining({ id: association.id })]);
+    expect(response.body).not.toContain('private@example.test');
   });
 
   it('renders participant placeholders and combines sibling names in one household email', async () => {
@@ -163,14 +174,17 @@ describe('event communications routes', () => {
     const association = await prisma.memberAssociation.create({ data: { name: 'MENA', primaryContactName: 'Morgan Contact', primaryContactEmail: 'morgan@example.test' } });
     const created = await app.inject({
       method: 'POST', url: '/api/admin/communications/site/schedule', cookies: { nt_session: cookie },
-      payload: { eventIds: [event.id], associationIds: [association.id], subject: 'Upcoming {{eventName}}', text: '{{eventList}}', scheduledLocal: '2027-01-15T10:30' },
+      payload: { eventIds: [event.id], associationIds: [association.id], subject: 'Upcoming {{eventName}}', text: '{{venue}}\\n{{eventList}}', scheduledLocal: '2027-01-15T10:30' },
     });
     expect(created.statusCode).toBe(201);
     const campaign = await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: created.json().id } });
+    await prisma.event.update({ where: { id: event.id }, data: { venue: 'Updated venue' } });
     const result = await runDueScheduledMessages({ prisma, mailer: app.testDeps.mailer }, new Date('2027-01-15T00:00:00.000Z'));
     expect(result).toEqual({ completed: 1, failed: 0 });
     expect((await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: campaign.id } })).status).toBe('COMPLETED');
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'morgan@example.test', subject: 'Upcoming Spring Trials' });
+    expect(outbox.sent.at(-1)?.text).toContain('Updated venue');
+    expect(outbox.sent.at(-1)?.text).not.toContain('SNC');
   });
 
   it('creates a future Melbourne schedule, lists it, and cancels before send', async () => {
@@ -208,6 +222,71 @@ describe('event communications routes', () => {
     expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('COMPLETED');
     expect(await prisma.emailLog.findFirstOrThrow({ where: { batchId: schedule.batchId } })).toMatchObject({ to: 'parent@example.test', status: 'SENT' });
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'parent@example.test', subject: 'Scheduled note' });
+  });
+
+  it('recovers stale scheduled sends with no or only known-unsent deliveries', async () => {
+    const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'parent@example.test' }) });
+    const staleAt = new Date(Date.now() - 15 * 60_000);
+    const schedule = await prisma.scheduledMessage.create({ data: {
+      eventId, audience: 'participants', recipientIds: [paid.id], batchId: 'schedule-interrupted-empty',
+      subject: 'Recovered schedule', body: 'See you soon.', scheduledAt: staleAt, status: 'SENDING', attempts: 1, lastAttemptAt: staleAt,
+    } });
+    const result = await runDueScheduledMessages({ prisma, mailer: app.testDeps.mailer }, new Date());
+
+    expect(result).toEqual({ completed: 1, failed: 0 });
+    expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('COMPLETED');
+    expect(await prisma.emailLog.count({ where: { batchId: schedule.batchId, status: 'SENT' } })).toBe(1);
+  });
+
+  it('marks a stale schedule complete when every delivery already succeeded', async () => {
+    const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'parent@example.test' }) });
+    const staleAt = new Date(Date.now() - 15 * 60_000);
+    const schedule = await prisma.scheduledMessage.create({ data: {
+      eventId, audience: 'participants', recipientIds: [paid.id], batchId: 'schedule-interrupted-sent',
+      subject: 'Already sent', body: 'See you soon.', scheduledAt: staleAt, status: 'SENDING', attempts: 1, lastAttemptAt: staleAt,
+    } });
+    await prisma.emailLog.create({
+      data: { eventId, registrationId: paid.id, batchId: schedule.batchId, idempotencyKey: 'schedule-interrupted-sent-key', to: paid.parentEmail, subject: schedule.subject, body: schedule.body, kind: 'message', status: 'SENT', attempts: 1, sentAt: staleAt },
+    });
+    const send = vi.fn();
+    const result = await runDueScheduledMessages({ prisma, mailer: { send } }, new Date());
+
+    expect(result).toEqual({ completed: 1, failed: 0 });
+    expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('COMPLETED');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('marks an interrupted scheduled send failed without replaying an uncertain delivery', async () => {
+    const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'parent@example.test' }) });
+    const staleAt = new Date(Date.now() - 15 * 60_000);
+    const schedule = await prisma.scheduledMessage.create({ data: {
+      eventId, audience: 'participants', recipientIds: [paid.id], batchId: 'schedule-interrupted-unknown',
+      subject: 'Uncertain schedule', body: 'See you soon.', scheduledAt: staleAt, status: 'SENDING', attempts: 1, lastAttemptAt: staleAt,
+    } });
+    await prisma.emailLog.create({
+      data: { eventId, registrationId: paid.id, batchId: schedule.batchId, idempotencyKey: 'schedule-interrupted-key', to: paid.parentEmail, subject: schedule.subject, body: schedule.body, kind: 'message', status: 'AMBIGUOUS', attempts: 1, error: 'delivery_interrupted_after_claim' },
+    });
+    const send = vi.fn();
+    const result = await runDueScheduledMessages({ prisma, mailer: { send } }, new Date());
+
+    expect(result).toEqual({ completed: 0, failed: 1 });
+    expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('FAILED');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('recovers a stale site campaign that had not created any deliveries', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Restart Association', primaryContactEmail: 'restart@example.test' } });
+    const staleAt = new Date(Date.now() - 15 * 60_000);
+    const campaign = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: event.id, eventIds: [event.id], recipientIds: [association.id], batchId: 'site-interrupted-empty',
+      subject: 'Recovered site campaign', body: 'Hello', status: 'SENDING', attempts: 1, lastAttemptAt: staleAt,
+    } });
+    const result = await runDueScheduledMessages({ prisma, mailer: app.testDeps.mailer }, new Date());
+
+    expect(result).toEqual({ completed: 1, failed: 0 });
+    expect((await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: campaign.id } })).status).toBe('COMPLETED');
+    expect(await prisma.emailLog.count({ where: { siteCommunicationId: campaign.id, status: 'SENT' } })).toBe(1);
   });
 
   it('revalidates scheduled participant eligibility at send time', async () => {

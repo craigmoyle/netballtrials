@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
+import { isTestDatabaseUrl } from '../api/src/validation/database-url';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const webPort = Number(process.env.E2E_WEB_PORT ?? 5173);
@@ -9,7 +10,7 @@ const webOrigin = `http://localhost:${webPort}`;
 const apiOrigin = `http://localhost:${apiPort}`;
 const controlOrigin = `http://localhost:${controlPort}`;
 const databaseUrl = process.env.E2E_DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/netballtrials_test';
-if (!databaseUrl.endsWith('_test')) throw new Error('E2E tests require a DATABASE_URL ending in _test');
+if (!isTestDatabaseUrl(databaseUrl)) throw new Error('E2E tests require a DATABASE_URL naming a database ending in _test');
 
 export default defineConfig({
   testDir: './e2e',

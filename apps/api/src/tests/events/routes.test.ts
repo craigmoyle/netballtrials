@@ -82,6 +82,20 @@ describe('event admin routes', () => {
     expect(await prisma.eventPolicyDocument.findUnique({ where: { eventId } })).toBeNull();
   });
 
+  it('hides draft policy PDFs and caches published policy documents briefly', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
+    const eventId = created.json().id as string;
+    await prisma.eventPolicyDocument.create({ data: { eventId, fileName: 'selection.pdf', bytes: Buffer.from('%PDF-1.4 test') } });
+    expect((await app.inject({ method: 'GET', url: `/api/public/events/${eventId}/policy-document` })).statusCode).toBe(404);
+
+    await prisma.event.update({ where: { id: eventId }, data: { status: 'OPEN' } });
+    const published = await app.inject({ method: 'GET', url: `/api/public/events/${eventId}/policy-document` });
+    expect(published.statusCode).toBe(200);
+    expect(published.body).toContain('%PDF-1.4');
+    expect(published.headers['cache-control']).toBe('public, max-age=300');
+    expect(published.headers.pragma).toBeUndefined();
+  });
+
   it('blocks event deletion while any registration record remains', async () => {
     const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
     const eventId = created.json().id as string;

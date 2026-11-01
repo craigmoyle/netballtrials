@@ -3,6 +3,8 @@ import type { ReviewItemDTO } from '@netball-trials/types';
 
 type ItemWithRegistration = Prisma.ReviewItemGetPayload<{ include: { registration: true } }>;
 
+export const ORPHANED_PAYMENT_REVIEW_REASON = 'payment_without_registration';
+
 function toDTO(item: ItemWithRegistration): ReviewItemDTO {
   return {
     id: item.id,
@@ -58,7 +60,7 @@ export async function listReviewQueue(
         // Orphaned payments belong to registrations that are no longer PAID
         // by definition, so they must stay visible until resolved.
         OR: [
-          { reason: 'payment_without_registration' },
+          { reason: ORPHANED_PAYMENT_REVIEW_REASON },
           {
             registration: { is: { status: 'PAID' } },
             OR: [

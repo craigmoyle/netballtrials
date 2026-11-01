@@ -122,7 +122,7 @@ export function SettingsPage({ client }: { client: Client }) {
           <p>Region, project, environment and path are stored as non-secret configuration. The Universal Auth client ID and secret stay in deployment secret settings and are never shown or stored in the application database.</p>
           <p>{settings.infisical.connected ? 'Infisical is reachable with the current settings.' : 'Infisical could not be reached with the current settings; update them below to restore the connection.'}</p>
           <p>Test and save requires both Stripe and Gmail secret records to exist in the selected project, environment and path.</p>
-          {settings.infisical.updatedAt ? <p>Connection settings last updated {new Date(settings.infisical.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.</p> : null}
+          {settings.infisical.updatedAt ? <p>Infisical connection or integration settings last updated {new Date(settings.infisical.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.</p> : null}
           <form onSubmit={(event) => void saveInfisical(event)}>
             <label htmlFor="infisical-api-url">Infisical Cloud region</label>
             <select id="infisical-api-url" value={infisicalApiUrl} disabled={busy} onChange={(event) => setInfisicalApiUrl(event.target.value)}>

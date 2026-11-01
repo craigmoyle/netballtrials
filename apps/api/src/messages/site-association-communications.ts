@@ -57,10 +57,10 @@ function formatEventList(events: SiteEvent[]): string {
   }).join('\n');
 }
 
-function eventTemplateFields(events: SiteEvent[], eventList: string): Record<string, string> {
+function eventTemplateFields(events: SiteEvent[]): Record<string, string> {
   const one = events.length === 1 ? events[0] : null;
   return {
-    eventList,
+    eventList: formatEventList(events),
     eventName: one?.name ?? events.map((event) => event.name).join(', '),
     eventDate: one ? formatEventDate(one.eventDate) : '',
     arrivalTime: one?.startTime ?? '',
@@ -123,7 +123,7 @@ export async function previewSiteAssociationCommunication(
     checkedIn: null,
     positions: [],
   }));
-  const fields = eventTemplateFields(context.events, formatEventList(context.events));
+  const fields = eventTemplateFields(context.events);
   const sample = targetAssociations[0];
   return {
     events: context.events,
@@ -157,7 +157,6 @@ export async function createSiteAssociationCommunication(
       anchorEventId: context.anchorEventId,
       eventIds: eventIds as Prisma.InputJsonArray,
       recipientIds: associationIds as Prisma.InputJsonArray,
-      eventList: formatEventList(context.events),
       senderUserId: input.senderUserId ?? null,
       batchId,
       subject: input.subject,
@@ -207,7 +206,7 @@ async function createSiteDeliveryRows(
     if (associations.length !== associationIds.length) return null;
     const targets = uniqueAssociationEmails(associations);
     if (!targets.length) return null;
-    const fieldsForEvents = eventTemplateFields(orderedEvents, campaign.eventList);
+    const fieldsForEvents = eventTemplateFields(orderedEvents);
     const existing = await tx.emailLog.findMany({ where: { batchId: campaign.batchId }, orderBy: { to: 'asc' } });
     const messages = targets.map((association) => {
       const fields = { ...fieldsForEvents, associationName: association.name, contactName: association.primaryContactName ?? '' };
@@ -345,16 +344,58 @@ export async function retrySiteAssociationCommunication(
   return result;
 }
 
+const STALE_CAMPAIGN_MS = 10 * 60_000;
+
+async function recoverStaleSiteCampaigns(prisma: PrismaClient, now: Date): Promise<{ completed: number; failed: number }> {
+  const stale = await prisma.siteAssociationCommunication.findMany({
+    where: { OR: [
+      { status: 'SENDING', lastAttemptAt: { lt: new Date(now.getTime() - STALE_CAMPAIGN_MS) } },
+      { status: 'FAILED', error: 'scheduled_worker_interrupted' },
+    ] },
+    select: { id: true, batchId: true, attempts: true, lastAttemptAt: true, scheduledAt: true, status: true },
+    orderBy: { id: 'asc' },
+  });
+  let completed = 0;
+  let failed = 0;
+  for (const campaign of stale) {
+    const deliveries = await prisma.emailLog.findMany({ where: { batchId: campaign.batchId }, select: { status: true } });
+    const allSent = deliveries.length > 0 && deliveries.every((delivery) => delivery.status === 'SENT');
+    if (campaign.status === 'FAILED') {
+      if (allSent) await prisma.siteAssociationCommunication.updateMany({
+        where: { id: campaign.id, status: 'FAILED', error: 'scheduled_worker_interrupted' },
+        data: { status: 'COMPLETED', completedAt: now, error: null },
+      });
+      continue;
+    }
+    const safeToResume = deliveries.every((delivery) => delivery.status === 'PENDING' || delivery.status === 'SENT');
+    const status = allSent ? 'COMPLETED' : safeToResume ? 'SCHEDULED' : 'FAILED';
+    const changed = await prisma.siteAssociationCommunication.updateMany({
+      where: { id: campaign.id, status: 'SENDING', attempts: campaign.attempts, lastAttemptAt: campaign.lastAttemptAt },
+      data: {
+        status,
+        scheduledAt: status === 'SCHEDULED' ? campaign.scheduledAt ?? now : campaign.scheduledAt,
+        completedAt: status === 'COMPLETED' ? now : null,
+        error: status === 'FAILED' ? 'scheduled_worker_interrupted' : null,
+      },
+    });
+    if (changed.count !== 1) continue;
+    if (status === 'COMPLETED') completed += 1;
+    if (status === 'FAILED') failed += 1;
+  }
+  return { completed, failed };
+}
+
 export async function runDueSiteAssociationCommunications(
   prisma: PrismaClient,
   deps: { mailer: EmailProvider },
   now: Date,
 ): Promise<{ completed: number; failed: number }> {
+  const recovered = await recoverStaleSiteCampaigns(prisma, now);
   const due = await prisma.siteAssociationCommunication.findMany({
     where: { status: 'SCHEDULED', scheduledAt: { lte: now } }, orderBy: { scheduledAt: 'asc' }, take: 20,
   });
-  let completed = 0;
-  let failed = 0;
+  let completed = recovered.completed;
+  let failed = recovered.failed;
   for (const campaign of due) {
     const claim = await prisma.siteAssociationCommunication.updateMany({
       where: { id: campaign.id, status: 'SCHEDULED' },

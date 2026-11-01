@@ -163,6 +163,19 @@ describe('parent registration access', () => {
     expect(locked.statusCode).toBe(409);
   });
 
+  it('serializes overlapping position edits so they cannot create duplicate ranks', async () => {
+    const ada = await addRegistration('Ada', 'Lovelace', 'parent@example.test', { rank1Position: 'GS', rank2Position: 'WA' });
+    const cookie = await parentSession('parent@example.test');
+    const [rankOne, rankTwo] = await Promise.all([
+      app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies: { nt_parent: cookie }, payload: { rank1Position: 'GA' } }),
+      app.inject({ method: 'PATCH', url: `/api/parent/registrations/${ada.id}`, cookies: { nt_parent: cookie }, payload: { rank2Position: 'GA' } }),
+    ]);
+    expect([rankOne.statusCode, rankTwo.statusCode].sort()).toEqual([200, 400]);
+    const saved = await prisma.registration.findUniqueOrThrow({ where: { id: ada.id } });
+    expect(new Set([saved.rank1Position, saved.rank2Position, saved.rank3Position].filter(Boolean)).size)
+      .toBe([saved.rank1Position, saved.rank2Position, saved.rank3Position].filter(Boolean).length);
+  });
+
   it('expires an open Checkout before withdrawing an unpaid registration', async () => {
     const pending = await addRegistration('Ada', 'Lovelace', 'parent@example.test');
     const cookie = await parentSession('parent@example.test');

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { databaseNameFromUrl } from './validation/database-url';
 
 const envSchema = z
   .object({
@@ -38,9 +39,7 @@ const envSchema = z
       });
     }
     const appEnv = env.APP_ENV ?? (env.NODE_ENV === 'production' ? 'production' : 'testing');
-    let databaseName = '';
-    try { databaseName = decodeURIComponent(new URL(env.DATABASE_URL).pathname.split('/').filter(Boolean).at(-1) ?? ''); }
-    catch { /* DATABASE_URL validation is handled by Prisma at startup. */ }
+    const databaseName = databaseNameFromUrl(env.DATABASE_URL) ?? '';
     if (appEnv === 'testing' && env.NODE_ENV === 'production' && !databaseName.endsWith('_test')) {
       context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'A hosted test deployment must use a database name ending in _test' });
     }

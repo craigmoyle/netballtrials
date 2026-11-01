@@ -3,10 +3,11 @@ import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { GmailDeliveryError } from '../../mail/gmail-mailer';
-import { reconcileStaleDeliveries, sendEmailToRecipient, sendEventMessage, retryFailedDeliveries } from '../../messages/service';
+import { deliverEventMessage, reconcileStaleDeliveries, sendEmailToRecipient, retryFailedDeliveries } from '../../messages/service';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
+const sendEventMessage = deliverEventMessage;
 
 async function paid(eventId: string, email: string, name: string) {
   return prisma.registration.create({

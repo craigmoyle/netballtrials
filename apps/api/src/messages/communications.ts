@@ -27,28 +27,26 @@ function registrationsToRecipients(rows: Array<{
   }));
 }
 
-export async function listCommunicationRecipients(prisma: PrismaClient, eventId: string): Promise<{
+export async function listCommunicationRecipients(prisma: PrismaClient, eventId: string, now = new Date()): Promise<{
   participants: CommunicationRecipientDTO[];
   associations: CommunicationRecipientDTO[];
 } | null> {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, eventDate: true } });
   if (!event) return null;
-  const [registrations, associations] = await Promise.all([
-    prisma.registration.findMany({
-      where: { eventId, anonymizedAt: null },
-      select: {
-        id: true, playerFirstName: true, playerLastName: true, parentEmail: true, bibNumber: true,
-        checkedInAt: true, memberAssociation: true, status: true, rank1Position: true,
-        rank2Position: true, rank3Position: true,
-      },
-      orderBy: [{ playerLastName: 'asc' }, { playerFirstName: 'asc' }],
-    }),
-    prisma.memberAssociation.findMany({
-      where: { active: true, primaryContactEmail: { not: null } },
-      select: { id: true, name: true, primaryContactName: true, primaryContactEmail: true },
-      orderBy: { name: 'asc' },
-    }),
-  ]);
+  const registrations = isPastRetentionCutoff(event.eventDate, now) ? [] : await prisma.registration.findMany({
+    where: { eventId, anonymizedAt: null },
+    select: {
+      id: true, playerFirstName: true, playerLastName: true, parentEmail: true, bibNumber: true,
+      checkedInAt: true, memberAssociation: true, status: true, rank1Position: true,
+      rank2Position: true, rank3Position: true,
+    },
+    orderBy: [{ playerLastName: 'asc' }, { playerFirstName: 'asc' }],
+  });
+  const associations = await prisma.memberAssociation.findMany({
+    where: { active: true, primaryContactEmail: { not: null } },
+    select: { id: true, name: true, primaryContactName: true, primaryContactEmail: true },
+    orderBy: { name: 'asc' },
+  });
   return {
     participants: registrationsToRecipients(registrations),
     associations: associations.filter((item) => item.primaryContactEmail).map((item) => ({
@@ -214,15 +212,56 @@ export async function getScheduledMessages(prisma: PrismaClient, eventId: string
   }));
 }
 
+const STALE_SCHEDULE_MS = 10 * 60_000;
+
+async function recoverStaleScheduledMessages(prisma: PrismaClient, now: Date): Promise<{ completed: number; failed: number }> {
+  const stale = await prisma.scheduledMessage.findMany({
+    where: { OR: [
+      { status: 'SENDING', lastAttemptAt: { lt: new Date(now.getTime() - STALE_SCHEDULE_MS) } },
+      { status: 'FAILED', error: 'scheduled_worker_interrupted' },
+    ] },
+    select: { id: true, batchId: true, attempts: true, lastAttemptAt: true, status: true },
+    orderBy: { id: 'asc' },
+  });
+  let completed = 0;
+  let failed = 0;
+  for (const scheduled of stale) {
+    const deliveries = await prisma.emailLog.findMany({ where: { batchId: scheduled.batchId }, select: { status: true } });
+    const allSent = deliveries.length > 0 && deliveries.every((delivery) => delivery.status === 'SENT');
+    if (scheduled.status === 'FAILED') {
+      if (allSent) await prisma.scheduledMessage.updateMany({
+        where: { id: scheduled.id, status: 'FAILED', error: 'scheduled_worker_interrupted' },
+        data: { status: 'COMPLETED', completedAt: now, error: null },
+      });
+      continue;
+    }
+    const safeToResume = deliveries.every((delivery) => delivery.status === 'PENDING' || delivery.status === 'SENT');
+    const status = allSent ? 'COMPLETED' : safeToResume ? 'SCHEDULED' : 'FAILED';
+    const changed = await prisma.scheduledMessage.updateMany({
+      where: { id: scheduled.id, status: 'SENDING', attempts: scheduled.attempts, lastAttemptAt: scheduled.lastAttemptAt },
+      data: {
+        status,
+        completedAt: status === 'COMPLETED' ? now : null,
+        error: status === 'FAILED' ? 'scheduled_worker_interrupted' : null,
+      },
+    });
+    if (changed.count !== 1) continue;
+    if (status === 'COMPLETED') completed += 1;
+    if (status === 'FAILED') failed += 1;
+  }
+  return { completed, failed };
+}
+
 export async function runDueScheduledMessages(
   deps: { prisma: PrismaClient; mailer: import('../mail/provider').EmailProvider },
   now: Date,
 ): Promise<{ completed: number; failed: number }> {
+  const recovered = await recoverStaleScheduledMessages(deps.prisma, now);
   const due = await deps.prisma.scheduledMessage.findMany({
     where: { status: 'SCHEDULED', scheduledAt: { lte: now } }, orderBy: { scheduledAt: 'asc' }, take: 20,
   });
-  let completed = 0;
-  let failed = 0;
+  let completed = recovered.completed;
+  let failed = recovered.failed;
   for (const scheduled of due) {
     const claim = await deps.prisma.scheduledMessage.updateMany({
       where: { id: scheduled.id, status: 'SCHEDULED' },
@@ -245,10 +284,10 @@ export async function runDueScheduledMessages(
       });
       if (done) completed += 1;
       else failed += 1;
-    } catch (error) {
+    } catch {
       await deps.prisma.scheduledMessage.updateMany({
         where: { id: scheduled.id, status: 'SENDING', attempts: scheduled.attempts + 1 },
-        data: { status: 'FAILED', error: error instanceof Error ? 'scheduled_send_failed' : 'scheduled_send_failed' },
+        data: { status: 'FAILED', error: 'scheduled_send_failed' },
       });
       failed += 1;
     }

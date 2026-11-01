@@ -23,6 +23,12 @@ describe('admin roster service', () => {
     expect((await getRoster(prisma, event.id))?.registrations[0].bibNumber).toBe(6);
   });
 
+  it('does not expose a roster after the four-calendar-year cutoff before cleanup runs', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
+    await prisma.registration.create({ data: registrationFixture(event.id, { status: 'PAID', parentEmail: 'private@example.test' }) });
+    expect(await getRoster(prisma, event.id, new Date('2025-09-13T00:00:00Z'))).toBeNull();
+  });
+
   it('exports a quoted formula-neutralized CSV only before the calendar cutoff', async () => {
     const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2026-10-10T00:00:00Z') }) });
     await prisma.registration.create({ data: registrationFixture(event.id, { playerFirstName: '=SUM(1)', playerLastName: 'Ng, Jr', parentName: '@cmd', playerNameNormalized: 'formula ng', memberAssociation: 'Ng, Jr', status: 'PAID' }) });

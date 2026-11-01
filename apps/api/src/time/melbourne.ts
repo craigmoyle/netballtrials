@@ -1,3 +1,5 @@
+import { isCalendarDate } from '../validation/date';
+
 function zoneOffsetMs(instant: Date, timeZone: string): number {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -17,6 +19,12 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
   }
   const localAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
   return localAsUtc - instant.getTime();
+}
+
+export function melbourneLocalDateTimeToUtc(value: string): Date {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(value);
+  if (!match || !isCalendarDate(match[1])) throw new Error('invalid local date/time');
+  return localDateTimeToUtc(new Date(`${match[1]}T00:00:00.000Z`), match[2]);
 }
 
 export function localDateTimeToUtc(date: Date, clock: string, timeZone = 'Australia/Melbourne'): Date {

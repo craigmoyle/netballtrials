@@ -114,6 +114,18 @@ describe('ParentAccessPage', () => {
     expect(screen.queryByRole('button', { name: 'Continue to Checkout' })).not.toBeInTheDocument();
   });
 
+  it('keeps the portal open when server sign-out fails', async () => {
+    const api = mockClient({
+      listParentRegistrations: vi.fn().mockResolvedValue([registration('one', 'Ada Lovelace')]),
+      logoutParent: vi.fn().mockRejectedValue(new Error('network error')),
+    });
+    render(<MemoryRouter initialEntries={['/manage-registration']}><ParentAccessPage client={api} /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not confirm sign-out/i);
+    expect(screen.getByRole('heading', { name: 'Ada Lovelace · E2E 15/U Ladies' })).toBeInTheDocument();
+  });
+
   it('requires an explicit Continue step, then shows every registration linked to the email', async () => {
     const siblings = [registration('one', 'Ada Lovelace'), registration('two', 'Grace Hopper')];
     const api = mockClient({ listParentRegistrations: vi.fn().mockResolvedValue(siblings) });

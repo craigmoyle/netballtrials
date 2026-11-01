@@ -69,7 +69,7 @@ describe('stripe webhook', () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
     const retried = await app.inject({
       method: 'POST',
-      url: `/api/admin/events/${eventId}/messages/${pending.batchId}/retry`,
+      url: `/api/admin/events/${eventId}/communications/${pending.batchId}/retry`,
       cookies: { nt_session: cookie },
       payload: { deliveryIds: [pending.id] },
     });

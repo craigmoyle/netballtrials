@@ -5,6 +5,12 @@ import { ApiError, apiClient } from './client';
 afterEach(() => vi.restoreAllMocks());
 
 describe('apiClient', () => {
+  it('loads the runtime environment through the proxied API path', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"appEnv":"testing"}', { status: 200 }));
+    await expect(apiClient('').getRuntimeEnvironment()).resolves.toEqual({ appEnv: 'testing' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.objectContaining({ credentials: 'include' }));
+  });
+
   it.each([502, 429])('rejects a %i HTML error body with an ApiError carrying the status', async (status) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>Bad gateway</html>', { status, headers: { 'content-type': 'text/html' } }));
 
@@ -208,13 +214,14 @@ describe('apiClient', () => {
     await expect(apiClient('http://api.test').requestLink('a@example.com')).resolves.toEqual({ status: 'sent' });
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/auth/request-link', expect.objectContaining({ method: 'POST', credentials: 'include' }));
   });
-  it('keeps the event-message batch ID and parses the full delivery summary', async () => {
-    const summary = { batchId: '11111111-1111-4111-8111-111111111111', sent: 1, failed: 2, ambiguous: 0, pending: 0, deliveryIds: ['a', 'b', 'c'], sentThisRun: 1, failedThisRun: 2, ambiguousThisRun: 0 };
+  it('sends a selected event communication with its idempotency batch ID', async () => {
+    const summary = { batchId: '11111111-1111-4111-8111-111111111111', sent: 1, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery-1'] };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(summary), { status: 200, headers: { 'content-type': 'application/json' } }));
-    await expect(apiClient('http://api.test').sendMessage('event-1', { subject: 'Update', text: 'Details', batchId: summary.batchId })).resolves.toEqual(summary);
+    const input = { audience: 'participants' as const, recipientIds: ['registration-1'], subject: 'Update', text: 'Details', batchId: summary.batchId };
+    await expect(apiClient('http://api.test').sendCommunication('event-1', input)).resolves.toEqual(summary);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('http://api.test/api/admin/events/event-1/messages');
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ subject: 'Update', text: 'Details', batchId: summary.batchId });
+    expect(url).toBe('http://api.test/api/admin/events/event-1/communications/send');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual(input);
   });
 
   it('deletes an event with session credentials and preserves the registration guard error', async () => {

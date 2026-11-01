@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { melbourneDateKey, type PublicTrialDTO } from '@netball-trials/types';
 import { DEFAULT_POLICY_URL } from '../policy';
+import { isPastRetentionCutoff } from '../retention/service';
 import { qrDataUrl } from '../registrations/qr';
 import { buildTrialCalendar } from '../registrations/calendar';
 
@@ -51,13 +52,14 @@ export async function listPublicEvents(prisma: PrismaClient): Promise<PublicTria
 export async function getTicket(
   prisma: PrismaClient,
   token: string,
+  now = new Date(),
 ): Promise<PublicTicket | null> {
   const registration = await prisma.registration.findFirst({
     where: { qrToken: token, status: 'PAID' },
     include: { event: true },
   });
 
-  if (!registration) {
+  if (!registration || isPastRetentionCutoff(registration.event.eventDate, now)) {
     return null;
   }
 
@@ -78,12 +80,13 @@ export async function getTicket(
 export async function getTicketCalendar(
   prisma: PrismaClient,
   token: string,
+  now = new Date(),
 ): Promise<{ calendar: string; filename: string } | null> {
   const registration = await prisma.registration.findFirst({
     where: { qrToken: token, status: 'PAID' },
     include: { event: true },
   });
-  if (!registration) return null;
+  if (!registration || isPastRetentionCutoff(registration.event.eventDate, now)) return null;
   return {
     calendar: buildTrialCalendar(registration.event, `${registration.id}@chisholmnetball.com`),
     filename: `trials-${registration.id}.ics`,

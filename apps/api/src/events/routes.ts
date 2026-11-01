@@ -108,9 +108,10 @@ export function registerEventRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/public/events/:id/policy-document', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const document = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id } });
-    if (!document) return reply.code(404).send({ error: 'not_found' });
+    const document = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, include: { event: { select: { status: true } } } });
+    if (!document || document.event.status === 'DRAFT') return reply.code(404).send({ error: 'not_found' });
     return reply
+      .header('cache-control', 'public, max-age=300')
       .type('application/pdf')
       .header('content-disposition', `inline; filename="${safeFilename(document.fileName)}"`)
       .send(Buffer.from(document.bytes));

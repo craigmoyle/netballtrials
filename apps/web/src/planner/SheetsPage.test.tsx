@@ -20,15 +20,15 @@ describe('SheetsPage', () => {
     expect(getSheetsHtml).not.toHaveBeenCalled();
   });
 
-  it('explains unassigned court colors and links back to event settings', async () => {
+  it('explains unassigned court colors and links to Event operations', async () => {
     const client = {
       getPublishedPlan: vi.fn().mockResolvedValue({ id: 'published-2', status: 'PUBLISHED' }),
       getSheetsHtml: vi.fn().mockRejectedValue(new ApiError(409, 'court_colors_unassigned')),
     };
     renderSheets(client);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/team a and team b colors.*every court/i);
-    expect(screen.getByRole('link', { name: /event settings and court colors/i })).toHaveAttribute('href', '/admin/events/e1');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/team a and team b colors.*event operations/i);
+    expect(screen.getByRole('link', { name: /event operations and court colors/i })).toHaveAttribute('href', '/admin/events/e1/operations');
     expect(screen.getByRole('link', { name: 'Download Blank Sheet' })).toHaveAttribute('href', '/admin/events/e1/sheets/blank');
   });
 

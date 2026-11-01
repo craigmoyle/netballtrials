@@ -3,14 +3,13 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import type { AppDeps } from '../app';
 import { generateToken } from '../auth/tokens';
 import { sendConfirmation } from '../registrations/confirmation';
+import { ORPHANED_PAYMENT_REVIEW_REASON } from '../review/service';
 import { deliveryIdempotencyKey } from '../messages/service';
 import { lockMailEvent } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
 import type { WebhookEvent } from './provider';
 
 export type PaymentOutcome = 'paid' | 'already_paid' | 'expired' | 'failed' | 'orphaned' | 'ignored';
-
-export const ORPHANED_PAYMENT_REVIEW_REASON = 'payment_without_registration';
 
 export type PaymentConfirmationResult = {
   registrationId: string;

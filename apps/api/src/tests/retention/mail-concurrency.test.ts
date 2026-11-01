@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { prisma } from '../../db';
 import { createDevMailer } from '../../mail/dev-mailer';
-import { reconcileStaleDeliveries, retryFailedDeliveries, sendEmailToRecipient, sendEventMessage } from '../../messages/service';
+import { deliverEventMessage, reconcileStaleDeliveries, retryFailedDeliveries, sendEmailToRecipient } from '../../messages/service';
 import { anonymizeExpiredRegistrations } from '../../retention/service';
 import { confirmPayment } from '../../payments/webhook';
 import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
+const sendEventMessage = deliverEventMessage;
 const beforeCutoff = new Date('2025-10-10T12:59:00Z');
 const afterCutoff = new Date('2025-10-10T13:01:00Z');
 const content = { subject: 'Private Ada details', text: 'Contact Anne', html: '<p>Private</p>' };

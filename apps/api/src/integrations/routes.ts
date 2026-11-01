@@ -5,6 +5,24 @@ import { requireAdmin } from '../auth/guard';
 import { IntegrationSettingsUnavailableError } from './settings';
 import { INFISICAL_CLOUD_API_URLS } from './infisical';
 
+async function persistInfisicalCredentialVersion(deps: AppDeps): Promise<void> {
+  const connection = deps.integrationSettings?.connectionSettings();
+  const apiUrl = connection?.apiUrl;
+  const projectId = connection?.projectId;
+  const environment = connection?.environment;
+  const secretPath = connection?.secretPath;
+  if (!connection?.configured || !apiUrl || !projectId || !environment || !secretPath) {
+    throw new IntegrationSettingsUnavailableError();
+  }
+  await deps.prisma.$transaction(async (tx) => {
+    const current = await tx.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } });
+    const updatedAt = new Date(Math.max(Date.now(), (current?.updatedAt.getTime() ?? 0) + 1));
+    const data = { apiUrl, projectId, environment, secretPath };
+    if (current) await tx.infisicalConnectionSettings.update({ where: { id: 'infisical' }, data: { ...data, updatedAt } });
+    else await tx.infisicalConnectionSettings.create({ data: { id: 'infisical', ...data, updatedAt } });
+  });
+}
+
 const stripeSchema = z.object({
   secretKey: z.string().trim().min(1).max(500),
   webhookSecret: z.string().trim().min(1).max(500),
@@ -68,6 +86,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
       const activate = deps.prepareIntegrationUpdate?.({ stripe: parsed.data });
       await deps.integrationSettings.replaceStripe(parsed.data);
       activate?.();
+      await persistInfisicalCredentialVersion(deps);
       return deps.integrationSettings.status();
     } catch (error) {
       if (error instanceof IntegrationSettingsUnavailableError) return reply.code(409).send({ error: 'secret_store_not_configured' });
@@ -85,6 +104,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
       const activate = deps.prepareIntegrationUpdate?.({ gmail: parsed.data });
       await deps.integrationSettings.replaceGmail(parsed.data);
       activate?.();
+      await persistInfisicalCredentialVersion(deps);
       return deps.integrationSettings.status();
     } catch {
       return reply.code(502).send({ error: 'integration_update_failed' });

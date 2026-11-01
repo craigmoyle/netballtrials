@@ -35,4 +35,5 @@ jobs:
       - run: npm exec --workspace=@netball-trials/api -- prisma generate
       - run: npm test
       - run: npm run build
+      - run: npm run test:e2e --workspace=@netball-trials/web
       - run: npm audit

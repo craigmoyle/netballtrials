@@ -112,7 +112,7 @@ describe('Melbourne event start and reminders', () => {
     } };
     const now = new Date('2026-09-10T22:30:00Z');
     const first = await sendDueReminders({ prisma, mailer }, now);
-    expect(first).toMatchObject({ sent: 1, failed: 1, ambiguous: 0 });
+    expect(first).toMatchObject({ sent: 1, failed: 1, ambiguous: 0, errors: [] });
     fail = false;
     const retry = await sendDueReminders({ prisma, mailer }, new Date(now.getTime() + 60_000));
     expect(retry).toMatchObject({ sent: 1, failed: 0, ambiguous: 0 });

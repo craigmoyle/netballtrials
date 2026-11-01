@@ -10,13 +10,14 @@ import {
 } from '../registrations/service';
 import type { RegistrationInput } from '../registrations/schemas';
 import { sendRegistrationEmailVerification } from '../parents/service';
-import { consumeRateLimit } from '../security/rate-limit';
+import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
 import { processPaymentEvent, registerStripeWebhookRoute } from '../payments/webhook';
 import type { WebhookEvent } from '../payments/provider';
 import { getPublicEvent, getTicket, getTicketCalendar, listPublicEvents } from './service';
 
 const REGISTRATION_LIMIT = 10;
 const REGISTRATION_WINDOW_MS = 15 * 60_000;
+const REGISTRATION_FOLLOW_UP_LIMIT = 3;
 const NEUTRAL_ACKNOWLEDGEMENT = { status: 'received' } as const;
 
 function registrationRateKey(eventId: string, clientIp: string): string {
@@ -120,12 +121,14 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       return reply.code(404).send({ error: 'not_found' });
     }
     if (registration.status !== 'PAID' || !registration.qrToken) return { status: registration.status };
+    const ticket = await getTicket(deps.prisma, registration.qrToken);
+    if (!ticket) return { status: registration.status };
     const token = encodeURIComponent(registration.qrToken);
     return {
       status: registration.status,
       ticketPath: `/ticket/${token}`,
       calendarUrl: `${deps.env.API_PUBLIC_URL.replace(/\/$/, '')}/api/public/ticket/${token}/calendar`,
-      ticket: await getTicket(deps.prisma, registration.qrToken),
+      ticket,
     };
   });
 
@@ -151,7 +154,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
   app.post('/api/public/events/:id/registrations', async (req, reply) => {
     const { id } = req.params as { id: string };
     const now = new Date();
-    const key = registrationRateKey(id, req.ip ?? 'unknown');
+    const key = registrationRateKey(id, rateLimitClientKey(req.ip));
     if (!(await consumeRateLimit(deps.prisma, key, now, REGISTRATION_LIMIT, REGISTRATION_WINDOW_MS))) {
       return reply.code(429).send({ error: 'try_again_later' });
     }
@@ -173,13 +176,18 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
       }
       if (error instanceof RegistrationConflictError) {
         if (error.reason === 'duplicate') {
-          if (error.existing?.status === 'PENDING') {
-            const sent = error.existing.parentEmailVerifiedAt
-              ? await sendCheckoutContinuation(deps, error.existing, now)
-              : await sendRegistrationEmailVerification(deps, error.existing, now);
-            if (!sent) return reply.code(503).send({ error: error.existing.parentEmailVerifiedAt ? 'registration_follow_up_unavailable' : 'email_verification_unavailable' });
-          } else if (error.existing?.status === 'PAID') {
-            await sendDuplicateGuidance(deps, error.existing);
+          const registration = error.existing;
+          if (registration && ['PENDING', 'PAID'].includes(registration.status)) {
+            const followUpKey = createHash('sha256').update(`registration-follow-up\0${registration.id}`).digest('hex');
+            const allowed = await consumeRateLimit(deps.prisma, followUpKey, now, REGISTRATION_FOLLOW_UP_LIMIT, REGISTRATION_WINDOW_MS);
+            if (allowed && registration.status === 'PENDING') {
+              const sent = registration.parentEmailVerifiedAt
+                ? await sendCheckoutContinuation(deps, registration, now)
+                : await sendRegistrationEmailVerification(deps, registration, now);
+              if (!sent) return reply.code(503).send({ error: registration.parentEmailVerifiedAt ? 'registration_follow_up_unavailable' : 'email_verification_unavailable' });
+            } else if (allowed && registration.status === 'PAID') {
+              await sendDuplicateGuidance(deps, registration);
+            }
           }
           return reply.code(202).send(NEUTRAL_ACKNOWLEDGEMENT);
         }

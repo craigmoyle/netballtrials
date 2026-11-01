@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { localDateTimeToUtc } from '../time/melbourne';
+import { melbourneLocalDateTimeToUtc } from '../time/melbourne';
 import { EmailBatchConflictError } from './service';
 import { unsupportedTemplateFields } from './template-renderer';
 import {
@@ -23,13 +23,6 @@ const previewSchema = z.object(selectionFields);
 const sendSchema = z.object({ ...selectionFields, batchId: z.uuid().optional() });
 const scheduleSchema = z.object({ ...selectionFields, batchId: z.uuid().optional(), scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/) });
 const retrySchema = z.object({ deliveryIds: z.array(z.string().min(1)).min(1).max(500), includeAmbiguous: z.boolean().default(false) });
-
-function scheduledLocalToUtc(value: string): Date {
-  const [date, time] = value.split('T');
-  const parsedDate = new Date(`${date}T00:00:00.000Z`);
-  if (!Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error('invalid_local_date');
-  return localDateTimeToUtc(parsedDate, time);
-}
 
 function validateTemplateFields(reply: { code(status: number): { send(body: unknown): unknown } }, audience: 'associations', subject: string, text: string): unknown | null {
   const fields = unsupportedTemplateFields(audience, subject, text);
@@ -78,7 +71,7 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
     const invalidFields = validateTemplateFields(reply, 'associations', parsed.data.subject, parsed.data.text);
     if (invalidFields) return invalidFields;
     let scheduledAt: Date;
-    try { scheduledAt = scheduledLocalToUtc(parsed.data.scheduledLocal); }
+    try { scheduledAt = melbourneLocalDateTimeToUtc(parsed.data.scheduledLocal); }
     catch { return reply.code(400).send({ error: 'invalid_schedule_time' }); }
     if (scheduledAt.getTime() < Date.now() + 60_000) return reply.code(400).send({ error: 'schedule_must_be_in_future' });
     const campaign = await createSiteAssociationCommunication({ prisma: deps.prisma, mailer: deps.mailer }, {

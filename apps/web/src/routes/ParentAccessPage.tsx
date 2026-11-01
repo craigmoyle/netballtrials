@@ -228,10 +228,11 @@ export function ParentAccessPage({ client }: { client: Client }) {
   async function signOut() {
     try {
       await client.logoutParent();
-    } finally {
       setRegistrations([]);
       setMode('request');
       setNotice('You have signed out.');
+    } catch {
+      setError('Could not confirm sign-out. Refresh the page or try again.');
     }
   }
 

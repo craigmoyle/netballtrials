@@ -177,7 +177,6 @@ model SiteAssociationCommunication {
   anchorEvent   Event                  @relation("SiteAssociationCommunicationAnchor", fields: [anchorEventId], references: [id], onDelete: Cascade)
   eventIds      Json
   recipientIds  Json
-  eventList     String
   senderUserId  String?
   sender        StaffUser?             @relation("SiteAssociationCommunicationSender", fields: [senderUserId], references: [id], onDelete: SetNull)
   templateId    String?

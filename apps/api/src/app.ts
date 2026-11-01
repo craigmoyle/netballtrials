@@ -145,15 +145,30 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
       if (nextMailer) deps.mailer = nextMailer;
     };
   };
+  let loadedInfisicalUpdatedAt: number | null = null;
+  let integrationRefresh: Promise<void> | null = null;
   const reloadIntegrations = async () => {
-    if (readsInfisical) {
-      const saved = await database.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } });
-      if (saved) integrationSettings.configureConnection({
-        apiUrl: saved.apiUrl, projectId: saved.projectId, environment: saved.environment, secretPath: saved.secretPath,
-      }, saved.updatedAt);
-    }
+    const saved = readsInfisical
+      ? await database.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' } })
+      : null;
+    if (saved) integrationSettings.configureConnection({
+      apiUrl: saved.apiUrl, projectId: saved.projectId, environment: saved.environment, secretPath: saved.secretPath,
+    }, saved.updatedAt);
     const credentials = await integrationSettings.readCredentials();
     prepareIntegrationUpdate(credentials)();
+    loadedInfisicalUpdatedAt = saved?.updatedAt.getTime() ?? null;
+  };
+  const refreshIntegrationsIfChanged = async () => {
+    if (!readsInfisical) return;
+    integrationRefresh ??= (async () => {
+      try {
+        const saved = await database.infisicalConnectionSettings.findUnique({ where: { id: 'infisical' }, select: { updatedAt: true } });
+        if ((saved?.updatedAt.getTime() ?? null) !== loadedInfisicalUpdatedAt) await reloadIntegrations();
+      } catch {
+        deps.log?.warn({ code: 'integration_refresh_failed' }, 'integration_refresh_failed');
+      }
+    })().finally(() => { integrationRefresh = null; });
+    await integrationRefresh;
   };
   deps = {
     env,
@@ -198,6 +213,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   app.register(cookie);
 
   app.addHook('preHandler', async (request, reply) => {
+    await refreshIntegrationsIfChanged();
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
     if (!request.cookies?.nt_session && !request.cookies?.nt_checkin && !request.cookies?.nt_parent) return;
 
@@ -209,15 +225,19 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
   });
 
   app.addHook('onSend', async (_request, reply, payload) => {
-    reply.header('cache-control', 'no-store, max-age=0');
-    reply.header('pragma', 'no-cache');
+    if (!reply.hasHeader('cache-control')) {
+      reply.header('cache-control', 'no-store, max-age=0');
+      reply.header('pragma', 'no-cache');
+    }
     reply.header('x-content-type-options', 'nosniff');
     reply.header('x-frame-options', 'DENY');
     reply.header('referrer-policy', 'strict-origin-when-cross-origin');
     return payload;
   });
 
-  app.get('/health', async () => ({ status: 'ok', appEnv: env.APP_ENV }));
+  const health = async () => ({ status: 'ok', appEnv: env.APP_ENV });
+  app.get('/health', health);
+  app.get('/api/health', health);
 
   registerAuthRoutes(app, deps);
   registerIntegrationRoutes(app, deps);

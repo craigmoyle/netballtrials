@@ -1,16 +1,17 @@
-import type { ScheduledMessage } from '@prisma/client';
+import { Prisma, type ScheduledMessage } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import type { ScheduledMessageDTO } from '@netball-trials/types';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
-import { localDateTimeToUtc } from '../time/melbourne';
-import { EmailBatchConflictError, reconcileStaleDeliveries, retryFailedDeliveries } from './service';
+import { melbourneLocalDateTimeToUtc } from '../time/melbourne';
+import { EmailBatchConflictError, getDeliverySummary, reconcileStaleDeliveries, retryFailedDeliveries } from './service';
 import {
   getScheduledMessages, listCommunicationRecipients, previewSelectedRecipients, sendSelectedCommunication,
   type CommunicationAudience, type SelectedCommunication,
 } from './communications';
 import { unsupportedTemplateFields } from './template-renderer';
+import { sendConfirmation } from '../registrations/confirmation';
 
 const audience = z.enum(['participants', 'associations']);
 const selectedSchema = z.object({ audience, recipientIds: z.array(z.string().min(1)).max(500) });
@@ -57,13 +58,6 @@ function matchesScheduledInput(
 
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
-}
-
-function scheduledLocalToUtc(value: string): Date {
-  const [date, time] = value.split('T');
-  const parsedDate = new Date(`${date}T00:00:00.000Z`);
-  if (!Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error('invalid_local_date');
-  return localDateTimeToUtc(parsedDate, time);
 }
 
 export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -153,7 +147,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     if (unsupported.length) return reply.code(400).send({ error: 'unsupported_template_fields', fields: unsupported });
     const { id } = req.params as { id: string };
     let scheduledAt: Date;
-    try { scheduledAt = scheduledLocalToUtc(parsed.data.scheduledLocal); }
+    try { scheduledAt = melbourneLocalDateTimeToUtc(parsed.data.scheduledLocal); }
     catch { return reply.code(400).send({ error: 'invalid_schedule_time' }); }
     const batchId = parsed.data.batchId;
     const input = {
@@ -215,11 +209,34 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const parsed = retrySchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id, batchId } = req.params as { id: string; batchId: string };
-    const summary = await retryFailedDeliveries({ prisma: deps.prisma, mailer: deps.mailer }, id, batchId, parsed.data.deliveryIds, new Date(), { includeAmbiguous: parsed.data.includeAmbiguous });
+    const now = new Date();
+    const placeholders = await deps.prisma.emailLog.findMany({
+      where: {
+        eventId: id, batchId, id: { in: parsed.data.deliveryIds }, kind: 'confirmation', status: 'PENDING',
+        messagePayload: { equals: Prisma.DbNull },
+      },
+      include: { registration: { include: { event: true } } },
+    });
+    for (const delivery of placeholders) {
+      if (!delivery.registration?.qrToken) continue;
+      await sendConfirmation(
+        { prisma: deps.prisma, mailer: deps.mailer },
+        delivery.registration,
+        delivery.registration.event,
+        `${deps.env.WEB_ORIGIN}/ticket/${delivery.registration.qrToken}`,
+        { batchId },
+      );
+    }
+    const placeholderIds = new Set(placeholders.map((delivery) => delivery.id));
+    const retryIds = parsed.data.deliveryIds.filter((deliveryId) => !placeholderIds.has(deliveryId));
+    if (retryIds.length) {
+      await retryFailedDeliveries({ prisma: deps.prisma, mailer: deps.mailer }, id, batchId, retryIds, now, { includeAmbiguous: parsed.data.includeAmbiguous });
+    }
+    const summary = await getDeliverySummary(deps.prisma, batchId);
     if (summary.sent > 0 && summary.failed === 0 && summary.ambiguous === 0 && summary.pending === 0) {
       await deps.prisma.scheduledMessage.updateMany({
         where: { eventId: id, batchId, status: 'FAILED' },
-        data: { status: 'COMPLETED', completedAt: new Date(), error: null },
+        data: { status: 'COMPLETED', completedAt: now, error: null },
       });
     }
     return summary;

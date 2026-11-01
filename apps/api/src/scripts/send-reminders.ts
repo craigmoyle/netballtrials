@@ -51,7 +51,9 @@ async function main(): Promise<void> {
     console.log(
       `checkout retries${dryRun ? ' (dry run)' : ''}: ${checkouts.due} due, ${checkouts.sent} sent, ${checkouts.failed} failed, ${checkouts.ambiguous} ambiguous, ${checkouts.errors} errors`,
     );
-    if (result.errors.length > 0 || confirmations.errors > 0 || checkouts.errors > 0 || scheduled.failed > 0) process.exitCode = 1;
+    if (result.errors.length > 0 || result.failed > 0 || result.ambiguous > 0 || confirmations.errors > 0 ||
+        confirmations.failed > 0 || confirmations.ambiguous > 0 || checkouts.errors > 0 || checkouts.failed > 0 ||
+        checkouts.ambiguous > 0 || scheduled.failed > 0) process.exitCode = 1;
   } finally {
     await app.close();
   }

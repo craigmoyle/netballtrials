@@ -131,7 +131,7 @@ export function apiClient(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ token }),
       }),
-    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production' }>(baseUrl, '/health'),
+    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production' }>(baseUrl, '/api/health'),
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
@@ -278,26 +278,6 @@ export function apiClient(baseUrl: string) {
         `/api/admin/events/${eventId}/registrations/${registrationId}/withdraw`,
         { method: 'POST' },
       ),
-    getMessageRecipientCount: (eventId: string) => request<{ count: number }>(baseUrl, `/api/admin/events/${eventId}/message-recipients`),
-    sendMessage: async (eventId: string, message: { subject: string; text: string; batchId?: string }) => {
-      const response = await fetchResponse(baseUrl, `/api/admin/events/${eventId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ ...message, batchId: message.batchId ?? crypto.randomUUID() }),
-      });
-      const body = await readJson(response);
-      if (!response.ok) {
-        throw new ApiError(response.status, body?.error ?? 'request_failed');
-      }
-      return body as { batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[]; sentThisRun: number; failedThisRun: number; ambiguousThisRun: number };
-    },
-    retryMessage: (eventId: string, batchId: string, deliveryIds: string[], includeAmbiguous = false) =>
-      request<{ batchId: string; sent: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(
-        baseUrl,
-        `/api/admin/events/${eventId}/messages/${batchId}/retry`,
-        { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) },
-      ),
-    listEmailLog: (eventId: string) =>
-      request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/email-log`),
     getCommunicationRecipients: (eventId: string) =>
       request<{ participants: CommunicationRecipientDTO[]; associations: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/recipients`),
     previewCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[] }) =>

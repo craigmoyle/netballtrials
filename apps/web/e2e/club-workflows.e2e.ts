@@ -332,7 +332,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText('Nothing to review.')).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await openEventTool(page, 'Communications');
+  await openEventTool(page, 'Event communications');
   await expect(page.getByText('Scroll horizontally to review all recipient details.')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.getByRole('button', { name: 'Select visible eligible' }).click();

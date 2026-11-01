@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { prisma } from '../../db';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { INTERRUPTED_SEND, resolveStoppedDelivery } from '../../mail/lifecycle';
-import { reconcileStaleDeliveries, retryFailedDeliveries, sendEventMessage } from '../../messages/service';
+import { deliverEventMessage, reconcileStaleDeliveries, retryFailedDeliveries } from '../../messages/service';
 import { anonymizeExpiredRegistrations, type RetentionDeferral } from '../../retention/service';
 import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
+const sendEventMessage = deliverEventMessage;
 const beforeCutoff = new Date('2024-01-01T12:59:00Z');
 const afterCutoff = new Date('2024-01-01T13:01:00Z');
 const content = { subject: 'Private details', text: 'Contact Anne', html: '<p>Private</p>' };

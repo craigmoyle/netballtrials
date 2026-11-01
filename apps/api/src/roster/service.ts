@@ -19,9 +19,9 @@ function countPositions(rows: Array<{ rank1Position: Position; rank2Position: Po
   };
 }
 
-export async function getRoster(prisma: PrismaClient, eventId: string): Promise<RosterDTO | null> {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
-  if (!event) return null;
+export async function getRoster(prisma: PrismaClient, eventId: string, now = new Date()): Promise<RosterDTO | null> {
+  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, eventDate: true } });
+  if (!event || isPastRetentionCutoff(event.eventDate, now)) return null;
   const rows = await prisma.registration.findMany({
     where: { eventId, anonymizedAt: null },
     orderBy: [{ playerLastName: 'asc' }, { playerFirstName: 'asc' }],
@@ -75,7 +75,7 @@ export async function exportRosterCsv(
 ): Promise<{ csv: string; filename: string } | null> {
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, eventDate: true } });
   if (!event || isPastRetentionCutoff(event.eventDate, now)) return null;
-  const roster = await getRoster(prisma, eventId);
+  const roster = await getRoster(prisma, eventId, now);
   if (!roster) return null;
   const rows = [CSV_HEADERS, ...roster.registrations.map((row) => [
     row.playerName, row.dateOfBirth, row.parentName, row.parentEmail, row.parentMobile, row.memberAssociation,

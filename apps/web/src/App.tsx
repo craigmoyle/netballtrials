@@ -216,7 +216,7 @@ export function App() {
 
   return (
     <>
-      {appEnv === 'testing' ? <div className="environment-banner" role="status">TEST ENVIRONMENT — payments and email are simulated</div> : null}
+      {appEnv === 'testing' ? <div className="environment-banner" role="note">TEST ENVIRONMENT — payments and email are simulated</div> : null}
       <Routes>
       <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />
       <Route path="/register/:eventId" element={<PageContent><RegisterRoute client={client} /></PageContent>} />

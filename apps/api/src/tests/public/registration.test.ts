@@ -148,6 +148,34 @@ describe('POST /api/public/events/:id/registrations', () => {
     expect(mailer.sent.every((message) => message.to === 'anne@example.com' && message.subject === 'Confirm your Netball Trials email')).toBe(true);
   });
 
+  it('caps duplicate registration follow-up emails per registration', async () => {
+    await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload });
+    const duplicateResponses = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      duplicateResponses.push(await app.inject({ method: 'POST', url: `/api/public/events/${eventId}/registrations`, payload }));
+    }
+    expect(duplicateResponses.map((response) => response.statusCode)).toEqual([202, 202, 202, 202]);
+    expect(duplicateResponses.every((response) => response.json().status === 'received')).toBe(true);
+    expect(mailer.sent).toHaveLength(4);
+  });
+
+  it('shares the public registration limit across IPv6 addresses in one /64', async () => {
+    for (let index = 0; index < 10; index += 1) {
+      const response = await app.inject({
+        method: 'POST', url: `/api/public/events/${eventId}/registrations`,
+        remoteAddress: `2001:db8:abcd:1234::1`,
+        payload: { ...payload, playerFirstName: `Player${index}` },
+      });
+      expect(response.statusCode).toBe(202);
+    }
+    const nextAddress = await app.inject({
+      method: 'POST', url: `/api/public/events/${eventId}/registrations`,
+      remoteAddress: '2001:db8:abcd:1234::2',
+      payload: { ...payload, playerFirstName: 'PlayerNext' },
+    });
+    expect(nextAddress.statusCode).toBe(429);
+  });
+
   it('resends a paid confirmation only to the previously stored parent address', async () => {
     await prisma.registration.create({
       data: registrationFixture(eventId, { status: 'PAID', checkoutSessionId: 'fake_existing_paid', qrToken: 'r'.repeat(43) }),

@@ -69,8 +69,7 @@ export async function sendDueReminders(
           }],
         },
         now,
-        'reminder',
-        { batchId, maxAttempts: AUTOMATIC_RETRY_LIMIT },
+        { kind: 'reminder', batchId, maxAttempts: AUTOMATIC_RETRY_LIMIT },
       );
       sent += result.sentThisRun;
       failed += result.failedThisRun;

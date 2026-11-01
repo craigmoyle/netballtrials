@@ -26,7 +26,7 @@ export class EmailBatchConflictError extends Error {
 
 type DeliveryDeps = { prisma: PrismaClient; mailer: EmailProvider };
 type OutboundContent = Omit<EmailMessage, 'to'>;
-type DeliveryOptions = { batchId?: string; senderUserId?: string; maxAttempts?: number };
+type DeliveryOptions = { batchId?: string; senderUserId?: string; maxAttempts?: number; kind?: string };
 type DeliveryRow = Prisma.EmailLogGetPayload<{}>;
 type Recipient = { email: string; registrationId: string | null };
 type StoredPayload = {
@@ -349,28 +349,9 @@ export async function deliverEventMessage(
   eventId: string,
   message: OutboundContent,
   now: Date,
-  kind: string,
   options: DeliveryOptions = {},
 ): Promise<DeliverySummary> {
-  return sendBatch(deps, eventId, undefined, message, now, kind, options);
-}
-
-export async function countEventMessageRecipients(prisma: PrismaClient, eventId: string): Promise<number> {
-  const registrations = await prisma.registration.findMany({
-    where: { eventId, status: 'PAID' },
-    select: { parentEmail: true },
-  });
-  return new Set(registrations.map((registration) => registration.parentEmail.trim().toLowerCase())).size;
-}
-
-export async function sendEventMessage(
-  deps: DeliveryDeps,
-  eventId: string,
-  message: OutboundContent,
-  now: Date,
-  options: DeliveryOptions = {},
-): Promise<DeliverySummary> {
-  return deliverEventMessage(deps, eventId, message, now, 'message', options);
+  return sendBatch(deps, eventId, undefined, message, now, options.kind ?? 'message', options);
 }
 
 export async function sendEmailToRecipient(
