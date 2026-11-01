@@ -845,8 +845,11 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   expect(prefix(draft)).toEqual(prefix(publishedBefore));
   await page.getByRole('button', { name: 'Publish revision' }).click();
   await expect(page.getByText(/Published revision 2/)).toBeVisible();
+  const publishedAfterResponse = await adminGet(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}/plan?published=true`);
+  expect(publishedAfterResponse.status()).toBe(200);
+  const publishedAfter = await publishedAfterResponse.json();
   await workspace(page).getByRole('link', { name: 'Print selector sheets' }).click();
-  await expect(page.locator('.sheet-preview .sheet')).toHaveCount(publishedBefore.rounds * 3);
+  await expect(page.locator('.sheet-preview .sheet')).toHaveCount(publishedAfter.rounds * 3);
   await expect(page.getByRole('button', { name: 'Print selector sheets' })).toBeVisible();
   const selectorText = await page.locator('.sheet-preview').innerText();
   for (const value of ['Team A', 'Team B', 'White', 'Black', 'Grey', 'Orange', 'Number', 'Choices', 'Rating', 'Notes/Feedback']) expect(selectorText).toContain(value);
@@ -863,7 +866,7 @@ test('planner previews, publishes, regenerates without changing the prefix, and 
   expect(await page.locator('.sheets-page > header').evaluate((element) => getComputedStyle(element).display)).toBe('none');
   const selectorPdf = await page.pdf({ path: '/tmp/netball-e2e-selector-sheets.pdf', preferCSSPageSize: true, printBackground: true, displayHeaderFooter: false });
   const selectorPdfText = Buffer.from(selectorPdf).toString('latin1');
-  expect(selectorPdfText.match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(21);
+  expect(selectorPdfText.match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(publishedAfter.rounds * 3);
   const selectorMediaBox = selectorPdfText.match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/);
   expect(selectorMediaBox).not.toBeNull();
   expect(Number(selectorMediaBox?.[1])).toBeCloseTo(842, 0);
