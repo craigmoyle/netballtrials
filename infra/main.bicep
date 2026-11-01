@@ -47,7 +47,7 @@ param infisicalUniversalAuthClientId string
 param infisicalUniversalAuthClientSecret string
 
 @description('Infisical secret path scoped to the TEST integration records.')
-param infisicalPath string = '/netball-trials-test'
+param infisicalPath string = '/'
 
 @description('Infisical Cloud API endpoint.')
 @allowed([
