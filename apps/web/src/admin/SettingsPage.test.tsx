@@ -73,6 +73,25 @@ describe('SettingsPage', () => {
     expect(screen.queryByText('sk_test_new')).not.toBeInTheDocument();
   });
 
+  it('shows optional Infisical rotation controls and test-only Stripe guidance in hosted TEST', async () => {
+    const testStatus = { ...status, infisical: { ...status.infisical, environment: 'test', secretPath: '/' } };
+    renderSettings({
+      getIntegrationSettings: vi.fn().mockResolvedValue(testStatus),
+      getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
+      getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true }),
+      listTestEmailOutbox: vi.fn().mockResolvedValue([]),
+      clearTestEmailOutbox: vi.fn().mockResolvedValue(undefined),
+      replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
+    });
+
+    expect(await screen.findByText(/TEST must use a Stripe test key beginning with/i)).toBeInTheDocument();
+    expect(screen.getByText(/Optional rotation: these credentials are stored in Infisical/i)).toBeInTheDocument();
+    expect(screen.getByText(/Optional rotation: these OAuth credentials are stored in Infisical/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Production must use a live Stripe key/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Replace Stripe credentials' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Replace Gmail credentials' })).toBeDisabled();
+  });
+
   it('tests and saves Infisical Cloud connection details without collecting bootstrap credentials', async () => {
     const savedStatus = { ...status, infisical: { ...status.infisical, apiUrl: 'https://eu.infisical.com', projectId: 'new-project', environment: 'test', secretPath: '/netball-trials' } };
     const client = {

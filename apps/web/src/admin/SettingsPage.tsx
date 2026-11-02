@@ -212,8 +212,8 @@ export function SettingsPage({ client }: { client: Client }) {
       <section className="site-settings-section" aria-labelledby="stripe-integration-heading">
         <h2 id="stripe-integration-heading">Stripe payments</h2>
         <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'Credential status is unavailable until Infisical is reachable.' : settings?.stripe.configured ? 'Credentials are configured.' : 'Credentials are not configured.'}{settings?.stripe.updatedAt ? ` Last updated ${new Date(settings.stripe.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>
-        <p>Saved values are write-only. Replacing them updates the secret store; the current values are never displayed.</p>
-        <p>Production must use a live Stripe secret key beginning with <code>sk_live_</code>.</p>
+        {settings?.mode === 'infisical' ? <p>Optional rotation: these credentials are stored in Infisical. Leave these fields blank unless replacing them; current values are never displayed.</p> : null}
+        {settings?.mode === 'infisical' ? <p>{testIntegrationsEnabled ? <>TEST must use a Stripe test key beginning with <code>sk_test_</code>.</> : <>Production must use a live Stripe key beginning with <code>sk_live_</code>.</>}</p> : null}
         {settings?.mode === 'infisical' ? (
           <form onSubmit={(event) => void saveStripe(event)}>
             <label htmlFor="stripe-secret-key">New Stripe secret key</label>
@@ -227,7 +227,7 @@ export function SettingsPage({ client }: { client: Client }) {
       <section className="site-settings-section" aria-labelledby="gmail-integration-heading">
         <h2 id="gmail-integration-heading">Gmail email</h2>
         <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'OAuth credential status is unavailable until Infisical is reachable.' : settings?.gmail.configured ? 'OAuth credentials are configured.' : 'OAuth credentials are not configured.'}{settings?.gmail.updatedAt ? ` Last updated ${new Date(settings.gmail.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>
-        <p>Saved values are write-only. Re-enter all three OAuth values to replace the current Gmail integration.</p>
+        {settings?.mode === 'infisical' ? <p>Optional rotation: these OAuth credentials are stored in Infisical. Re-enter all three values only when replacing them; current values are never displayed.</p> : null}
         {settings?.mode === 'infisical' ? (
           <form onSubmit={(event) => void saveGmail(event)}>
             <label htmlFor="gmail-client-id">New Gmail OAuth client ID</label>

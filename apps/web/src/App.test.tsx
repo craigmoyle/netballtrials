@@ -5,6 +5,7 @@ import { App } from './App';
 
 const apiMocks = vi.hoisted(() => ({
   getRuntimeEnvironment: vi.fn(),
+  verify: vi.fn(),
   me: vi.fn(),
   logout: vi.fn(),
   listEvents: vi.fn(),
@@ -67,6 +68,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'production', testAccessRequired: false, testIntegrationsEnabled: false });
+  apiMocks.verify.mockResolvedValue({ status: 'signed_in' });
   apiMocks.logout.mockResolvedValue(undefined);
   apiMocks.listPublicEvents.mockResolvedValue([]);
   apiMocks.listPublicAssociations.mockResolvedValue([]);
@@ -181,6 +183,22 @@ describe('App route boundaries', () => {
     expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('lands a verified Admin in the workspace with Settings and Events navigation', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'cmoyle@gmail.com' } });
+    apiMocks.listEvents.mockResolvedValue([]);
+    const router = renderApp('/admin/verify#token=magic-token-012345');
+
+    expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
+    expect(apiMocks.verify).toHaveBeenCalledWith('magic-token-012345');
+    const navigation = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(navigation).getByRole('link', { name: 'Events' })).toBeInTheDocument();
+    fireEvent.click(within(navigation).getByText('Club setup'));
+    expect(within(navigation).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/admin/settings');
+    expect(router.state.location.pathname).toBe('/admin/events');
   });
 
   it('sends a signed-out Admin menu click to email sign in', async () => {

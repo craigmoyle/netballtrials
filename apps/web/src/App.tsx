@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient, type ApiClient as Client } from './api/client';
 import { AdminLayout } from './AdminLayout';
 import { EventWorkflowNav } from './admin/EventWorkflowNav';
@@ -216,6 +216,7 @@ function DayOfRegistrationRoute({ client }: { client: Client }) {
 
 export function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [appEnv, setAppEnv] = useState<'testing' | 'production' | null>(null);
   const [testIntegrationsEnabled, setTestIntegrationsEnabled] = useState(false);
   const [testAccessRequired, setTestAccessRequired] = useState(false);
@@ -281,7 +282,7 @@ export function App() {
         element={<><CheckInLayout client={client} /><PageContent showPublicHeader={false}><LookupPanel client={client} /></PageContent></>}
       />
       <Route path="/admin/login" element={<PageContent><LoginPage client={client} /></PageContent>} />
-      <Route path="/admin/verify" element={<PageContent><VerifyPage client={client} onSignedIn={() => undefined} /></PageContent>} />
+      <Route path="/admin/verify" element={<PageContent><VerifyPage client={client} onSignedIn={() => navigate('/admin/events', { replace: true })} /></PageContent>} />
       <Route path="/admin" element={<ProtectedAdmin client={client} />}>
         <Route index element={<Navigate to="events" replace />} />
         <Route path="events" element={<EventsPage client={client} />} />
