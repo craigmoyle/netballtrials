@@ -135,6 +135,15 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --name "$API_CONTAINER_APP_NAME" \
             --image "$ACR_LOGIN_SERVER/netballtrials/api:${GITHUB_SHA}"
+          # Keep Azure Static Web Apps linked-backend authentication enabled, but let
+          # the API's own allowlist/auth hooks handle anonymous health and signed webhook routes.
+          az containerapp auth update \
+            --subscription "$SUBSCRIPTION_ID" \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$API_CONTAINER_APP_NAME" \
+            --unauthenticated-client-action AllowAnonymous \
+            --require-https true \
+            --yes --only-show-errors --output none
           api_fqdn=$(az containerapp show \
             --subscription "$SUBSCRIPTION_ID" \
             --resource-group "$RESOURCE_GROUP" \
