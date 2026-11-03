@@ -134,6 +134,7 @@ jobs:
             --subscription "$SUBSCRIPTION_ID" \
             --resource-group "$RESOURCE_GROUP" \
             --name "$API_CONTAINER_APP_NAME" \
+            --set-env-vars 'TEST_EMAIL_ALLOWLIST=secretref:test-admin-emails' \
             --image "$ACR_LOGIN_SERVER/netballtrials/api:${GITHUB_SHA}"
           # Keep Azure Static Web Apps linked-backend authentication enabled, but let
           # the API's own allowlist/auth hooks handle anonymous health and signed webhook routes.

@@ -18,13 +18,14 @@ describe('TestEmailOutboxPanel', () => {
     };
     render(<TestEmailOutboxPanel client={client as any} />);
 
+    expect(await screen.findByText(/Messages to non-Admin addresses are simulated here; allowlisted Admins receive real email from the TEST mailbox/i)).toBeInTheDocument();
     expect(await screen.findByText(/Your Admin sign-in link — nicole@example.test/)).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'https://attacker.example/' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy test email link' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/admin/verify#token=short-lived`));
-    expect(await screen.findByText('Test email link copied. Share it directly with the allowlisted tester.')).toBeInTheDocument();
+    expect(await screen.findByText('Test email link copied. Share it directly with the intended recipient.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear simulated outbox' }));
     await waitFor(() => expect(client.clearTestEmailOutbox).toHaveBeenCalledOnce());

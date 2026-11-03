@@ -263,7 +263,7 @@ export function App() {
 
   return (
     <>
-      {appEnv === 'testing' ? <div className="environment-banner" role="note">{testIntegrationsEnabled ? 'TEST ENVIRONMENT — Stripe test mode; email is limited to the approved test mailbox' : 'TEST ENVIRONMENT — payments and email are simulated'}</div> : null}
+      {appEnv === 'testing' ? <div className="environment-banner" role="note">{testIntegrationsEnabled ? 'TEST ENVIRONMENT — Stripe test mode; real email is sent only to allowlisted Admins from the test mailbox' : 'TEST ENVIRONMENT — payments and email are simulated'}</div> : null}
       <Suspense fallback={<p role="status">Loading page…</p>}>
         <Routes>
       <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />

@@ -76,11 +76,14 @@ const envSchema = z
     if (testIntegrationsEnabled) {
       if (provider !== 'stripe') context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Test integration mode requires PAYMENT_PROVIDER=stripe with Stripe test credentials' });
       if (hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_test_')) context.addIssue({ code: 'custom', path: ['STRIPE_SECRET_KEY'], message: 'Test integration mode requires an sk_test_ Stripe key' });
-      if (testEmailAllowlist.length !== 1 || testEmailAllowlist[0] !== 'cmoyle@gmail.com' || !testAdminEmails.includes('cmoyle@gmail.com')) {
-        context.addIssue({ code: 'custom', path: ['TEST_EMAIL_ALLOWLIST'], message: 'Only cmoyle@gmail.com may receive real test email and must be in the Admin allowlist' });
+      const allowlistMatchesAdmins = testEmailAllowlist.length === testAdminEmails.length &&
+        new Set(testEmailAllowlist).size === testEmailAllowlist.length &&
+        testAdminEmails.every((email) => testEmailAllowlist.includes(email));
+      if (!allowlistMatchesAdmins) {
+        context.addIssue({ code: 'custom', path: ['TEST_EMAIL_ALLOWLIST'], message: 'TEST_EMAIL_ALLOWLIST must match the TEST Admin allowlist so only Admins receive real test email' });
       }
-      if (!testEmailAllowlist.includes(env.MAIL_FROM.toLowerCase()) || !testEmailAllowlist.includes(env.MAIL_REPLY_TO.toLowerCase())) {
-        context.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'Test sender and reply-to addresses must be included in TEST_EMAIL_ALLOWLIST' });
+      if (env.MAIL_FROM.toLowerCase() !== 'cmoyle@gmail.com' || env.MAIL_REPLY_TO.toLowerCase() !== 'cmoyle@gmail.com') {
+        context.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'Hosted TEST email must use the cmoyle@gmail.com test mailbox as sender and reply-to' });
       }
     }
     const hasInfisicalConfig = Boolean(env.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID && env.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && env.INFISICAL_PROJECT_ID && env.INFISICAL_ENVIRONMENT);

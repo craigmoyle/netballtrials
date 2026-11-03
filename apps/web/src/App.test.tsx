@@ -100,12 +100,12 @@ describe('Deployment environment banner', () => {
     expect(await screen.findByText(/TEST ENVIRONMENT — payments and email are simulated/i)).toBeInTheDocument();
   });
 
-  it('explains that hosted test integrations use Stripe test mode and restricted email delivery', async () => {
+  it('explains that hosted test integrations use Stripe test mode and restrict real email to Admins', async () => {
     apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
     apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'cmoyle@gmail.com' } });
     apiMocks.listPublicEvents.mockResolvedValue([]);
     renderApp('/');
-    expect(await screen.findByRole('note')).toHaveTextContent(/TEST ENVIRONMENT — Stripe test mode; email is limited to the approved test mailbox/i);
+    expect(await screen.findByRole('note')).toHaveTextContent(/TEST ENVIRONMENT — Stripe test mode; real email is sent only to allowlisted Admins from the test mailbox/i);
   });
 });
 

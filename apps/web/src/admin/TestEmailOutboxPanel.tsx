@@ -34,7 +34,7 @@ export function TestEmailOutboxPanel({ client }: { client: Client }) {
     setNotice(null);
     try {
       await navigator.clipboard.writeText(url);
-      setNotice('Test email link copied. Share it directly with the allowlisted tester.');
+      setNotice('Test email link copied. Share it directly with the intended recipient.');
     } catch { setError('Could not copy the link. Select it from the message above and copy it manually.'); }
   }
 
@@ -53,7 +53,7 @@ export function TestEmailOutboxPanel({ client }: { client: Client }) {
   return (
     <section className="site-settings-section test-email-outbox" aria-labelledby="test-email-outbox-heading">
       <h2 id="test-email-outbox-heading">Simulated email outbox</h2>
-      <p>Messages to any address outside the TEST email allowlist are saved here, not sent. Links keep their normal expiry; outbox entries expire after 24 hours.</p>
+      <p>Messages to non-Admin addresses are simulated here; allowlisted Admins receive real email from the TEST mailbox. Links keep their normal expiry; outbox entries expire after 24 hours.</p>
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {loading ? <p role="status">Loading simulated messages…</p> : messages.length === 0 ? <p>No simulated messages.</p> : (

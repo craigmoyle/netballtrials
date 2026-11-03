@@ -173,7 +173,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-07-01' = {
             { name: 'API_PUBLIC_URL', value: apiUrl }
             { name: 'SESSION_COOKIE_SECURE', value: 'true' }
             { name: 'TEST_ADMIN_EMAILS', secretRef: 'test-admin-emails' }
-            { name: 'TEST_EMAIL_ALLOWLIST', value: 'cmoyle@gmail.com' }
+            { name: 'TEST_EMAIL_ALLOWLIST', secretRef: 'test-admin-emails' }
             { name: 'MAIL_FROM', value: 'cmoyle@gmail.com' }
             { name: 'MAIL_REPLY_TO', value: 'cmoyle@gmail.com' }
             { name: 'INFISICAL_API_URL', value: infisicalApiUrl }

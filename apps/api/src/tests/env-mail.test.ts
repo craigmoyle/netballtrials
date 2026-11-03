@@ -22,7 +22,7 @@ const hostedTest = {
   API_PUBLIC_URL: 'https://api.test.example',
   ENABLE_TEST_INTEGRATIONS: 'true',
   TEST_ADMIN_EMAILS: 'cmoyle@gmail.com,nicole@example.test',
-  TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com',
+  TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,nicole@example.test',
   MAIL_FROM: 'cmoyle@gmail.com',
   MAIL_REPLY_TO: 'cmoyle@gmail.com',
   INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'test-client-id',
@@ -38,7 +38,7 @@ describe('deployment environment config', () => {
     expect(env).toMatchObject({
       APP_ENV: 'testing', PAYMENT_PROVIDER: 'stripe', ENABLE_TEST_INTEGRATIONS: true,
       TEST_ADMIN_EMAILS: ['cmoyle@gmail.com', 'nicole@example.test'],
-      TEST_EMAIL_ALLOWLIST: ['cmoyle@gmail.com'], MAIL_FROM: 'cmoyle@gmail.com',
+      TEST_EMAIL_ALLOWLIST: ['cmoyle@gmail.com', 'nicole@example.test'], MAIL_FROM: 'cmoyle@gmail.com',
     });
   });
 
@@ -48,11 +48,15 @@ describe('deployment environment config', () => {
     expect(() => loadEnv({ ...hostedTest, GMAIL_REFRESH_TOKEN: 'direct-secret' } as NodeJS.ProcessEnv)).toThrow(/Infisical test namespace/i);
   });
 
-  it('allows only cmoyle to receive real test email and enforces a five-admin maximum', () => {
-    expect(() => loadEnv({ ...hostedTest, TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,nicole@example.test' } as NodeJS.ProcessEnv)).toThrow(/Only cmoyle@gmail.com/i);
-    expect(() => loadEnv({ ...hostedTest, TEST_EMAIL_ALLOWLIST: 'other@example.test' } as NodeJS.ProcessEnv)).toThrow(/Only cmoyle@gmail.com/i);
+  it('delivers real test email only to the full Admin allowlist and keeps the test mailbox as sender', () => {
+    expect(loadEnv({ ...hostedTest, TEST_ADMIN_EMAILS: 'cmoyle@gmail.com,nicole@example.test', TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,nicole@example.test' } as NodeJS.ProcessEnv).TEST_EMAIL_ALLOWLIST)
+      .toEqual(['cmoyle@gmail.com', 'nicole@example.test']);
+    const fiveAdmins = 'cmoyle@gmail.com,a@example.test,b@example.test,c@example.test,d@example.test';
+    expect(loadEnv({ ...hostedTest, TEST_ADMIN_EMAILS: fiveAdmins, TEST_EMAIL_ALLOWLIST: fiveAdmins } as NodeJS.ProcessEnv).TEST_EMAIL_ALLOWLIST).toHaveLength(5);
+    expect(() => loadEnv({ ...hostedTest, TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com' } as NodeJS.ProcessEnv)).toThrow(/match the TEST Admin allowlist/i);
+    expect(() => loadEnv({ ...hostedTest, TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,other@example.test' } as NodeJS.ProcessEnv)).toThrow(/match the TEST Admin allowlist/i);
     expect(() => loadEnv({ ...hostedTest, TEST_ADMIN_EMAILS: 'a@x.test,b@x.test,c@x.test,d@x.test,e@x.test,f@x.test' } as NodeJS.ProcessEnv)).toThrow(/one to five/i);
-    expect(() => loadEnv({ ...hostedTest, MAIL_REPLY_TO: 'other@example.test' } as NodeJS.ProcessEnv)).toThrow(/TEST_EMAIL_ALLOWLIST/i);
+    expect(() => loadEnv({ ...hostedTest, MAIL_REPLY_TO: 'other@example.test' } as NodeJS.ProcessEnv)).toThrow(/cmoyle@gmail.com/i);
   });
 
   it('requires an Admin allowlist for every hosted TEST deployment, even when providers stay fake', () => {
