@@ -18,7 +18,8 @@
     "checkout:cutover": "tsx src/scripts/expire-unverified-checkouts.ts",
     "mail:reconcile": "tsx src/scripts/reconcile-delivery.ts",
     "admin:bootstrap": "tsx src/scripts/bootstrap-admin.ts",
-    "seed:test-dataset": "tsx src/scripts/seed-test-dataset.ts"
+    "seed:test-dataset": "tsx src/scripts/seed-test-dataset.ts",
+    "rotate:test-db-password": "tsx src/scripts/rotate-test-db-password.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",

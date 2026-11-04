@@ -15,7 +15,8 @@
     "dev:web": "npm run dev --workspace @netball-trials/web",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspace @netball-trials/web",
-    "seed:test-dataset": "npm run seed:test-dataset --workspace @netball-trials/api",
+    "seed:test-dataset": "npm run seed:test-dataset --workspace=@netball-trials/api",
+    "rotate:test-db-password": "npm run rotate:test-db-password --workspace=@netball-trials/api",
     "build": "npm run build --workspaces --if-present"
   },
   "allowScripts": {
