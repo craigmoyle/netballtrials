@@ -14,11 +14,6 @@ export function SettingsPage({ client }: { client: Client }) {
   const [infisicalProjectId, setInfisicalProjectId] = useState('');
   const [infisicalEnvironment, setInfisicalEnvironment] = useState('');
   const [infisicalSecretPath, setInfisicalSecretPath] = useState('/');
-  const [stripeSecretKey, setStripeSecretKey] = useState('');
-  const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
-  const [gmailClientId, setGmailClientId] = useState('');
-  const [gmailClientSecret, setGmailClientSecret] = useState('');
-  const [gmailRefreshToken, setGmailRefreshToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,47 +83,6 @@ export function SettingsPage({ client }: { client: Client }) {
     }
   }
 
-  async function saveStripe(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!stripeSecretKey.trim() || !stripeWebhookSecret.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      setSettings(await client.replaceStripeIntegration({ secretKey: stripeSecretKey.trim(), webhookSecret: stripeWebhookSecret.trim() }));
-      setStripeSecretKey('');
-      setStripeWebhookSecret('');
-      setNotice('Stripe credentials replaced. Saved values are not shown here.');
-    } catch {
-      setError('Could not update Stripe credentials. Check the values and Infisical configuration, then retry.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveGmail(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!gmailClientId.trim() || !gmailClientSecret.trim() || !gmailRefreshToken.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      setSettings(await client.replaceGmailIntegration({
-        clientId: gmailClientId.trim(),
-        clientSecret: gmailClientSecret.trim(),
-        refreshToken: gmailRefreshToken.trim(),
-      }));
-      setGmailClientId('');
-      setGmailClientSecret('');
-      setGmailRefreshToken('');
-      setNotice('Gmail credentials replaced. Saved values are not shown here.');
-    } catch {
-      setError('Could not update Gmail credentials. Check the values and Infisical configuration, then retry.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (loading) return <p role="status">Loading site settings…</p>;
 
   return (
@@ -153,7 +107,8 @@ export function SettingsPage({ client }: { client: Client }) {
           <h2 id="infisical-integration-heading">Infisical secret manager</h2>
           <p>Region, project, environment and path are stored as non-secret configuration. The Universal Auth client ID and secret stay in deployment secret settings and are never shown or stored in the application database.</p>
           <p>{settings.infisical.connected ? 'Infisical is reachable with the current settings.' : 'Infisical could not be reached with the current settings; update them below to restore the connection.'}</p>
-          <p>Test and save requires both Stripe and Gmail secret records to exist in the selected project, environment and path.</p>
+          <p>Stripe and Gmail credentials are managed in Infisical, not on this page.</p>
+          {settings.infisical.connected ? <p>Stripe credentials: {settings.stripe.configured ? 'configured' : 'missing'}. Gmail OAuth credentials: {settings.gmail.configured ? 'configured' : 'missing'}.</p> : null}
           {settings.infisical.updatedAt ? <p>Infisical connection or integration settings last updated {new Date(settings.infisical.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.</p> : null}
           <form onSubmit={(event) => void saveInfisical(event)}>
             <label htmlFor="infisical-api-url">Infisical Cloud region</label>
@@ -211,37 +166,7 @@ export function SettingsPage({ client }: { client: Client }) {
         {automaticEmail?.updatedAt ? <p>Last updated {new Date(automaticEmail.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.</p> : null}
       </section>
       {testIntegrationsEnabled ? <TestEmailOutboxPanel client={client} /> : null}
-      <section className="site-settings-section" aria-labelledby="stripe-integration-heading">
-        <h2 id="stripe-integration-heading">Stripe payments</h2>
-        <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'Credential status is unavailable until Infisical is reachable.' : settings?.stripe.configured ? 'Credentials are configured.' : 'Credentials are not configured.'}{settings?.stripe.updatedAt ? ` Last updated ${new Date(settings.stripe.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>
-        {settings?.mode === 'infisical' ? <p>Optional rotation: these credentials are stored in Infisical. Leave these fields blank unless replacing them; current values are never displayed.</p> : null}
-        {settings?.mode === 'infisical' ? <p>{testIntegrationsEnabled ? <>TEST must use a Stripe test key beginning with <code>sk_test_</code>.</> : <>Production must use a live Stripe key beginning with <code>sk_live_</code>.</>}</p> : null}
-        {settings?.mode === 'infisical' ? (
-          <form onSubmit={(event) => void saveStripe(event)}>
-            <label htmlFor="stripe-secret-key">New Stripe secret key</label>
-            <input id="stripe-secret-key" type="password" autoComplete="new-password" value={stripeSecretKey} onChange={(event) => setStripeSecretKey(event.target.value)} />
-            <label htmlFor="stripe-webhook-secret">New Stripe webhook signing secret</label>
-            <input id="stripe-webhook-secret" type="password" autoComplete="new-password" value={stripeWebhookSecret} onChange={(event) => setStripeWebhookSecret(event.target.value)} />
-            <button type="submit" disabled={busy || !settings.infisical.connected || !stripeSecretKey.trim() || !stripeWebhookSecret.trim()}>{busy ? 'Saving…' : 'Replace Stripe credentials'}</button>
-          </form>
-        ) : null}
-      </section>
-      <section className="site-settings-section" aria-labelledby="gmail-integration-heading">
-        <h2 id="gmail-integration-heading">Gmail email</h2>
-        <p>{settings?.mode === 'infisical' && !settings.infisical.connected ? 'OAuth credential status is unavailable until Infisical is reachable.' : settings?.gmail.configured ? 'OAuth credentials are configured.' : 'OAuth credentials are not configured.'}{settings?.gmail.updatedAt ? ` Last updated ${new Date(settings.gmail.updatedAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}.` : ''}</p>
-        {settings?.mode === 'infisical' ? <p>Optional rotation: these OAuth credentials are stored in Infisical. Re-enter all three values only when replacing them; current values are never displayed.</p> : null}
-        {settings?.mode === 'infisical' ? (
-          <form onSubmit={(event) => void saveGmail(event)}>
-            <label htmlFor="gmail-client-id">New Gmail OAuth client ID</label>
-            <input id="gmail-client-id" type="password" autoComplete="new-password" value={gmailClientId} onChange={(event) => setGmailClientId(event.target.value)} />
-            <label htmlFor="gmail-client-secret">New Gmail OAuth client secret</label>
-            <input id="gmail-client-secret" type="password" autoComplete="new-password" value={gmailClientSecret} onChange={(event) => setGmailClientSecret(event.target.value)} />
-            <label htmlFor="gmail-refresh-token">New Gmail OAuth refresh token</label>
-            <input id="gmail-refresh-token" type="password" autoComplete="new-password" value={gmailRefreshToken} onChange={(event) => setGmailRefreshToken(event.target.value)} />
-            <button type="submit" disabled={busy || !settings.infisical.connected || !gmailClientId.trim() || !gmailClientSecret.trim() || !gmailRefreshToken.trim()}>{busy ? 'Saving…' : 'Replace Gmail credentials'}</button>
-          </form>
-        ) : null}
-      </section>
+
     </section>
   );
 }

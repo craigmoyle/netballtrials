@@ -293,8 +293,6 @@ export function apiClient(baseUrl: string) {
     listTestEmailOutbox: () => request<TestEmailOutboxDTO[]>(baseUrl, '/api/admin/test-email-outbox'),
     clearTestEmailOutbox: () => request<void>(baseUrl, '/api/admin/test-email-outbox', { method: 'DELETE' }),
     updateInfisicalConnection: (input: { apiUrl: string; projectId: string; environment: string; secretPath: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/infisical', { method: 'PUT', body: JSON.stringify(input) }),
-    replaceStripeIntegration: (input: { secretKey: string; webhookSecret: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/stripe', { method: 'PUT', body: JSON.stringify(input) }),
-    replaceGmailIntegration: (input: { clientId: string; clientSecret: string; refreshToken: string }) => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations/gmail', { method: 'PUT', body: JSON.stringify(input) }),
     listSiteAssociationCampaigns: () => request<SiteAssociationCampaignDTO[]>(baseUrl, '/api/admin/communications/site/campaigns'),
     previewSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; subject: string; text: string }) =>
       request<SiteAssociationCommunicationPreviewDTO & { count: number }>(baseUrl, '/api/admin/communications/site/preview', { method: 'POST', body: JSON.stringify(input) }),

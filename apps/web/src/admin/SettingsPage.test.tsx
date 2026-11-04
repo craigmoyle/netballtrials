@@ -55,7 +55,6 @@ describe('SettingsPage', () => {
       getIntegrationSettings: vi.fn().mockResolvedValue(status),
       getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
       updateAutomaticEmailSettings: saved,
-      replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
     };
     renderSettings(client);
 
@@ -75,26 +74,19 @@ describe('SettingsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/Automatic email settings saved/i);
   });
 
-  it('lets Admins replace integration credentials without revealing saved values', async () => {
-    const client = {
+  it('shows provider status from Infisical without exposing credential fields', async () => {
+    renderSettings({
       getIntegrationSettings: vi.fn().mockResolvedValue(status),
       getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
-      replaceStripeIntegration: vi.fn().mockResolvedValue(status),
-      replaceGmailIntegration: vi.fn().mockResolvedValue(status),
-    };
-    renderSettings(client);
+    });
 
-    expect((await screen.findAllByText(/credentials are configured\. Last updated/i)).length).toBe(2);
-    fireEvent.change(screen.getByLabelText('New Stripe secret key'), { target: { value: 'sk_test_new' } });
-    fireEvent.change(screen.getByLabelText('New Stripe webhook signing secret'), { target: { value: 'whsec_new' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Replace Stripe credentials' }));
-    await waitFor(() => expect(client.replaceStripeIntegration).toHaveBeenCalledWith({ secretKey: 'sk_test_new', webhookSecret: 'whsec_new' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Stripe credentials replaced. Saved values are not shown here.');
-    expect(screen.getByLabelText('New Stripe secret key')).toHaveValue('');
-    expect(screen.queryByText('sk_test_new')).not.toBeInTheDocument();
+    expect(await screen.findByText('Stripe credentials: configured. Gmail OAuth credentials: configured.')).toBeInTheDocument();
+    expect(screen.getByText(/Stripe and Gmail credentials are managed in Infisical, not on this page/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/New Stripe secret key|New Gmail OAuth/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Replace (Stripe|Gmail) credentials/i })).not.toBeInTheDocument();
   });
 
-  it('shows optional Infisical rotation controls and test-only Stripe guidance in hosted TEST', async () => {
+  it('shows Infisical credential status without Stripe or Gmail edit controls in hosted TEST', async () => {
     const testStatus = { ...status, infisical: { ...status.infisical, environment: 'test', secretPath: '/' } };
     renderSettings({
       getIntegrationSettings: vi.fn().mockResolvedValue(testStatus),
@@ -102,15 +94,12 @@ describe('SettingsPage', () => {
       getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true }),
       listTestEmailOutbox: vi.fn().mockResolvedValue([]),
       clearTestEmailOutbox: vi.fn().mockResolvedValue(undefined),
-      replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
     });
 
-    expect(await screen.findByText(/TEST must use a Stripe test key beginning with/i)).toBeInTheDocument();
-    expect(screen.getByText(/Optional rotation: these credentials are stored in Infisical/i)).toBeInTheDocument();
-    expect(screen.getByText(/Optional rotation: these OAuth credentials are stored in Infisical/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Production must use a live Stripe key/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Replace Stripe credentials' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Replace Gmail credentials' })).toBeDisabled();
+    expect(await screen.findByText('Stripe credentials: configured. Gmail OAuth credentials: configured.')).toBeInTheDocument();
+    expect(screen.getByText(/Stripe and Gmail credentials are managed in Infisical, not on this page/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/New Stripe secret key|New Gmail OAuth/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Replace (Stripe|Gmail) credentials/i })).not.toBeInTheDocument();
   });
 
   it('tests and saves Infisical Cloud connection details without collecting bootstrap credentials', async () => {
@@ -119,7 +108,6 @@ describe('SettingsPage', () => {
       getIntegrationSettings: vi.fn().mockResolvedValue(status),
       getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
       updateInfisicalConnection: vi.fn().mockResolvedValue(savedStatus),
-      replaceStripeIntegration: vi.fn(), replaceGmailIntegration: vi.fn(),
     };
     renderSettings(client);
 

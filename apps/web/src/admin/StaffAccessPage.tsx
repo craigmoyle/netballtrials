@@ -38,7 +38,7 @@ export function StaffAccessPage({ client, embedded = false }: StaffAccessPagePro
     try {
       await client.inviteStaff(email.trim());
       setEmail('');
-      setMessage('Invitation sent. They can request their own sign-in links from Staff sign-in whenever they need one.');
+      setMessage('Invitation sent. They can request their own sign-in links from Admin sign-in whenever they need one.');
       await loadAdmins();
     } catch (reason) {
       setError(reason instanceof ApiError && reason.message === 'admin_limit_reached'
@@ -68,7 +68,7 @@ export function StaffAccessPage({ client, embedded = false }: StaffAccessPagePro
   return (
     <section className={embedded ? 'site-settings-section staff-access-section' : 'staff-access-section'} aria-labelledby="staff-access-heading">
       {embedded ? <h2 id="staff-access-heading">Admin access</h2> : <h1 id="staff-access-heading">Staff access</h1>}
-      <p>Inviting a committee member creates their Admin account and sends a sign-in link. They can request new links themselves from Staff sign-in whenever they need one.</p>
+      <p>Inviting a committee member creates their Admin account and sends a sign-in link. They can request new links themselves from Admin sign-in whenever they need one.</p>
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
       {maxAdmins !== null ? <p role="note">{admins.length} of {maxAdmins} Admin accounts in use.</p> : null}

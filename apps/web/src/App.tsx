@@ -51,8 +51,8 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/check-in\/scan$/, 'Check-in scanner'],
   [/^\/check-in\/lookup$/, 'Find a player'],
   [/^\/check-in$/, 'Volunteer check-in'],
-  [/^\/admin\/login$/, 'Staff sign in'],
-  [/^\/admin\/verify$/, 'Verify staff sign in'],
+  [/^\/admin\/login$/, 'Admin sign-in'],
+  [/^\/admin\/verify$/, 'Verify Admin sign-in'],
   [/^\/admin\/events\/[^/]+\/operations$/, 'Event operations'],
   [/^\/admin\/events\/[^/]+\/check-in$/, 'Admin check-in'],
   [/^\/admin\/events\/[^/]+\/day-of-registration$/, 'Admin-assisted registration'],
@@ -313,7 +313,7 @@ export function App() {
         <Route path="staff" element={<StaffAccessPage client={client} />} />
         <Route path="player-history" element={<PlayerHistoryPage client={client} />} />
       </Route>
-      <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Staff sign in</Link></PageContent>} />
+      <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Admin sign-in</Link></PageContent>} />
         </Routes>
       </Suspense>
     </>

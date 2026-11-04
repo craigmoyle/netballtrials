@@ -19,7 +19,7 @@ describe('StaffAccessPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
 
     await waitFor(() => expect(inviteStaff).toHaveBeenCalledWith('New.Admin@example.com'));
-    expect(await screen.findByText(/Invitation sent\. They can request their own sign-in links from Staff sign-in whenever they need one/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Invitation sent\. They can request their own sign-in links from Admin sign-in whenever they need one/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/committee member email/i)).toHaveValue('');
   });
 

@@ -31,7 +31,7 @@ async function expectSkipNavigation(page: Page): Promise<void> {
 
 async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Staff sign-in' }).click();
+  await page.getByRole('link', { name: 'Admin sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
   await page.getByLabel('Email').fill(fixtures.adminEmail);
   await page.getByRole('button', { name: /send link/i }).click();
@@ -43,7 +43,7 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   await page.goto(link!);
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
   await page.goto('/');
-  await page.getByRole('link', { name: 'Staff sign-in' }).click();
+  await page.getByRole('link', { name: 'Admin sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
   await expectSkipNavigation(page);
 }
@@ -154,10 +154,10 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   const signIn = page.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
   const parentGroup = signIn.getByRole('group', { name: 'Parents, guardians and players' });
   await expect(parentGroup.getByRole('link', { name: 'Manage Registrations' })).toHaveAttribute('href', '/manage-registration');
-  await expect(signIn.getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
-  await signIn.getByRole('link', { name: 'Staff sign-in' }).click();
+  await expect(signIn.getByRole('link', { name: 'Admin sign-in' })).toHaveAttribute('href', '/admin');
+  await signIn.getByRole('link', { name: 'Admin sign-in' }).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
-  await expect(page.getByRole('heading', { name: 'Admin sign in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Admin sign-in' })).toBeVisible();
   await expectAccessible(page);
   await expect(signIn.getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
   await signIn.getByRole('link', { name: 'Check-in login' }).click();
@@ -167,6 +167,16 @@ test('public navigation exposes all sign-in flows and serves the home logo local
   await expect(page.getByLabel('Event PIN')).toBeVisible();
   await expectAccessible(page);
   expect(externalRequests).toEqual([]);
+});
+
+test('shows a recovery screen when an Admin page module fails to load', async ({ page, request }) => {
+  await signIn(page, request);
+  await page.route('**/src/admin/SettingsPage.tsx*', (route) => route.abort());
+  await openAdminSetup(page, 'Settings');
+
+  await expect(page.getByRole('heading', { name: 'This page couldn’t load' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reload page' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Return to Events' })).toHaveAttribute('href', '/admin/events');
 });
 
 test('inactive Communications tabs remain text links on hover', async ({ page, request }) => {
@@ -344,7 +354,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText(new RegExp(`${fixtures.adminEmail} — Admin since`))).toBeVisible();
   await page.getByLabel('Committee member email').fill('committee@example.test');
   await page.getByRole('button', { name: 'Send invitation' }).click();
-  await expect(page.getByText(/Invitation sent\. They can request their own sign-in links from Staff sign-in whenever they need one/)).toBeVisible();
+  await expect(page.getByText(/Invitation sent\. They can request their own sign-in links from Admin sign-in whenever they need one/)).toBeVisible();
   await expect(page.getByText(/committee@example\.test — Admin since/)).toBeVisible();
   const selfServiceRequest = await request.post(`${API_ORIGIN}/api/auth/request-link`, { data: { email: 'committee@example.test' } });
   expect(selfServiceRequest.status()).toBe(202);

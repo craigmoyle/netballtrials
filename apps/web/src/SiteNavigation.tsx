@@ -18,7 +18,7 @@ export function PublicAccessNav(): ReactElement {
       </div>
       <div className="public-access-group" role="group" aria-label="Staff and volunteers">
         <span className="public-access-label">Staff &amp; volunteers</span>
-        <Link to="/admin">Staff sign-in</Link>
+        <Link to="/admin">Admin sign-in</Link>
         <Link to="/check-in">Check-in login</Link>
       </div>
     </nav>

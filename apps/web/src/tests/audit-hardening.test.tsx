@@ -100,7 +100,7 @@ it.each(['registration', 'round', 'suffix', 'event'])('guards %s sign-out before
   expect(sessionStorage.length).toBe(0);
   vi.mocked(window.confirm).mockReturnValue(true);
   fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
-  expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Admin sign-in' })).toBeInTheDocument();
   expect(api.logout).toHaveBeenCalledTimes(1);
   expect(window.confirm).toHaveBeenCalledTimes(2);
 });

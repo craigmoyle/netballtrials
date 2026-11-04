@@ -134,7 +134,7 @@ describe('Public home page', () => {
     const accessNav = screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' });
     expect(within(accessNav).getByRole('link', { name: 'Manage Registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(within(accessNav).getByText('Staff & volunteers')).toBeInTheDocument();
-    expect(within(accessNav).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
+    expect(within(accessNav).getByRole('link', { name: 'Admin sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(accessNav).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
     expect(within(accessNav).getAllByRole('link')).toHaveLength(3);
     expect(await screen.findByRole('heading', { name: '15/U State Titles Trial' })).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe('App route boundaries', () => {
     apiMocks.listEvents.mockResolvedValue([]);
     renderApp('/');
 
-    fireEvent.click(await screen.findByRole('link', { name: 'Staff sign-in' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Admin sign-in' }));
 
     expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
@@ -205,9 +205,9 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/');
 
-    fireEvent.click(await screen.findByRole('link', { name: 'Staff sign-in' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Admin sign-in' }));
 
-    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Admin sign-in' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
   });
@@ -217,7 +217,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/register/event-1');
 
-    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Admin sign-in' })).toBeInTheDocument();
     expect(apiMocks.getPublicEvent).not.toHaveBeenCalled();
   });
 
@@ -226,7 +226,7 @@ describe('App route boundaries', () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/register/event-1');
 
-    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Admin sign-in' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
     expect(apiMocks.getPublicEvent).not.toHaveBeenCalled();
   });
@@ -277,7 +277,7 @@ describe('App route boundaries', () => {
   it('redirects a protected admin route after checking the admin session', async () => {
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/admin/events');
-    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Admin sign-in' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Parent, staff and volunteer access' })).toBeInTheDocument();
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/login');
@@ -586,7 +586,7 @@ describe('App route boundaries', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
-    expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Admin sign-in' })).toBeInTheDocument();
     expect(apiMocks.logout).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledTimes(1);
   });

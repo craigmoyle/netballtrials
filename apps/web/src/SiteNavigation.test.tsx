@@ -29,7 +29,7 @@ describe('site navigation', () => {
     expect(within(parentGroup).getByText('Parents, guardians and players')).toBeInTheDocument();
     expect(within(parentGroup).getByRole('link', { name: 'Manage Registrations' })).toHaveAttribute('href', '/manage-registration');
     expect(within(staffGroup).getByText('Staff & volunteers')).toBeInTheDocument();
-    expect(within(staffGroup).getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/admin');
+    expect(within(staffGroup).getByRole('link', { name: 'Admin sign-in' })).toHaveAttribute('href', '/admin');
     expect(within(staffGroup).getByRole('link', { name: 'Check-in login' })).toHaveAttribute('href', '/check-in');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
   });

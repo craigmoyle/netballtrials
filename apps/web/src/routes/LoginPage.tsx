@@ -35,7 +35,7 @@ export function LoginPage({ client }: { client: Client }) {
 
   return (
     <section>
-      <h1>Admin sign in</h1>
+      <h1>Admin sign-in</h1>
       <form onSubmit={onSubmit} noValidate>
         <p>
           <label htmlFor="email">Email</label>
