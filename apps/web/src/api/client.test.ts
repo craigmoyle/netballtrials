@@ -5,6 +5,22 @@ import { ApiError, apiClient } from './client';
 afterEach(() => vi.restoreAllMocks());
 
 describe('apiClient', () => {
+  it('loads and removes Admin accounts using authenticated staff endpoints', async () => {
+    const roster = { admins: [{ id: 'admin-1', email: 'admin@example.test', createdAt: '2026-10-01T00:00:00.000Z', canRemove: true }], maxAdmins: 5 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(roster), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = apiClient('http://api.test');
+
+    await expect(client.listStaff()).resolves.toEqual(roster);
+    await expect(client.removeStaff('admin-1')).resolves.toBeNull();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/staff', 'http://api.test/api/admin/staff/admin-1',
+    ]);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('DELETE');
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
+  });
+
   it('loads the runtime environment through the proxied API path', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"appEnv":"testing"}', { status: 200 }));
     await expect(apiClient('').getRuntimeEnvironment()).resolves.toEqual({ appEnv: 'testing' });

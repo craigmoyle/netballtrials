@@ -105,7 +105,7 @@ describe('Deployment environment banner', () => {
     apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'cmoyle@gmail.com' } });
     apiMocks.listPublicEvents.mockResolvedValue([]);
     renderApp('/');
-    expect(await screen.findByRole('note')).toHaveTextContent(/TEST ENVIRONMENT — Stripe test mode; real email is sent only to allowlisted Admins from the test mailbox/i);
+    expect(await screen.findByRole('note')).toHaveTextContent(/TEST ENVIRONMENT — Stripe test mode; real email is sent only to current Admins from the test mailbox/i);
   });
 });
 

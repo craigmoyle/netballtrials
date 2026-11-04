@@ -467,6 +467,7 @@ thead { background: var(--blue-pale); }
 .automatic-email-settings textarea { width: min(100%, 44rem); min-height: 8rem; }
 .site-settings-section { margin-block: 1.5rem; padding-block: 1.25rem; border-top: 1px solid var(--line); }
 .site-settings-section h2 { margin-top: 0; }
+.staff-admin-details { overflow-wrap: anywhere; }
 .site-settings-section form { display: grid; gap: 0.35rem; max-width: 44rem; }
 .site-settings-section form button { justify-self: start; margin-top: 0.5rem; }
 .site-settings-page .message-confirmation { margin-block: 1rem; padding: 1rem; background: var(--canvas); border: 1px solid var(--line); }

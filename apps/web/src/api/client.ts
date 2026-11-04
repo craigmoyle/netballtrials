@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO } from '@netball-trials/types';
+import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO, AdminStaffListDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -133,7 +133,9 @@ export function apiClient(baseUrl: string) {
       }),
     getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production'; testAccessRequired: boolean; testIntegrationsEnabled: boolean }>(baseUrl, '/api/health'),
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
+    listStaff: () => request<AdminStaffListDTO>(baseUrl, '/api/admin/staff'),
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),
+    removeStaff: (id: string) => request<unknown>(baseUrl, `/api/admin/staff/${id}`, { method: 'DELETE' }),
     logout: () => request<unknown>(baseUrl, '/api/auth/logout', { method: 'POST' }),
     listEvents: () => request<EventDTO[]>(baseUrl, '/api/admin/events'),
     getRegistrationOverview: () => request<RegistrationOverviewEventDTO[]>(baseUrl, '/api/admin/registration-overview'),

@@ -6,14 +6,13 @@ const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
 export function createTestRoutedMailer(
   prisma: PrismaClient,
   liveMailer: EmailProvider & { provider: 'gmail-api' },
-  liveRecipients: string[],
 ): EmailProvider & { provider: 'gmail-api' } {
-  const allowedRecipients = new Set(liveRecipients.map((email) => email.trim().toLowerCase()));
   return {
     provider: 'gmail-api',
     async send(message: EmailMessage) {
       const to = message.to.trim().toLowerCase();
-      if (allowedRecipients.has(to)) return liveMailer.send({ ...message, to });
+      const admin = await prisma.staffUser.findUnique({ where: { email: to }, select: { id: true } });
+      if (admin) return liveMailer.send({ ...message, to });
 
       const now = new Date();
       await prisma.testEmailOutbox.deleteMany({ where: { expiresAt: { lte: now } } });

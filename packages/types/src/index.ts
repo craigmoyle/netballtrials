@@ -34,6 +34,18 @@ export interface AuthUser {
   role: StaffRole;
 }
 
+export interface AdminStaffDTO {
+  id: string;
+  email: string;
+  createdAt: string;
+  canRemove: boolean;
+}
+
+export interface AdminStaffListDTO {
+  admins: AdminStaffDTO[];
+  maxAdmins: number | null;
+}
+
 export interface EventDTO {
   id: string;
   name: string;

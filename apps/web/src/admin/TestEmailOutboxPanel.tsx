@@ -53,7 +53,7 @@ export function TestEmailOutboxPanel({ client }: { client: Client }) {
   return (
     <section className="site-settings-section test-email-outbox" aria-labelledby="test-email-outbox-heading">
       <h2 id="test-email-outbox-heading">Simulated email outbox</h2>
-      <p>Messages to non-Admin addresses are simulated here; allowlisted Admins receive real email from the TEST mailbox. Links keep their normal expiry; outbox entries expire after 24 hours.</p>
+      <p>Messages to addresses not in the Admin roster are simulated here; current Admins receive real email from the TEST mailbox. Links keep their normal expiry; outbox entries expire after 24 hours.</p>
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {loading ? <p role="status">Loading simulated messages…</p> : messages.length === 0 ? <p>No simulated messages.</p> : (

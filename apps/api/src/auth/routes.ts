@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
-import { consumeLoginToken, inviteAdmin, normalizeEmail, requestLoginLink } from './service';
+import { AdminLimitReachedError, consumeLoginToken, inviteAdmin, MAX_TEST_ADMINS, normalizeEmail, removeAdmin, requestLoginLink } from './service';
 import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
 import { hashToken, LOGIN_TOKEN_TTL_MINUTES } from './tokens';
 import { requireAdmin } from './guard';
@@ -18,6 +18,7 @@ const verifySchema = z.object({
   token: z.string().min(10).max(200),
 });
 const inviteSchema = z.object({ email: z.email().trim().max(320) });
+const staffIdParamsSchema = z.object({ staffId: z.string().min(1).max(64) });
 const LOGIN_LINK_LIMIT = 5;
 const LOGIN_LINK_WINDOW_MS = 15 * 60_000;
 const LOGIN_LINK_EMAIL_LIMIT = 3;
@@ -32,7 +33,6 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
 
     const normalizedEmail = normalizeEmail(parsed.data.email);
-    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
     const key = createHash('sha256')
       .update(`login-link\\0${rateLimitClientKey(req.ip)}\\0${normalizedEmail}`)
       .digest('hex');
@@ -46,10 +46,6 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!(await consumeRateLimit(deps.prisma, emailKey, now, LOGIN_LINK_EMAIL_LIMIT, LOGIN_LINK_EMAIL_WINDOW_MS))) {
       return reply.code(202).send({ status: 'sent' });
     }
-    if (hostedTestMode && !deps.env.TEST_ADMIN_EMAILS.includes(normalizedEmail)) {
-      return reply.code(202).send({ status: 'sent' });
-    }
-
     await requestLoginLink(
       { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN },
       normalizedEmail,
@@ -73,15 +69,6 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!result) {
       return reply.code(400).send({ error: 'link_invalid' });
     }
-    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
-    if (hostedTestMode) {
-      const user = await deps.prisma.staffUser.findUnique({ where: { id: result.userId }, select: { email: true } });
-      if (!user || !deps.env.TEST_ADMIN_EMAILS.includes(normalizeEmail(user.email))) {
-        await deps.prisma.session.deleteMany({ where: { tokenHash: hashToken(result.sessionToken) } });
-        return reply.code(400).send({ error: 'link_invalid' });
-      }
-    }
-
     reply.setCookie(SESSION_COOKIE, result.sessionToken, {
       httpOnly: true,
       sameSite: 'lax',
@@ -93,20 +80,43 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.code(200).send({ status: 'signed_in' });
   });
 
+  app.get('/api/admin/staff', { preHandler: requireAdmin(deps) }, async (req) => {
+    const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+    const admins = await deps.prisma.staffUser.findMany({
+      orderBy: { email: 'asc' },
+      select: { id: true, email: true, createdAt: true },
+    });
+    return {
+      admins: admins.map((admin) => ({ ...admin, canRemove: admin.id !== req.adminUserId })),
+      maxAdmins: hostedTestMode ? MAX_TEST_ADMINS : null,
+    };
+  });
+
+  app.delete('/api/admin/staff/:staffId', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = staffIdParamsSchema.safeParse(req.params);
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const result = await removeAdmin(deps.prisma, parsed.data.staffId, req.adminUserId!);
+    if (result === 'self') return reply.code(409).send({ error: 'cannot_remove_self' });
+    if (result === 'actor_revoked') return reply.code(401).send({ error: 'unauthorized' });
+    if (result === 'not_found') return reply.code(404).send({ error: 'admin_not_found' });
+    return reply.code(204).send();
+  });
+
   app.post('/api/admin/staff/invites', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const parsed = inviteSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
-    const email = normalizeEmail(parsed.data.email);
     const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
-    if (hostedTestMode && !deps.env.TEST_ADMIN_EMAILS.includes(email)) {
-      return reply.code(403).send({ error: 'test_admin_not_allowlisted' });
+    try {
+      await inviteAdmin(
+        { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN, ...(hostedTestMode ? { maxAdmins: MAX_TEST_ADMINS } : {}) },
+        parsed.data.email,
+        req.adminUserId!,
+        new Date(),
+      );
+    } catch (error) {
+      if (error instanceof AdminLimitReachedError) return reply.code(409).send({ error: 'admin_limit_reached' });
+      throw error;
     }
-    await inviteAdmin(
-      { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN },
-      parsed.data.email,
-      req.adminUserId!,
-      new Date(),
-    );
     return reply.code(202).send({ status: 'sent' });
   });
 

@@ -1,13 +1,19 @@
-import type { PrismaClient, StaffUser } from '@prisma/client';
+import type { Prisma, PrismaClient, StaffUser } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
 import { hashToken, newLoginToken, newSession } from './tokens';
 
 const MAX_ACTIVE_LOGIN_LINKS = 3;
+export const MAX_TEST_ADMINS = 5;
+
+async function lockAdminRoster(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(1397051019)) AS admin_roster_lock`;
+}
 
 export type LoginDeps = {
   prisma: PrismaClient;
   mailer: EmailProvider;
   webOrigin: string;
+  maxAdmins?: number;
 };
 
 export type ConsumeResult = {
@@ -26,11 +32,6 @@ export class AdminBootstrapError extends Error {
   }
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null &&
-    (error as { code?: string }).code === 'P2002';
-}
-
 export async function bootstrapFirstAdmin(
   deps: LoginDeps,
   rawEmail: string,
@@ -38,7 +39,7 @@ export async function bootstrapFirstAdmin(
 ): Promise<StaffUser> {
   const email = normalizeEmail(rawEmail);
   const user = await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(1397051019)) AS bootstrap_lock`;
+    await lockAdminRoster(tx);
     const users = await tx.staffUser.findMany({
       select: { id: true, email: true, invitedByUserId: true },
       take: 2,
@@ -55,6 +56,28 @@ export async function bootstrapFirstAdmin(
   return user;
 }
 
+export class AdminLimitReachedError extends Error {
+  constructor() {
+    super('Admin limit reached');
+    this.name = 'AdminLimitReachedError';
+  }
+}
+
+export type AdminRemovalResult = 'removed' | 'not_found' | 'self' | 'actor_revoked';
+
+export async function removeAdmin(prisma: PrismaClient, staffId: string, actorUserId: string): Promise<AdminRemovalResult> {
+  return prisma.$transaction(async (tx) => {
+    await lockAdminRoster(tx);
+    const actor = await tx.staffUser.findUnique({ where: { id: actorUserId }, select: { id: true } });
+    if (!actor) return 'actor_revoked';
+    if (staffId === actorUserId) return 'self';
+    const target = await tx.staffUser.findUnique({ where: { id: staffId }, select: { id: true } });
+    if (!target) return 'not_found';
+    await tx.staffUser.delete({ where: { id: staffId } });
+    return 'removed';
+  });
+}
+
 export async function inviteAdmin(
   deps: LoginDeps,
   rawEmail: string,
@@ -62,16 +85,15 @@ export async function inviteAdmin(
   now: Date,
 ): Promise<StaffUser> {
   const email = normalizeEmail(rawEmail);
-  let user = await deps.prisma.staffUser.findUnique({ where: { email } });
-  if (!user) {
-    try {
-      user = await deps.prisma.staffUser.create({ data: { email, invitedByUserId } });
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      user = await deps.prisma.staffUser.findUnique({ where: { email } });
-      if (!user) throw error;
+  const user = await deps.prisma.$transaction(async (tx) => {
+    await lockAdminRoster(tx);
+    const existing = await tx.staffUser.findUnique({ where: { email } });
+    if (existing) return existing;
+    if (deps.maxAdmins !== undefined && await tx.staffUser.count() >= deps.maxAdmins) {
+      throw new AdminLimitReachedError();
     }
-  }
+    return tx.staffUser.create({ data: { email, invitedByUserId } });
+  });
   await requestLoginLink(deps, email, now);
   return user;
 }

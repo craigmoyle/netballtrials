@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createApp } from '../app';
-import { bootstrapFirstAdmin } from '../auth/service';
+import { bootstrapFirstAdmin, normalizeEmail } from '../auth/service';
 import { prisma } from '../db';
 
 async function main(): Promise<void> {
@@ -15,8 +15,8 @@ async function main(): Promise<void> {
     if (hostedTestMode && !app.testDeps.env.ENABLE_TEST_INTEGRATIONS) {
       throw new Error('Enable guarded TEST integrations before bootstrapping the first hosted test Admin.');
     }
-    if (app.testDeps.env.ENABLE_TEST_INTEGRATIONS && !app.testDeps.env.TEST_EMAIL_ALLOWLIST.includes(email.trim().toLowerCase())) {
-      throw new Error('The initial test Admin email must be listed in TEST_EMAIL_ALLOWLIST so its login link is delivered.');
+    if (app.testDeps.env.ENABLE_TEST_INTEGRATIONS && normalizeEmail(email) !== normalizeEmail(app.testDeps.env.MAIL_FROM)) {
+      throw new Error('The first hosted TEST Admin must use the configured TEST mailbox address.');
     }
     await app.ready();
     await bootstrapFirstAdmin(

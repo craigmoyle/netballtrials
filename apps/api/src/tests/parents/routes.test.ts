@@ -15,7 +15,7 @@ let payment: ReturnType<typeof createFakePaymentProvider>;
 
 const env = {
   DATABASE_URL: '', NODE_ENV: 'test' as const, APP_ENV: 'testing' as const, PAYMENT_PROVIDER: 'fake' as const,
-  ENABLE_TEST_INTEGRATIONS: false, TEST_ADMIN_EMAILS: [], TEST_EMAIL_ALLOWLIST: [],
+  ENABLE_TEST_INTEGRATIONS: false,
   WEB_ORIGIN: 'http://localhost:5173', API_PUBLIC_URL: 'http://localhost:3000', TRUST_PROXY: '',
   SESSION_COOKIE_SECURE: false, MAIL_FROM: 'chisholmnetball@gmail.com', MAIL_REPLY_TO: 'chisholmnetball@gmail.com',
   GMAIL_CLIENT_ID: '', GMAIL_CLIENT_SECRET: '', GMAIL_REFRESH_TOKEN: '',

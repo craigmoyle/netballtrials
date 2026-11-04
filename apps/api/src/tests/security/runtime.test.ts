@@ -74,7 +74,7 @@ describe('production runtime boundary', () => {
   it('runs a hosted test deployment in production runtime mode with fake providers', async () => {
     const env = loadEnv({
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test',
-      NODE_ENV: 'production', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake', TEST_ADMIN_EMAILS: 'cmoyle@gmail.com',
+      NODE_ENV: 'production', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake',
       WEB_ORIGIN: 'https://test.trials.example', API_PUBLIC_URL: 'https://test-api.trials.example',
       SESSION_COOKIE_SECURE: 'true',
     } as NodeJS.ProcessEnv);

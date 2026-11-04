@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../app';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { prisma } from '../../db';
-import { bootstrapFirstAdmin } from '../../auth/service';
+import { AdminLimitReachedError, bootstrapFirstAdmin, inviteAdmin } from '../../auth/service';
 import { resetDb } from '../helpers/db';
 import { signInAsNewAdmin } from '../helpers/auth';
 
@@ -60,6 +60,18 @@ describe('admin invitations', () => {
       payload: { email: 'new-admin@example.com' },
     });
     expect(response.statusCode).toBe(401);
+  });
+
+  it('enforces the hosted TEST roster limit while allowing an existing Admin to request another link', async () => {
+    const admins = await Promise.all(Array.from({ length: 5 }, (_, index) =>
+      prisma.staffUser.create({ data: { email: `admin${index}@example.com` } }),
+    ));
+    const deps = { ...loginDeps, maxAdmins: 5 };
+
+    await expect(inviteAdmin(deps, admins[0]!.email, admins[0]!.id, new Date())).resolves.toMatchObject({ id: admins[0]!.id });
+    await expect(inviteAdmin(deps, 'sixth@example.com', admins[0]!.id, new Date())).rejects.toBeInstanceOf(AdminLimitReachedError);
+    expect(await prisma.staffUser.count()).toBe(5);
+    expect(mailer.sent.at(-1)?.to).toBe(admins[0]!.email);
   });
 
   it('rate limits login-link requests without revealing whether an email exists', async () => {

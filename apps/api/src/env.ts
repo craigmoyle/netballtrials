@@ -10,8 +10,6 @@ const envSchema = z
     APP_ENV: z.enum(['testing', 'production']).optional(),
     PAYMENT_PROVIDER: z.enum(['stripe', 'fake']).optional(),
     ENABLE_TEST_INTEGRATIONS: z.enum(['true', 'false']).default('false'),
-    TEST_ADMIN_EMAILS: z.string().default(''),
-    TEST_EMAIL_ALLOWLIST: z.string().default(''),
     WEB_ORIGIN: z.url().default('http://localhost:5173'),
     API_PUBLIC_URL: z.url().default('http://localhost:3000'),
     TRUST_PROXY: z.string().default(''),
@@ -43,9 +41,6 @@ const envSchema = z
     }
     const appEnv = env.APP_ENV ?? (env.NODE_ENV === 'production' ? 'production' : 'testing');
     const databaseName = databaseNameFromUrl(env.DATABASE_URL) ?? '';
-    const testAdminEmails = env.TEST_ADMIN_EMAILS.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
-    const testEmailAllowlist = env.TEST_EMAIL_ALLOWLIST.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
-    const hostedTestMode = appEnv === 'testing' && env.NODE_ENV === 'production';
     const testIntegrationsEnabled = env.ENABLE_TEST_INTEGRATIONS === 'true';
     if (appEnv === 'testing' && env.NODE_ENV === 'production' && !databaseName.endsWith('_test')) {
       context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'A hosted test deployment must use a database name ending in _test' });
@@ -70,18 +65,9 @@ const envSchema = z
     if (appEnv === 'testing' && env.NODE_ENV === 'production' && provider !== 'fake' && !testIntegrationsEnabled) {
       context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Hosted test deployments use fake providers unless test integrations are explicitly enabled' });
     }
-    if (hostedTestMode && (testAdminEmails.length === 0 || testAdminEmails.length > 5 || new Set(testAdminEmails).size !== testAdminEmails.length || testAdminEmails.some((email) => !z.email().safeParse(email).success))) {
-      context.addIssue({ code: 'custom', path: ['TEST_ADMIN_EMAILS'], message: 'Hosted test access requires one to five unique Admin email addresses' });
-    }
     if (testIntegrationsEnabled) {
       if (provider !== 'stripe') context.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Test integration mode requires PAYMENT_PROVIDER=stripe with Stripe test credentials' });
       if (hasStripeSecret && !env.STRIPE_SECRET_KEY.startsWith('sk_test_')) context.addIssue({ code: 'custom', path: ['STRIPE_SECRET_KEY'], message: 'Test integration mode requires an sk_test_ Stripe key' });
-      const allowlistMatchesAdmins = testEmailAllowlist.length === testAdminEmails.length &&
-        new Set(testEmailAllowlist).size === testEmailAllowlist.length &&
-        testAdminEmails.every((email) => testEmailAllowlist.includes(email));
-      if (!allowlistMatchesAdmins) {
-        context.addIssue({ code: 'custom', path: ['TEST_EMAIL_ALLOWLIST'], message: 'TEST_EMAIL_ALLOWLIST must match the TEST Admin allowlist so only Admins receive real test email' });
-      }
       if (env.MAIL_FROM.toLowerCase() !== 'cmoyle@gmail.com' || env.MAIL_REPLY_TO.toLowerCase() !== 'cmoyle@gmail.com') {
         context.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'Hosted TEST email must use the cmoyle@gmail.com test mailbox as sender and reply-to' });
       }
@@ -139,8 +125,6 @@ export type Env = {
   APP_ENV: 'testing' | 'production';
   PAYMENT_PROVIDER: 'stripe' | 'fake';
   ENABLE_TEST_INTEGRATIONS: boolean;
-  TEST_ADMIN_EMAILS: string[];
-  TEST_EMAIL_ALLOWLIST: string[];
   WEB_ORIGIN: string;
   API_PUBLIC_URL: string;
   TRUST_PROXY: string;
@@ -171,8 +155,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'testing'),
     PAYMENT_PROVIDER: parsed.PAYMENT_PROVIDER ?? ((parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'testing')) === 'testing' ? 'fake' : 'stripe'),
     ENABLE_TEST_INTEGRATIONS: parsed.ENABLE_TEST_INTEGRATIONS === 'true',
-    TEST_ADMIN_EMAILS: parsed.TEST_ADMIN_EMAILS.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean),
-    TEST_EMAIL_ALLOWLIST: parsed.TEST_EMAIL_ALLOWLIST.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean),
     SESSION_COOKIE_SECURE: parsed.SESSION_COOKIE_SECURE === 'true',
   };
 }

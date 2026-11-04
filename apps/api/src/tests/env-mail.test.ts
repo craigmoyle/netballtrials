@@ -21,8 +21,6 @@ const hostedTest = {
   WEB_ORIGIN: 'https://test.example',
   API_PUBLIC_URL: 'https://api.test.example',
   ENABLE_TEST_INTEGRATIONS: 'true',
-  TEST_ADMIN_EMAILS: 'cmoyle@gmail.com,nicole@example.test',
-  TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,nicole@example.test',
   MAIL_FROM: 'cmoyle@gmail.com',
   MAIL_REPLY_TO: 'cmoyle@gmail.com',
   INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: 'test-client-id',
@@ -37,8 +35,7 @@ describe('deployment environment config', () => {
     const env = loadEnv(hostedTest as NodeJS.ProcessEnv);
     expect(env).toMatchObject({
       APP_ENV: 'testing', PAYMENT_PROVIDER: 'stripe', ENABLE_TEST_INTEGRATIONS: true,
-      TEST_ADMIN_EMAILS: ['cmoyle@gmail.com', 'nicole@example.test'],
-      TEST_EMAIL_ALLOWLIST: ['cmoyle@gmail.com', 'nicole@example.test'], MAIL_FROM: 'cmoyle@gmail.com',
+      MAIL_FROM: 'cmoyle@gmail.com',
     });
   });
 
@@ -48,22 +45,17 @@ describe('deployment environment config', () => {
     expect(() => loadEnv({ ...hostedTest, GMAIL_REFRESH_TOKEN: 'direct-secret' } as NodeJS.ProcessEnv)).toThrow(/Infisical test namespace/i);
   });
 
-  it('delivers real test email only to the full Admin allowlist and keeps the test mailbox as sender', () => {
-    expect(loadEnv({ ...hostedTest, TEST_ADMIN_EMAILS: 'cmoyle@gmail.com,nicole@example.test', TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,nicole@example.test' } as NodeJS.ProcessEnv).TEST_EMAIL_ALLOWLIST)
-      .toEqual(['cmoyle@gmail.com', 'nicole@example.test']);
-    const fiveAdmins = 'cmoyle@gmail.com,a@example.test,b@example.test,c@example.test,d@example.test';
-    expect(loadEnv({ ...hostedTest, TEST_ADMIN_EMAILS: fiveAdmins, TEST_EMAIL_ALLOWLIST: fiveAdmins } as NodeJS.ProcessEnv).TEST_EMAIL_ALLOWLIST).toHaveLength(5);
-    expect(() => loadEnv({ ...hostedTest, TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com' } as NodeJS.ProcessEnv)).toThrow(/match the TEST Admin allowlist/i);
-    expect(() => loadEnv({ ...hostedTest, TEST_EMAIL_ALLOWLIST: 'cmoyle@gmail.com,other@example.test' } as NodeJS.ProcessEnv)).toThrow(/match the TEST Admin allowlist/i);
-    expect(() => loadEnv({ ...hostedTest, TEST_ADMIN_EMAILS: 'a@x.test,b@x.test,c@x.test,d@x.test,e@x.test,f@x.test' } as NodeJS.ProcessEnv)).toThrow(/one to five/i);
+  it('keeps real hosted TEST email on the dedicated test mailbox', () => {
+    expect(loadEnv(hostedTest as NodeJS.ProcessEnv).MAIL_FROM).toBe('cmoyle@gmail.com');
+    expect(() => loadEnv({ ...hostedTest, MAIL_FROM: 'other@example.test' } as NodeJS.ProcessEnv)).toThrow(/cmoyle@gmail.com/i);
     expect(() => loadEnv({ ...hostedTest, MAIL_REPLY_TO: 'other@example.test' } as NodeJS.ProcessEnv)).toThrow(/cmoyle@gmail.com/i);
   });
 
-  it('requires an Admin allowlist for every hosted TEST deployment, even when providers stay fake', () => {
-    expect(() => loadEnv({ ...hostedTest, ENABLE_TEST_INTEGRATIONS: 'false', PAYMENT_PROVIDER: 'fake', TEST_ADMIN_EMAILS: '' } as NodeJS.ProcessEnv)).toThrow(/hosted test access requires/i);
-    expect(loadEnv({ ...hostedTest, ENABLE_TEST_INTEGRATIONS: 'false', PAYMENT_PROVIDER: 'fake' } as NodeJS.ProcessEnv)).toMatchObject({
-      APP_ENV: 'testing', ENABLE_TEST_INTEGRATIONS: false, TEST_ADMIN_EMAILS: ['cmoyle@gmail.com', 'nicole@example.test'],
-    });
+  it('uses the database Admin roster in hosted TEST without an environment email allowlist', () => {
+    const env = loadEnv({ ...hostedTest, ENABLE_TEST_INTEGRATIONS: 'false', PAYMENT_PROVIDER: 'fake' } as NodeJS.ProcessEnv);
+    expect(env).toMatchObject({ APP_ENV: 'testing', ENABLE_TEST_INTEGRATIONS: false, PAYMENT_PROVIDER: 'fake' });
+    expect(env).not.toHaveProperty('TEST_ADMIN_EMAILS');
+    expect(env).not.toHaveProperty('TEST_EMAIL_ALLOWLIST');
   });
 
   it('requires test integrations to use APP_ENV=testing, production Node, and the Infisical test namespace', () => {
@@ -82,7 +74,7 @@ describe('deployment environment config', () => {
     expect(() => loadEnv({ ...production, APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake' } as NodeJS.ProcessEnv)).toThrow(/database name ending in _test/i);
     expect(() => loadEnv({ ...production, DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test' } as NodeJS.ProcessEnv))
       .toThrow(/cannot use a _test database/i);
-    expect(loadEnv({ ...production, APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake', TEST_ADMIN_EMAILS: 'cmoyle@gmail.com', DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test' } as NodeJS.ProcessEnv).APP_ENV).toBe('testing');
+    expect(loadEnv({ ...production, APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake', DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/netballtrials_test' } as NodeJS.ProcessEnv).APP_ENV).toBe('testing');
   });
 
   it('rejects Stripe test keys in production', () => {

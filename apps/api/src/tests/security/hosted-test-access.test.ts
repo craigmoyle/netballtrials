@@ -8,7 +8,6 @@ const env = loadEnv({
   DATABASE_URL: 'postgresql://test:test@localhost:5432/netballtrials_test',
   NODE_ENV: 'production', APP_ENV: 'testing', PAYMENT_PROVIDER: 'fake', SESSION_COOKIE_SECURE: 'true',
   WEB_ORIGIN: 'https://test.example', API_PUBLIC_URL: 'https://api.test.example', ENABLE_TEST_INTEGRATIONS: 'false',
-  TEST_ADMIN_EMAILS: 'cmoyle@gmail.com,nicole@example.test',
 });
 
 let app: ReturnType<typeof createApp> | undefined;
@@ -16,7 +15,7 @@ let app: ReturnType<typeof createApp> | undefined;
 afterEach(async () => { await app?.close(); });
 
 describe('hosted TEST access when provider integrations are disabled', () => {
-  it('still requires an allowlisted Admin for fake checkout and other application APIs', async () => {
+  it('still requires an Admin session for fake checkout and other application APIs', async () => {
     await resetDb();
     app = createApp({ prisma, env }, { logStream: { write: () => undefined } });
     await app.ready();

@@ -23,11 +23,32 @@ const status = {
 function renderSettings(client: Record<string, unknown>) {
   render(<SettingsPage client={{
     getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'production', testIntegrationsEnabled: false }),
+    listStaff: vi.fn().mockResolvedValue({ admins: [], maxAdmins: null }),
+    inviteStaff: vi.fn().mockResolvedValue({ status: 'sent' }),
+    removeStaff: vi.fn().mockResolvedValue(null),
     ...client,
   } as any} />);
 }
 
 describe('SettingsPage', () => {
+  it('shows the current Admin roster and management controls in Settings', async () => {
+    const listStaff = vi.fn().mockResolvedValue({ admins: [
+      { id: 'admin-1', email: 'current@example.com', createdAt: '2026-10-01T00:00:00.000Z', canRemove: false },
+      { id: 'admin-2', email: 'colleague@example.com', createdAt: '2026-10-02T00:00:00.000Z', canRemove: true },
+    ], maxAdmins: 5 });
+    renderSettings({
+      getIntegrationSettings: vi.fn().mockResolvedValue(status),
+      getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
+      listStaff,
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Admin access' })).toBeInTheDocument();
+    expect(await screen.findByText('2 of 5 Admin accounts in use.')).toBeInTheDocument();
+    expect(screen.getByText(/Inviting a committee member creates their Admin account and sends a sign-in link/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove colleague@example.com' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove current@example.com' })).not.toBeInTheDocument();
+  });
+
   it('edits automatic message copy and reminder lead time with a sample preview', async () => {
     const saved = vi.fn().mockImplementation(async (input) => ({ ...input, updatedAt: '2026-11-03T00:00:00.000Z' }));
     const client = {

@@ -4,6 +4,7 @@ import { ApiError, type ApiClient as Client } from '../api/client';
 import { HelpTip } from './HelpTip';
 import { emailPreview } from './automatic-email-preview';
 import { TestEmailOutboxPanel } from './TestEmailOutboxPanel';
+import { StaffAccessPage } from './StaffAccessPage';
 
 export function SettingsPage({ client }: { client: Client }) {
   const [settings, setSettings] = useState<IntegrationStatusDTO | null>(null);
@@ -133,7 +134,8 @@ export function SettingsPage({ client }: { client: Client }) {
   return (
     <section className="site-settings-page">
       <h1>Settings</h1>
-      <p>Manage site-wide integrations. Event dates, fees and eligibility stay in each event.</p>
+      <p>Manage committee access and site-wide integrations. Event dates, fees and eligibility stay in each event.</p>
+      <StaffAccessPage client={client} embedded />
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {settings?.mode === 'fake' ? (

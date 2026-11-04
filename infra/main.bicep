@@ -31,10 +31,6 @@ param staticWebAppLocation string = 'eastasia'
 @secure()
 param databaseUrl string
 
-@description('Comma-separated allowlisted TEST Admin emails (maximum five). Stored as a Container App secret.')
-@secure()
-param testAdminEmails string
-
 @description('Infisical project ID for the dedicated TEST project.')
 param infisicalProjectId string
 
@@ -95,7 +91,6 @@ module appStack './modules/app-stack.bicep' = {
     sharedContainerRegistryName: sharedContainerRegistryName
     staticWebAppLocation: staticWebAppLocation
     databaseUrl: databaseUrl
-    testAdminEmails: testAdminEmails
     infisicalProjectId: infisicalProjectId
     infisicalUniversalAuthClientId: infisicalUniversalAuthClientId
     infisicalUniversalAuthClientSecret: infisicalUniversalAuthClientSecret

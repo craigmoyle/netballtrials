@@ -134,10 +134,10 @@ jobs:
             --subscription "$SUBSCRIPTION_ID" \
             --resource-group "$RESOURCE_GROUP" \
             --name "$API_CONTAINER_APP_NAME" \
-            --set-env-vars 'TEST_EMAIL_ALLOWLIST=secretref:test-admin-emails' \
+            --remove-env-vars TEST_ADMIN_EMAILS TEST_EMAIL_ALLOWLIST \
             --image "$ACR_LOGIN_SERVER/netballtrials/api:${GITHUB_SHA}"
           # Keep Azure Static Web Apps linked-backend authentication enabled, but let
-          # the API's own allowlist/auth hooks handle anonymous health and signed webhook routes.
+          # The API's session guard handles application routes; Stripe webhooks verify signatures.
           az containerapp auth update \
             --subscription "$SUBSCRIPTION_ID" \
             --resource-group "$RESOURCE_GROUP" \

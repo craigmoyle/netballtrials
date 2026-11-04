@@ -18,7 +18,7 @@ describe('TestEmailOutboxPanel', () => {
     };
     render(<TestEmailOutboxPanel client={client as any} />);
 
-    expect(await screen.findByText(/Messages to non-Admin addresses are simulated here; allowlisted Admins receive real email from the TEST mailbox/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Messages to addresses not in the Admin roster are simulated here; current Admins receive real email from the TEST mailbox/i)).toBeInTheDocument();
     expect(await screen.findByText(/Your Admin sign-in link — nicole@example.test/)).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'https://attacker.example/' })).not.toBeInTheDocument();

@@ -138,7 +138,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     : createFakePaymentProvider());
   const createGmailProvider = (credentials: { clientId: string; clientSecret: string; refreshToken: string }): EmailProvider & { provider: 'gmail-api' } => {
     const gmail = createGmailMailer({ ...credentials, from: env.MAIL_FROM, replyTo: env.MAIL_REPLY_TO });
-    return testIntegrationMode ? createTestRoutedMailer(database, gmail, env.TEST_EMAIL_ALLOWLIST) : gmail;
+    return testIntegrationMode ? createTestRoutedMailer(database, gmail) : gmail;
   };
   let mailer: EmailProvider = overrides.mailer ?? ((appEnv === 'production' || testIntegrationMode) && hasGmailCredentials
     ? createGmailProvider({ clientId: env.GMAIL_CLIENT_ID, clientSecret: env.GMAIL_CLIENT_SECRET, refreshToken: env.GMAIL_REFRESH_TOKEN })
@@ -147,7 +147,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     if (!('provider' in overrides.mailer) || overrides.mailer.provider !== 'gmail-api') {
       throw new Error('Test integration mode requires the Gmail API mail provider');
     }
-    mailer = createTestRoutedMailer(database, overrides.mailer as EmailProvider & { provider: 'gmail-api' }, env.TEST_EMAIL_ALLOWLIST);
+    mailer = createTestRoutedMailer(database, overrides.mailer as EmailProvider & { provider: 'gmail-api' });
   }
   if ((appEnv === 'production' || testIntegrationMode) && !readsInfisical && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
     throw new Error(`${testIntegrationMode ? 'Test integration' : 'Production'} mode requires the Gmail API mail provider`);
