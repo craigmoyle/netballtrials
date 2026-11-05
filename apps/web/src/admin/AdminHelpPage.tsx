@@ -37,10 +37,10 @@ export function AdminHelpPage() {
       </section>
 
       <section id="settings-and-access" aria-labelledby="settings-help-heading">
-        <h2 id="settings-help-heading">Settings and staff access</h2>
-        <p><Link to="/admin/settings">Open Settings</Link> to edit automatic confirmation and reminder copy, choose how many hours before an event the reminder is sent, and manage provider credentials.</p>
-        <p>Reminder timing is a lead window, not a clock time. The scheduled job checks for events inside that window, so keep it running at least every 15 minutes. Credential values are write-only. Infisical machine-identity credentials belong in deployment secret settings.</p>
-        <p>Invite staff from <Link to="/admin/staff">Staff access</Link>. Staff links are single-use and expire; invitees need access to their email inbox to sign in.</p>
+        <h2 id="settings-help-heading">Settings and Admin access</h2>
+        <p><Link to="/admin/settings">Open Settings</Link> to manage Admin access, edit automatic confirmation and reminder copy, set reminder timing, and manage the non-secret Infisical connection.</p>
+        <p>Stripe and Gmail credentials are managed in Infisical and are not editable here. Universal Auth credentials stay in deployment secret settings. Reminder timing is a lead window, not a clock time; keep the scheduled job running at least every 15 minutes.</p>
+        <p>Invite a committee member once. After their initial sign-in, they can request their own links. Sign-in links are single-use and expire; each Admin needs access to their email inbox to sign in.</p>
       </section>
 
       <section id="privacy" aria-labelledby="privacy-help-heading">

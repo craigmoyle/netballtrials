@@ -7,6 +7,9 @@ const apiMocks = vi.hoisted(() => ({
   getRuntimeEnvironment: vi.fn(),
   verify: vi.fn(),
   me: vi.fn(),
+  listStaff: vi.fn(),
+  inviteStaff: vi.fn(),
+  removeStaff: vi.fn(),
   logout: vi.fn(),
   listEvents: vi.fn(),
   getRegistrationOverview: vi.fn(),
@@ -77,6 +80,9 @@ beforeEach(() => {
   apiMocks.listAssociations.mockResolvedValue([]);
   apiMocks.getIntegrationSettings.mockResolvedValue({ mode: 'fake', infisical: { configured: false, connected: false, apiUrl: null, projectId: null, environment: null, secretPath: null, updatedAt: null }, stripe: { configured: false, updatedAt: null }, gmail: { configured: false, updatedAt: null } });
   apiMocks.getAutomaticEmailSettings.mockResolvedValue({ confirmationSubject: 'Trial registration confirmed: {{playerName}} ({{eventName}})', confirmationBody: '{{playerName}} is registered for {{eventName}}.\nWhen: {{eventDate}} at {{gameStartTime}}\nWhere: {{venue}}', reminderSubject: 'Reminder: {{eventName}}', reminderBody: '{{eventName}} is at {{venue}} on {{eventDate}} at {{startTime}}. See you there.', reminderLeadHours: 24, updatedAt: null });
+  apiMocks.listStaff.mockResolvedValue({ admins: [], maxAdmins: null });
+  apiMocks.inviteStaff.mockResolvedValue({ status: 'sent' });
+  apiMocks.removeStaff.mockResolvedValue(null);
   apiMocks.listSiteAssociationCampaigns.mockResolvedValue([]);
   apiMocks.listCommunicationTemplates.mockResolvedValue([]);
   apiMocks.checkInSettings.mockResolvedValue({ pinConfigured: false, checkInClosedAt: null });
@@ -183,6 +189,16 @@ describe('App route boundaries', () => {
     expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('redirects the old Staff access URL to Admin access in Settings', async () => {
+    apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'admin@example.com' } });
+    const router = renderApp('/admin/staff');
+
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Admin access' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/admin/settings');
+    expect(screen.queryByRole('link', { name: 'Staff access' })).not.toBeInTheDocument();
   });
 
   it('lands a verified Admin in the workspace with Settings and Events navigation', async () => {
@@ -300,7 +316,7 @@ describe('App route boundaries', () => {
     expect(within(adminNavigation).getByRole('link', { name: 'Member associations' })).toHaveAttribute('href', '/admin/associations');
     expect(within(adminNavigation).getByRole('link', { name: 'Bib colors' })).toHaveAttribute('href', '/admin/bib-colors');
     expect(within(adminNavigation).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/admin/settings');
-    expect(within(adminNavigation).getByRole('link', { name: 'Staff access' })).toHaveAttribute('href', '/admin/staff');
+    expect(within(adminNavigation).queryByRole('link', { name: 'Staff access' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Parent, staff and volunteer access' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Events | Chisholm Netball Trials'));

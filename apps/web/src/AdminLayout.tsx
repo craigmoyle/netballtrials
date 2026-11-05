@@ -8,7 +8,6 @@ const setupLinks = [
   { label: 'Member associations', path: '/admin/associations' },
   { label: 'Bib colors', path: '/admin/bib-colors' },
   { label: 'Settings', path: '/admin/settings' },
-  { label: 'Staff access', path: '/admin/staff' },
 ];
 
 export function AdminLayout({ client, onSignOut }: { client: Client; onSignOut: () => void }) {

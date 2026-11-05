@@ -89,7 +89,7 @@ export function SettingsPage({ client }: { client: Client }) {
     <section className="site-settings-page">
       <h1>Settings</h1>
       <p>Manage committee access and site-wide integrations. Event dates, fees and eligibility stay in each event.</p>
-      <StaffAccessPage client={client} embedded />
+      <StaffAccessPage client={client} />
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {settings?.mode === 'fake' ? (

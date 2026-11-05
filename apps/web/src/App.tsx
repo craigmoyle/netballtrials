@@ -30,7 +30,6 @@ const RosterPage = lazy(() => import('./admin/RosterPage').then((module) => ({ d
 const RegistrationChangeHistoryPage = lazy(() => import('./admin/RegistrationChangeHistoryPage').then((module) => ({ default: module.RegistrationChangeHistoryPage })));
 const AssociationsPage = lazy(() => import('./admin/AssociationsPage').then((module) => ({ default: module.AssociationsPage })));
 const BibColorsPage = lazy(() => import('./admin/BibColorsPage').then((module) => ({ default: module.BibColorsPage })));
-const StaffAccessPage = lazy(() => import('./admin/StaffAccessPage').then((module) => ({ default: module.StaffAccessPage })));
 const PlayerHistoryPage = lazy(() => import('./admin/PlayerHistoryPage').then((module) => ({ default: module.PlayerHistoryPage })));
 const IncompleteRegistrationsPage = lazy(() => import('./admin/IncompleteRegistrationsPage').then((module) => ({ default: module.IncompleteRegistrationsPage })));
 const SiteCommunicationsPage = lazy(() => import('./admin/SiteCommunicationsPage').then((module) => ({ default: module.SiteCommunicationsPage })));
@@ -66,7 +65,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/settings$/, 'Settings'],
   [/^\/admin\/associations$/, 'Member associations'],
   [/^\/admin\/bib-colors$/, 'Bib colors'],
-  [/^\/admin\/staff$/, 'Staff access'],
+  [/^\/admin\/staff$/, 'Settings'],
   [/^\/admin\/player-history$/, 'Player history'],
   [/^\/admin\/events\/[^/]+\/plan$/, 'Trial planner'],
   [/^\/admin\/events\/[^/]+\/round-sheets$/, 'Round handouts'],
@@ -310,7 +309,7 @@ export function App() {
         <Route path="settings" element={<SettingsPage client={client} />} />
         <Route path="associations" element={<AssociationsPage client={client} />} />
         <Route path="bib-colors" element={<BibColorsPage client={client} />} />
-        <Route path="staff" element={<StaffAccessPage client={client} />} />
+        <Route path="staff" element={<Navigate to="/admin/settings" replace />} />
         <Route path="player-history" element={<PlayerHistoryPage client={client} />} />
       </Route>
       <Route path="*" element={<PageContent><h1>Page not found</h1><Link to="/admin/login">Admin sign-in</Link></PageContent>} />

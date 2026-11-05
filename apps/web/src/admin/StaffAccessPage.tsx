@@ -2,9 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { AdminStaffDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 
-type StaffAccessPageProps = { client: Client; embedded?: boolean };
-
-export function StaffAccessPage({ client, embedded = false }: StaffAccessPageProps) {
+export function StaffAccessPage({ client }: { client: Client }) {
   const [admins, setAdmins] = useState<AdminStaffDTO[]>([]);
   const [maxAdmins, setMaxAdmins] = useState<number | null>(null);
   const [email, setEmail] = useState('');
@@ -66,8 +64,8 @@ export function StaffAccessPage({ client, embedded = false }: StaffAccessPagePro
   }
 
   return (
-    <section className={embedded ? 'site-settings-section staff-access-section' : 'staff-access-section'} aria-labelledby="staff-access-heading">
-      {embedded ? <h2 id="staff-access-heading">Admin access</h2> : <h1 id="staff-access-heading">Staff access</h1>}
+    <section className="site-settings-section staff-access-section" aria-labelledby="staff-access-heading">
+      <h2 id="staff-access-heading">Admin access</h2>
       <p>Inviting a committee member creates their Admin account and sends a sign-in link. They can request new links themselves from Admin sign-in whenever they need one.</p>
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
@@ -76,7 +74,7 @@ export function StaffAccessPage({ client, embedded = false }: StaffAccessPagePro
         <>
           {admins.length === 0 ? <p>No Admin accounts are listed.</p> : (
             <>
-              {embedded ? <h3 id="current-admins-heading">Current Admins</h3> : <h2 id="current-admins-heading">Current Admins</h2>}
+              <h3 id="current-admins-heading">Current Admins</h3>
               <ul aria-labelledby="current-admins-heading">
               {admins.map((admin) => (
                 <li key={admin.id}>

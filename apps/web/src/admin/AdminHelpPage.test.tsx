@@ -10,7 +10,7 @@ describe('AdminHelpPage', () => {
     expect(screen.getByRole('heading', { name: 'Events and registrations' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Planning and printing' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Communications' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Settings and staff access' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Settings and Admin access' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View registration totals' })).toHaveAttribute('href', '/admin/registrations');
     expect(screen.getByRole('link', { name: 'Open Settings' })).toHaveAttribute('href', '/admin/settings');
   });

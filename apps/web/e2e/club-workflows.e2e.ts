@@ -349,8 +349,9 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await openAdminSetup(page, 'Bib colors');
   await expect(page.getByRole('heading', { name: 'Bib colors' })).toBeVisible();
   await expectAccessible(page);
-  await openAdminSetup(page, 'Staff access');
-  await expect(page.getByRole('heading', { name: 'Staff access' })).toBeVisible();
+  await openAdminSetup(page, 'Settings');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Admin access' })).toBeVisible();
   await expect(page.getByText(new RegExp(`${fixtures.adminEmail} — Admin since`))).toBeVisible();
   await page.getByLabel('Committee member email').fill('committee@example.test');
   await page.getByRole('button', { name: 'Send invitation' }).click();
