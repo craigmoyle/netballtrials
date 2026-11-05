@@ -473,7 +473,8 @@ thead { background: var(--blue-pale); }
 .staff-admin-details { overflow-wrap: anywhere; }
 .site-settings-section form { display: grid; gap: 0.35rem; max-width: 44rem; }
 .site-settings-section form button { justify-self: start; margin-top: 0.5rem; }
-.site-settings-page .message-confirmation { margin-block: 1rem; padding: 1rem; background: var(--canvas); border: 1px solid var(--line); }
+.site-settings-page .message-confirmation { max-width: 38rem; margin-block: 1rem; padding: 1rem; background: var(--canvas); border: 1px solid var(--line); }
+.automatic-email-settings > p { max-width: 70ch; }
 .communications-tabs { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; margin-block: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line); }
 .communications-tabs button { min-height: 2.75rem; padding: 0.25rem 0.1rem; color: var(--burgundy); background: transparent; border: 0; border-radius: 0; text-decoration: underline; text-underline-offset: 0.18em; }
 .communications-tabs button[aria-pressed="true"] { color: var(--burgundy-dark); font-weight: 700; text-decoration-thickness: 3px; }

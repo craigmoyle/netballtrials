@@ -128,7 +128,7 @@ export function SettingsPage({ client }: { client: Client }) {
       ) : null}
       <section className="site-settings-section automatic-email-settings" aria-labelledby="automatic-email-heading">
         <div className="admin-page-title-row"><h2 id="automatic-email-heading">Automatic email messages</h2><HelpTip label="Confirmation and reminder emails">These messages are sent by the app after payment and before a trial. Ticket links, the QR image and calendar attachment stay in place.</HelpTip></div>
-        <p>Update the subject and plain-text copy for registration confirmations and event reminders. Use the listed fields to insert event and player details.</p>
+        <p>Edit confirmation and reminder subjects and messages. Use the listed fields to add event and player details.</p>
         {automaticEmail ? (
           <form onSubmit={(event) => void saveAutomaticEmail(event)}>
             <fieldset disabled={busy}>
