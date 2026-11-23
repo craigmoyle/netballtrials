@@ -16,7 +16,10 @@ CMD ["npm", "exec", "--workspace=@netball-trials/api", "--", "prisma", "migrate"
 
 # The long-running API image keeps only production dependencies.
 FROM build AS api-runtime
-RUN npm prune --omit=dev
+# Prisma's optional peer reintroduces the CLI; the runtime only needs its generated client.
+RUN npm prune --omit=dev \
+  && npm uninstall --no-save --workspace=@netball-trials/api prisma \
+  && test ! -e node_modules/.bin/prisma
 ENV NODE_ENV=production
 WORKDIR /app
 EXPOSE 3000

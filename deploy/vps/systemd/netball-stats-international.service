@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Netball Stats international results
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/netball/netballtrials/deploy/vps
+ExecStart=/usr/bin/flock -n /run/lock/netball-stats-refresh.lock /usr/bin/docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm --no-deps stats-international-refresh
+TimeoutStartSec=2h

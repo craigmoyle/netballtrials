@@ -19,9 +19,15 @@
     "rotate:test-db-password": "npm run rotate:test-db-password --workspace=@netball-trials/api",
     "build": "npm run build --workspaces --if-present"
   },
+  "overrides": {
+    "effect": "3.22.1"
+  },
   "allowScripts": {
     "prisma@7.10.1": true,
     "@prisma/engines@7.10.1": true,
     "esbuild@0.28.2": true
+  },
+  "devDependencies": {
+    "effect": "3.22.1"
   }
 }
