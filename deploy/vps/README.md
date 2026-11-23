@@ -1,6 +1,6 @@
 # Single-VPS staging deployment
 
-This stack serves public Stats at `statsball.net` (with `vps.statsball.net` as an operator alias) and hosted Trials TEST at `trials-test.statsball.net`. DNS now points Stats to the VPS; the Azure Stats deployment remains available for rollback. PostgreSQL has no published host port; Caddy alone publishes 80/443.
+This stack serves public Stats at `statsball.net` (with `vps.statsball.net` as an operator alias) and hosted Trials TEST at `trials-test.statsball.net`. Trials TEST runs on this VPS; its Azure deployment and the now-unshared Azure hosting stack have been retired. PostgreSQL has no published host port; Caddy alone publishes 80/443.
 
 ## Host prerequisites
 
@@ -14,7 +14,7 @@ sudo sh -c 'umask 077; printf "STATS_DOMAIN=vps.statsball.net\nSTATS_PRIMARY_DOM
 sudo install -d -o root -g root -m 0700 /opt/netball/reports
 ```
 
-Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and the Infisical `test` namespace; provider credentials remain in Infisical. Its Azure TEST database/Admin roster was copied to the VPS, old sessions/tokens were cleared, and a current Admin successfully signed in. Stripe TEST is confirmed working by the user. Test mail remains limited to current Admins. Stats telemetry and Ideas use the private `telemetry` PostgreSQL schema with insert-only API access. `vps.statsball.net` traffic is server-tagged `testing`; `statsball.net` traffic retains its public class. The weekly report excludes internal/testing events from public totals but includes labeled Ideas submissions. It writes root-only Markdown under `/opt/netball/reports`; records older than 90 days are pruned weekly. Azure is retained as rollback during the agreed window.
+Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and the Infisical `test` namespace; provider credentials remain in Infisical. Its TEST database and Admin roster were migrated to the VPS, old sessions/tokens were cleared, and a current Admin successfully signed in. Stripe TEST is confirmed working by the user. Test mail remains limited to current Admins. Stats telemetry and Ideas use the private `telemetry` PostgreSQL schema with insert-only API access. `vps.statsball.net` traffic is server-tagged `testing`; `statsball.net` traffic retains its public class. The weekly report excludes internal/testing events from public totals but includes labeled Ideas submissions. It writes root-only Markdown under `/opt/netball/reports`; records older than 90 days are pruned weekly.
 
 ## First start
 

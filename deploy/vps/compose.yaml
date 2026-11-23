@@ -102,7 +102,7 @@ services:
     image: netballtrials-api:vps
     build:
       context: ../..
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
       target: api-runtime
     restart: unless-stopped
     environment:
@@ -282,7 +282,7 @@ services:
     image: netballtrials-migrate:vps
     build:
       context: ../..
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
       target: api-migrate
     environment:
       NODE_ENV: production
