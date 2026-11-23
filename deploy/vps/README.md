@@ -1,6 +1,6 @@
 # Single-VPS staging deployment
 
-This stack serves public Stats at `statsball.net` (with `vps.statsball.net` as an operator alias) and hosted Trials TEST at `trials-test.statsball.net`. Trials TEST runs on this VPS; its Azure deployment and the now-unshared Azure hosting stack have been retired. PostgreSQL has no published host port; Caddy alone publishes 80/443.
+This stack serves public Stats at `statsball.net` (with `vps.statsball.net` as an operator alias) and hosted Trials TEST at `trials-test.statsball.net`. Trials TEST runs on this VPS. PostgreSQL has no published host port; Caddy alone publishes 80/443.
 
 ## Host prerequisites
 
@@ -37,7 +37,7 @@ sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs 
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d stats-api trials-api web
 ```
 
-Then verify Caddy certificates and `/health` on both hosts, public Stats data routes, secure cookies, and resource headroom. The full Stats build reached 3.48 GiB in Azure; monitor host memory during the first co-located run.
+Then verify Caddy certificates and `/health` on both hosts, public Stats data routes, secure cookies, and resource headroom.
 
 ## Stats refresh timers
 
