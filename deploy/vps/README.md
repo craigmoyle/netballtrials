@@ -1,59 +1,25 @@
-# Single-VPS staging deployment
+# Trials TEST on the VPS
 
-This stack serves public Stats at `statsball.net` (with `vps.statsball.net` as an operator alias) and hosted Trials TEST at `trials-test.statsball.net`. Trials TEST runs on this VPS; its Azure deployment and the now-unshared Azure hosting stack have been retired. PostgreSQL has no published host port; Caddy alone publishes 80/443.
+The only hosted Trials site is `https://trials-test.statsball.net`. It runs on the VPS with `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, a dedicated `netballtrials_test` database, and restricted Admin access. There is no Trials production deployment.
 
-## Host prerequisites
+## Host configuration
 
-Debian host with Docker Engine and Compose, UFW allowing 22/tcp, 80/tcp, and 443/tcp, and DNS records for `statsball.net`, `vps.statsball.net`, and `trials-test.statsball.net`. Store the generated environment file at `/opt/netball/.env`, owned by root with mode `0600`; never commit it.
+The deployment uses `deploy/vps/compose.yaml` and the root-owned `/opt/netball/.env` file (mode `0600`). PostgreSQL has no published host port; Caddy publishes 80/443 and routes the Trials hostname to the web app and API. The Compose stack is shared with another application on the host, so use the complete environment template at `deploy/vps/.env.example`; this guide covers only Trials.
 
-Create unique database passwords on the host (hex avoids URL/SQL escaping):
+Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and Stripe TEST credentials from the Infisical `test` namespace. Keep provider credentials in Infisical, not the environment file or source. Real test email goes only to current Admins; non-Admin recipients are simulated. Hosted TEST allows up to five Admin accounts. The TEST database and roster were migrated to the VPS, old sessions and login tokens were cleared, and a current Admin successfully signed in. Stripe TEST was confirmed working.
 
-```sh
-sudo install -d -o root -g root -m 0700 /opt/netball
-sudo sh -c 'umask 077; printf "STATS_DOMAIN=vps.statsball.net\nSTATS_PRIMARY_DOMAIN=statsball.net\nTRIALS_DOMAIN=trials-test.statsball.net\nPOSTGRES_ADMIN_PASSWORD=%s\nSTATS_DB_OWNER_PASSWORD=%s\nSTATS_API_DB_PASSWORD=%s\nSTATS_TELEMETRY_WRITER_PASSWORD=%s\nSTATS_TELEMETRY_REPORT_PASSWORD=%s\nTRIALS_DB_PASSWORD=%s\nNETBALL_STATS_BROWSER_APPINSIGHTS_CONNECTION_STRING=\n" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > /opt/netball/.env'
-sudo install -d -o root -g root -m 0700 /opt/netball/reports
-```
+## Deploy or update
 
-Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and the Infisical `test` namespace; provider credentials remain in Infisical. Its TEST database and Admin roster were migrated to the VPS, old sessions/tokens were cleared, and a current Admin successfully signed in. Stripe TEST is confirmed working by the user. Test mail remains limited to current Admins. Stats telemetry and Ideas use the private `telemetry` PostgreSQL schema with insert-only API access. `vps.statsball.net` traffic is server-tagged `testing`; `statsball.net` traffic retains its public class. The weekly report excludes internal/testing events from public totals but includes labeled Ideas submissions. It writes root-only Markdown under `/opt/netball/reports`; records older than 90 days are pruned weekly.
-
-## First start
-
-From the deployed sibling-repository layout `/opt/netball/netballtrials` and `/opt/netball/netballstats`:
+From `/opt/netball/netballtrials/deploy/vps`:
 
 ```sh
-cd /opt/netball/netballtrials/deploy/vps
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml config -q
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build db
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build stats-api
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-api
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-migrate
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build web
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d db
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm stats-telemetry-init
+sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-api trials-migrate web
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm trials-migrate
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm trials-seed-test
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm stats-full-refresh
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm stats-international-refresh
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d stats-api trials-api web
+sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d trials-api web
 ```
 
-Then verify Caddy certificates and `/health` on both hosts, public Stats data routes, secure cookies, and resource headroom. The full Stats build reached 3.48 GiB in Azure; monitor host memory during the first co-located run.
+Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. Keep `VITE_API_URL` empty so browser requests use the same-origin `/api` route. Local development remains on fake payments and in-memory email; never enable hosted integrations locally.
 
-## Stats refresh timers
-
-After the first full and international builds and API/memory checks pass, install and enable the two Stats timers:
-
-```sh
-sudo install -m 0644 systemd/netball-stats-full.service systemd/netball-stats-full.timer systemd/netball-stats-international.service systemd/netball-stats-international.timer systemd/netball-stats-telemetry-report.service systemd/netball-stats-telemetry-report.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now netball-stats-full.timer netball-stats-international.timer netball-stats-telemetry-report.timer
-systemctl list-timers 'netball-stats-*'
-```
-
-The full job is scheduled Sat 11:00, Sun 08:00, Tue 09:00 UTC; international is Tue/Fri 11:00 UTC. Both use a shared `flock` lock. Trials reminder/retention timers are intentionally not enabled while TEST email integrations are disabled; add them only after the TEST mail workflow and retention behavior are accepted.
-
-The weekly report runs Mondays at 08:00 Australia/Sydney. Retrieve it with `sudo ls -l /opt/netball/reports` and `sudo less /opt/netball/reports/weekly-usage-YYYYMMDD.md`; files are mode 0600 because they contain Ideas feedback. To run it manually, use `sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm --no-deps stats-telemetry-report`. The API tags requests from `NETBALL_STATS_TESTING_HOSTS` as testing; the VPS alias remains excluded from public totals after the primary domain cutover.
-
-Caddy serves both `vps.statsball.net` and `statsball.net` from the same Stats build. The `statsball.net` A and AAAA records now point to the VPS, and HTTPS/API checks pass on the primary hostname. `NETBALL_STATS_TESTING_HOSTS=vps.statsball.net` keeps the operator alias out of public telemetry while the primary host retains public classification. Deployment commands do not modify DNS.
-
-The `postgres_data` volume is persistent. Never use `docker compose down -v` on this stack. The initial database script creates separate Stats owner/read-only API and Trials roles and enables `pgaudit` plus `pg_trgm`; `stats-telemetry-init` creates restricted telemetry writer/reporter roles and the telemetry schema idempotently.
+The `postgres_data` volume is persistent. Never run `docker compose down -v`. No persistent off-host backup destination or retention policy is configured. Trials reminder and retention timers remain disabled until their operational acceptance.
