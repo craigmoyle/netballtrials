@@ -56,7 +56,7 @@ services:
     image: netballstats-api:vps
     build:
       context: ../../../netballstats
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       NETBALL_STATS_REPO_ROOT: /app
@@ -77,10 +77,8 @@ services:
       NETBALL_STATS_TELEMETRY_DB_USER: netballstats_telemetry_writer
       NETBALL_STATS_TELEMETRY_DB_PASSWORD: ${STATS_TELEMETRY_WRITER_PASSWORD:?Set STATS_TELEMETRY_WRITER_PASSWORD in the host env file}
       NETBALL_STATS_TELEMETRY_DB_SSLMODE: disable
-      NETBALL_STATS_TRUST_AZURE_CLIENT_IP: "false"
       NETBALL_STATS_TRUSTED_PROXY_IPS: 172.30.10.2
       NETBALL_STATS_REQUEST_TELEMETRY: "true"
-      NETBALL_STATS_BROWSER_APPINSIGHTS_CONNECTION_STRING: ${NETBALL_STATS_BROWSER_APPINSIGHTS_CONNECTION_STRING:-}
     depends_on:
       db:
         condition: service_healthy
@@ -177,7 +175,7 @@ services:
     image: netballstats-api:vps
     build:
       context: ../../../netballstats
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
     command: ["Rscript", "--no-restore", "--no-save", "scripts/build_database.R"]
     environment:
       NETBALL_STATS_DB_BACKEND: postgres
@@ -205,7 +203,7 @@ services:
     image: netballstats-api:vps
     build:
       context: ../../../netballstats
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
     command: ["Rscript", "--no-restore", "--no-save", "scripts/init_telemetry_store.R"]
     environment:
       NETBALL_STATS_DB_HOST: db
@@ -228,7 +226,7 @@ services:
     user: "0:0"
     build:
       context: ../../../netballstats
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
     command: ["Rscript", "--no-restore", "--no-save", "scripts/weekly_usage_report.R"]
     environment:
       NETBALL_STATS_REPO_ROOT: /app
@@ -255,7 +253,7 @@ services:
     image: netballstats-api:vps
     build:
       context: ../../../netballstats
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
     command: ["Rscript", "--no-restore", "--no-save", "scripts/build_international_database.R"]
     environment:
       NETBALL_STATS_DB_BACKEND: postgres

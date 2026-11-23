@@ -18,8 +18,6 @@
 			reverse_proxy stats-api:8000 {
 				header_up X-Forwarded-For {remote_host}
 				header_up X-Real-IP {remote_host}
-				header_up -X-Azure-ClientIP
-				header_up -X-MS-Client-IP
 			}
 		}
 
@@ -66,8 +64,6 @@
 			reverse_proxy trials-api:3000 {
 				header_up X-Forwarded-For {remote_host}
 				header_up X-Real-IP {remote_host}
-				header_up -X-Azure-ClientIP
-				header_up -X-MS-Client-IP
 			}
 		}
 
