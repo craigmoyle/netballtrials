@@ -21,7 +21,7 @@ describe('hosted TEST access when provider integrations are disabled', () => {
     await app.ready();
 
     const health = await app.inject({ method: 'GET', url: '/health' });
-    expect(health.json()).toMatchObject({ testAccessRequired: true, testIntegrationsEnabled: false });
+    expect(health.json()).toEqual({ status: 'ok', appEnv: 'testing', testAccessRequired: true });
 
     const checkout = await app.inject({ method: 'POST', url: '/api/public/fake-checkouts/complete', payload: { simulationToken: 'guessable' } });
     expect(checkout.statusCode).toBe(401);

@@ -84,7 +84,7 @@ describe('production runtime boundary', () => {
       expect('checkouts' in app.testDeps.payment).toBe(true);
       expect('provider' in app.testDeps.mailer && app.testDeps.mailer.provider).toBe(false);
       const health = await app.inject({ method: 'GET', url: '/api/health' });
-      expect(health.json()).toMatchObject({ testAccessRequired: true, testIntegrationsEnabled: false });
+      expect(health.json()).toEqual({ status: 'ok', appEnv: 'testing', testAccessRequired: true });
       expect((await app.inject({ method: 'POST', url: '/api/public/fake-checkouts/complete', payload: {} })).statusCode).toBe(401);
     } finally {
       await app.close();

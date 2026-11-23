@@ -12,9 +12,9 @@ describe('auth tokens', () => {
     expect(hashToken(t)).toBe(hashToken(t));
     expect(hashToken(t)).not.toBe(t);
   });
-  it('sets a 15 minute login TTL and a 30 day session TTL', () => {
+  it('sets a 15 minute login TTL and a 7 day session TTL', () => {
     const now = new Date('2026-10-07T00:00:00.000Z');
     expect(newLoginToken(now).expiresAt.toISOString()).toBe('2026-10-07T00:15:00.000Z');
-    expect(newSession(now).expiresAt.toISOString()).toBe('2026-11-06T00:00:00.000Z');
+    expect(newSession(now).expiresAt.toISOString()).toBe('2026-10-14T00:00:00.000Z');
   });
 });

@@ -53,11 +53,24 @@ describe('CheckInPage', () => {
     // The selector is disabled until the trial list loads; wait for the option first.
     await screen.findByRole('option', { name: /17\/U State Titles Trial/ });
     fireEvent.change(screen.getByLabelText('Trial'), { target: { value: event.id } });
+    fireEvent.change(screen.getByLabelText('Event PIN'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
+
+    await waitFor(() => expect(openCheckIn).toHaveBeenCalledWith(event.id, '123456'));
+    await waitFor(() => expect(screen.getByLabelText('Current URL')).toHaveTextContent('/check-in/scan'));
+  });
+
+  it('rejects legacy short PINs before making a request', async () => {
+    const event = { id: 'event-42', name: '17/U State Titles Trial', eventDate: '2026-09-12T00:00:00.000Z' };
+    const openCheckIn = vi.fn();
+    renderCheckIn({ listPublicEvents: vi.fn().mockResolvedValue([event]), openCheckIn });
+    await screen.findByRole('option', { name: /17\/U State Titles Trial/ });
+    fireEvent.change(screen.getByLabelText('Trial'), { target: { value: event.id } });
     fireEvent.change(screen.getByLabelText('Event PIN'), { target: { value: '1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
 
-    await waitFor(() => expect(openCheckIn).toHaveBeenCalledWith(event.id, '1234'));
-    await waitFor(() => expect(screen.getByLabelText('Current URL')).toHaveTextContent('/check-in/scan'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('PIN must contain 6 to 8 digits.');
+    expect(openCheckIn).not.toHaveBeenCalled();
   });
 
   it('explains when there are no upcoming trials to choose', async () => {

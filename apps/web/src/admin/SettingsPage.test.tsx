@@ -22,7 +22,6 @@ const status = {
 
 function renderSettings(client: Record<string, unknown>) {
   render(<SettingsPage client={{
-    getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'production', testIntegrationsEnabled: false }),
     listStaff: vi.fn().mockResolvedValue({ admins: [], maxAdmins: null }),
     inviteStaff: vi.fn().mockResolvedValue({ status: 'sent' }),
     removeStaff: vi.fn().mockResolvedValue(null),
@@ -91,7 +90,6 @@ describe('SettingsPage', () => {
     renderSettings({
       getIntegrationSettings: vi.fn().mockResolvedValue(testStatus),
       getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
-      getRuntimeEnvironment: vi.fn().mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true }),
       listTestEmailOutbox: vi.fn().mockResolvedValue([]),
       clearTestEmailOutbox: vi.fn().mockResolvedValue(undefined),
     });

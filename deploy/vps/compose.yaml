@@ -14,6 +14,7 @@ services:
       STATS_DB_OWNER_PASSWORD: ${STATS_DB_OWNER_PASSWORD:?Set STATS_DB_OWNER_PASSWORD in the host env file}
       STATS_API_DB_PASSWORD: ${STATS_API_DB_PASSWORD:?Set STATS_API_DB_PASSWORD in the host env file}
       TRIALS_DB_PASSWORD: ${TRIALS_DB_PASSWORD:?Set TRIALS_DB_PASSWORD in the host env file}
+      TRIALS_RUNTIME_DB_PASSWORD: ${TRIALS_RUNTIME_DB_PASSWORD:?Set TRIALS_RUNTIME_DB_PASSWORD in the host env file}
     command:
       - postgres
       - -c
@@ -116,7 +117,7 @@ services:
       INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
       INFISICAL_ENVIRONMENT: ${INFISICAL_ENVIRONMENT:-}
       INFISICAL_SECRET_PATH: ${INFISICAL_SECRET_PATH:-/}
-      DATABASE_URL: postgresql://netballtrials_app:${TRIALS_DB_PASSWORD:?Set TRIALS_DB_PASSWORD in the host env file}@db:5432/netballtrials_test?schema=public
+      DATABASE_URL: postgresql://netballtrials_runtime:${TRIALS_RUNTIME_DB_PASSWORD:?Set TRIALS_RUNTIME_DB_PASSWORD in the host env file}@db:5432/netballtrials_test?schema=public
       WEB_ORIGIN: https://${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
       API_PUBLIC_URL: https://${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
       SESSION_COOKIE_SECURE: "true"
@@ -307,7 +308,7 @@ services:
     image: netballtrials-api:vps
     build:
       context: ../..
-      dockerfile: Dockerfile.azure
+      dockerfile: Dockerfile
       target: api-runtime
     command: ["npm", "run", "seed:test-dataset"]
     environment:
@@ -315,7 +316,7 @@ services:
       APP_ENV: testing
       PAYMENT_PROVIDER: fake
       ENABLE_TEST_INTEGRATIONS: "false"
-      DATABASE_URL: postgresql://netballtrials_app:${TRIALS_DB_PASSWORD:?Set TRIALS_DB_PASSWORD in the host env file}@db:5432/netballtrials_test?schema=public
+      DATABASE_URL: postgresql://netballtrials_runtime:${TRIALS_RUNTIME_DB_PASSWORD:?Set TRIALS_RUNTIME_DB_PASSWORD in the host env file}@db:5432/netballtrials_test?schema=public
       WEB_ORIGIN: https://${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
       API_PUBLIC_URL: https://${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
       SESSION_COOKIE_SECURE: "true"

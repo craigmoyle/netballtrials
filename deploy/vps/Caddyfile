@@ -55,12 +55,14 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Cache-Control "no-cache"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
 		-Server
 	}
 
 	route {
 		@api path /api/* /health
 		handle @api {
+			header >Cache-Control "no-store, max-age=0"
 			reverse_proxy trials-api:3000 {
 				header_up X-Forwarded-For {remote_host}
 				header_up X-Real-IP {remote_host}
