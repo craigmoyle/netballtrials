@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule Netball Stats international refreshes
+
+[Timer]
+OnCalendar=Tue *-*-* 11:00:00 UTC
+OnCalendar=Fri *-*-* 11:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=netball-stats-international.service
+
+[Install]
+WantedBy=timers.target

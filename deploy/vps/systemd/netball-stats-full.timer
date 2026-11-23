@@ -1,0 +1,13 @@
+[Unit]
+Description=Schedule Netball Stats domestic archive refreshes
+
+[Timer]
+OnCalendar=Sat *-*-* 11:00:00 UTC
+OnCalendar=Sun *-*-* 08:00:00 UTC
+OnCalendar=Tue *-*-* 09:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=netball-stats-full.service
+
+[Install]
+WantedBy=timers.target

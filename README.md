@@ -48,6 +48,12 @@ Provide environment variables through the deployment's secret/configuration syst
 
 Use a separate test deployment with `NODE_ENV=production`, `APP_ENV=testing`, a separate database whose name ends in `_test`, HTTPS/secure cookies, and restricted access. Keep the integration flag disabled by default; when the hosted TEST profile is deliberately enabled, it uses Stripe test keys and the Infisical `test` namespace under the controls above. Otherwise payments and email remain fake. `APP_ENV=testing` is not sufficient by itself to enable provider integrations. `INFISICAL_ENVIRONMENT` selects the secrets namespace and is not the deployment-stage flag.
 
+## Parallel VPS staging
+
+A staging deployment is active at `https://trials-test.statsball.net` on the shared 4-vCPU/8-GiB Debian VPS; the Netball Stats staging site is `https://vps.statsball.net`. Both use Caddy and separate private PostgreSQL databases on one host. Azure remains the live source and rollback path: the existing `statsball.net` domain and Azure Trials TEST URL have not been cut over.
+
+The new Trials staging database was freshly migrated and seeded with synthetic test data; the current Azure Admin roster and database were not copied. Stripe/Gmail TEST integrations are disabled on this staging instance (`PAYMENT_PROVIDER=fake`, `ENABLE_TEST_INTEGRATIONS=false`), so no real payment or email is sent. The Admin roster is not yet bootstrapped; this deployment is not Admin/mail acceptance. Its Compose/Caddy config is in [`deploy/vps`](deploy/vps).
+
 ## Azure TEST stack
 
 The Azure TEST templates are in `azure.yaml` and `infra/`. They create a dedicated Trials resource group, Standard Static Web App, linked Container App API, migration job, and only the `netballtrials_test` database on the existing PostgreSQL server. The API reuses the existing VNet-integrated Container Apps environment and shared registry. The templates do not create or modify a PostgreSQL server, Container Apps environment, VNet, or registry. The SWA default URL is the browser origin and `/api` is linked to the ACA API; browser-facing API links use that same origin, while Stripe webhooks and operator health checks can use the API's direct HTTPS URL. The full API/SWA deployment remains pending the Infisical TEST setup. Run `azd provision` and the promotion workflow only after that setup is complete and the protected GitHub environment approval is granted; the workflow never deploys automatically on push.

@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. The operating entity is Chisholm Netball Region Inc (ABN 41 649 079 458). Hosting is planned for Bluehost. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com`.
+React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. The operating entity is Chisholm Netball Region Inc (ABN 41 649 079 458). A parallel hosted TEST staging deployment now runs on the shared 4-vCPU/8-GiB Debian VPS at `trials-test.statsball.net`; it is not a Trials production deployment. Azure TEST remains live as the rollback source until VPS acceptance and explicit cutover approval. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com` in production and the approved test mailbox in hosted TEST.
 
 ## Users
 
@@ -52,7 +52,7 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - Completed event registration and communication personal data held by the application is deleted or anonymized four calendar years after the event. Incomplete submissions are anonymized after 30 days. Financial records required for the incorporated association are maintained separately for at least seven years; the app's retention jobs are not the accounting record. Gmail Sent copies are outside these retention periods.
 - Member-association primary contact details remain on file until an Admin changes or clears them; deactivating an association does not automatically erase its contact details.
 - Trial history supports operational continuity and player progression across age groups; it is not a selection outcome or ranking system.
-- Open decisions: hosting platform and final selector-sheet fields and layout.
+- Open decisions: final selector-sheet fields and layout; VPS cutover and Azure retirement remain pending acceptance and explicit approval.
 
 ## Brand Commitments
 

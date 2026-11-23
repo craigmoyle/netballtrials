@@ -1,0 +1,11 @@
+[Unit]
+Description=Generate the private Netball Stats weekly usage report
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/netball/netballtrials/deploy/vps
+ExecStart=/usr/bin/docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm --no-deps stats-telemetry-report
+TimeoutStartSec=10m

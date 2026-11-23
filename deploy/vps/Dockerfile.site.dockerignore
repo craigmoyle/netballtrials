@@ -1,0 +1,13 @@
+**/.git
+**/.worktrees
+**/node_modules
+**/dist
+**/.cursor
+**/.pi
+**/.impeccable
+**/coverage
+**/playwright-report
+**/test-results
+**/.env
+**/.env.*
+**/renv/library
