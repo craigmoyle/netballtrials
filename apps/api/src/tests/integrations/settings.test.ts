@@ -21,6 +21,10 @@ function infisicalEnv() {
 }
 
 describe('Infisical integration runtime', () => {
+  it('rejects an unapproved bootstrap Infisical endpoint', () => {
+    expect(() => new IntegrationSettings({ ...infisicalEnv(), INFISICAL_API_URL: 'http://127.0.0.1:8080' })).toThrow(/invalid infisical connection/i);
+  });
+
   it('loads credentials into the live providers before the API accepts traffic', async () => {
     const env = infisicalEnv();
     const settings = new IntegrationSettings(env);

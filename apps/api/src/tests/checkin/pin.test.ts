@@ -15,10 +15,6 @@ describe('pin', () => {
     expect(await verifyPin('482193', stored)).toBe(true);
     expect(await verifyPin('482194', stored)).toBe(false);
   });
-  it('still verifies an existing 4-digit pin hash', async () => {
-    const legacy = await hashPin('4821');
-    expect(await verifyPin('4821', legacy)).toBe(true);
-  });
   it('requires 6 to 8 digits for a new pin', () => {
     expect(isValidPinFormat('482193')).toBe(true);
     expect(isValidPinFormat('48219312')).toBe(true);
@@ -27,11 +23,12 @@ describe('pin', () => {
     expect(isValidPinFormat('482193123')).toBe(false);
     expect(isValidPinFormat('12ab56')).toBe(false);
   });
-  it('accepts 4 to 8 digit strings as login input', () => {
-    expect(isPinInput('4821')).toBe(true);
+  it('requires 6 to 8 digits for login input', () => {
+    expect(isPinInput('482193')).toBe(true);
     expect(isPinInput('48219312')).toBe(true);
-    expect(isPinInput('123')).toBe(false);
+    expect(isPinInput('4821')).toBe(false);
+    expect(isPinInput('48219')).toBe(false);
     expect(isPinInput('482193123')).toBe(false);
-    expect(isPinInput('12ab')).toBe(false);
+    expect(isPinInput('12ab56')).toBe(false);
   });
 });

@@ -59,7 +59,7 @@ describe('hosted test integration access gate', () => {
   it('keeps health and sign-in public, gates application data, and exposes only signed webhooks', async () => {
     const health = await app.inject({ method: 'GET', url: '/api/health' });
     expect(health.statusCode).toBe(200);
-    expect(health.json()).toMatchObject({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+    expect(health.json()).toEqual({ status: 'ok', appEnv: 'testing', testAccessRequired: true });
 
     const signIn = await app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'unknown@example.test' } });
     expect(signIn.statusCode).toBe(202);

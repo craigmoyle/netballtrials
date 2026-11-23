@@ -131,7 +131,7 @@ export function apiClient(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ token }),
       }),
-    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production'; testAccessRequired: boolean; testIntegrationsEnabled: boolean }>(baseUrl, '/api/health'),
+    getRuntimeEnvironment: () => request<{ appEnv: 'testing' | 'production'; testAccessRequired: boolean }>(baseUrl, '/api/health'),
     me: () => request<{ user: AuthUser }>(baseUrl, '/api/auth/me'),
     listStaff: () => request<AdminStaffListDTO>(baseUrl, '/api/admin/staff'),
     inviteStaff: (email: string) => request<{ status: string }>(baseUrl, '/api/admin/staff/invites', { method: 'POST', body: JSON.stringify({ email }) }),

@@ -62,6 +62,10 @@ export function CheckInPage({ client }: { client: Client }) {
       setError('Enter the Event PIN.');
       return;
     }
+    if (!/^\d{6,8}$/.test(pin)) {
+      setError('PIN must contain 6 to 8 digits.');
+      return;
+    }
     setBusy(true);
     try {
       await client.openCheckIn(eventIdInput, pin);
@@ -146,9 +150,14 @@ export function CheckInPage({ client }: { client: Client }) {
             required
             inputMode="numeric"
             autoComplete="off"
+            minLength={6}
+            maxLength={8}
+            pattern="[0-9]{6,8}"
+            aria-describedby="pin-hint"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
           />
+          <small id="pin-hint">Use 6 to 8 digits.</small>
         </p>
         <button type="submit" disabled={busy || (isGenericEntry && (publicEventsState !== 'loaded' || publicEvents.length === 0))}>
           {busy ? 'Starting...' : 'Start check-in'}

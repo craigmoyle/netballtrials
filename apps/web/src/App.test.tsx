@@ -70,7 +70,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'production', testAccessRequired: false, testIntegrationsEnabled: false });
+  apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'production', testAccessRequired: false });
   apiMocks.verify.mockResolvedValue({ status: 'signed_in' });
   apiMocks.logout.mockResolvedValue(undefined);
   apiMocks.listPublicEvents.mockResolvedValue([]);
@@ -101,17 +101,17 @@ beforeEach(() => {
 
 describe('Deployment environment banner', () => {
   it('clearly labels test deployments that use simulated integrations', async () => {
-    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: false, testIntegrationsEnabled: false });
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: false });
     renderApp('/');
-    expect(await screen.findByText(/TEST ENVIRONMENT — payments and email are simulated/i)).toBeInTheDocument();
+    expect(await screen.findByText(/LOCAL TEST — payments and email are simulated/i)).toBeInTheDocument();
   });
 
-  it('explains that hosted test integrations use Stripe test mode and restrict real email to Admins', async () => {
-    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+  it('labels hosted TEST access as Admin-restricted without exposing provider mode', async () => {
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true });
     apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'cmoyle@gmail.com' } });
     apiMocks.listPublicEvents.mockResolvedValue([]);
     renderApp('/');
-    expect(await screen.findByRole('note')).toHaveTextContent(/TEST ENVIRONMENT — Stripe test mode; real email is sent only to current Admins from the test mailbox/i);
+    expect(await screen.findByRole('note')).toHaveTextContent(/HOSTED TEST — access is restricted to current Admins; provider mode is shown in Admin Settings/i);
   });
 });
 
@@ -202,7 +202,7 @@ describe('App route boundaries', () => {
   });
 
   it('lands a verified Admin in the workspace with Settings and Events navigation', async () => {
-    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true });
     apiMocks.me.mockResolvedValue({ user: { id: 'admin-1', email: 'cmoyle@gmail.com' } });
     apiMocks.listEvents.mockResolvedValue([]);
     const router = renderApp('/admin/verify#token=magic-token-012345');
@@ -229,7 +229,7 @@ describe('App route boundaries', () => {
   });
 
   it('gates hosted TEST routes even when provider integrations are disabled', async () => {
-    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: false });
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true });
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/register/event-1');
 
@@ -238,7 +238,7 @@ describe('App route boundaries', () => {
   });
 
   it('gates every test route behind an authenticated test Admin', async () => {
-    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true, testIntegrationsEnabled: true });
+    apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: true });
     apiMocks.me.mockRejectedValue(new Error('unauthenticated'));
     renderApp('/register/event-1');
 

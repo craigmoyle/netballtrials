@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 export const LOGIN_TOKEN_TTL_MINUTES = 15;
-export const SESSION_TTL_DAYS = 30;
+export const SESSION_TTL_DAYS = 7;
+export const SESSION_TTL_MS = SESSION_TTL_DAYS * 24 * 60 * 60_000;
 
 export type TokenRecord = {
   token: string;
@@ -27,5 +28,5 @@ export function newLoginToken(now: Date): TokenRecord {
 }
 
 export function newSession(now: Date): TokenRecord {
-  return record(now, SESSION_TTL_DAYS * 24 * 60 * 60_000);
+  return record(now, SESSION_TTL_MS);
 }

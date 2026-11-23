@@ -50,6 +50,7 @@ export class IntegrationSettings {
       environment: env.INFISICAL_ENVIRONMENT.trim(),
       secretPath: env.INFISICAL_SECRET_PATH.trim(),
     } : null;
+    if (this.connection) this.validateConnection(this.connection);
     this.store = this.connection ? this.createStore(this.connection) : null;
   }
 

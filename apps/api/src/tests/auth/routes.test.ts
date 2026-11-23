@@ -53,6 +53,7 @@ describe('auth routes', () => {
     const verified = await app.inject({ method: 'POST', url: '/api/auth/verify', payload: { token } });
     expect(verified.statusCode).toBe(200);
     const cookie = verified.cookies.find((c) => c.name === 'nt_session')!;
+    expect(cookie.maxAge).toBe(7 * 24 * 60 * 60);
     const me = await app.inject({ method: 'GET', url: '/api/auth/me', cookies: { nt_session: cookie.value } });
     expect(me.statusCode).toBe(200);
     expect(me.json().user.email).toBe('craig@example.com');
@@ -113,6 +114,21 @@ describe('auth routes', () => {
     const me = await app.inject({ method: 'GET', url: '/api/auth/me', cookies: { nt_session: cookieValue } });
     expect(me.statusCode).toBe(401);
   });
+  it('rejects sessions older than seven days even if their stored expiry is later', async () => {
+    const user = await prisma.staffUser.create({ data: { email: 'old-session@example.com' } });
+    const token = newSession(new Date());
+    await prisma.session.create({
+      data: {
+        userId: user.id,
+        tokenHash: token.tokenHash,
+        expiresAt: new Date(Date.now() + 22 * 24 * 60 * 60_000),
+        createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000),
+      },
+    });
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', cookies: { nt_session: token.token } });
+    expect(me.statusCode).toBe(401);
+  });
+
   it('returns 401 for a session whose admin was deleted', async () => {
     const user = await prisma.staffUser.create({ data: { email: 'gone@example.com' } });
     const { newSession, hashToken } = await import('../../auth/tokens');

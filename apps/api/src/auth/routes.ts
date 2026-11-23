@@ -4,11 +4,11 @@ import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { AdminLimitReachedError, consumeLoginToken, inviteAdmin, MAX_TEST_ADMINS, normalizeEmail, removeAdmin, requestLoginLink } from './service';
 import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
-import { hashToken, LOGIN_TOKEN_TTL_MINUTES } from './tokens';
+import { hashToken, LOGIN_TOKEN_TTL_MINUTES, SESSION_TTL_DAYS } from './tokens';
 import { requireAdmin } from './guard';
 
 export const SESSION_COOKIE = 'nt_session';
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const SESSION_MAX_AGE_SECONDS = SESSION_TTL_DAYS * 24 * 60 * 60;
 
 const requestLinkSchema = z.object({
   email: z.string().trim().min(3).max(320),

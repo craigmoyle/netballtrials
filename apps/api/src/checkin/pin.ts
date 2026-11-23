@@ -34,7 +34,7 @@ export function isValidPinFormat(pin: string): boolean {
   return /^\d{6,8}$/.test(pin);
 }
 
-/** Format accepted at login; 4-digit PINs set before the 6-digit minimum still verify. */
+/** Format accepted at login. Legacy PINs must be reset before check-in. */
 export function isPinInput(pin: string): boolean {
-  return /^\d{4,8}$/.test(pin);
+  return isValidPinFormat(pin);
 }

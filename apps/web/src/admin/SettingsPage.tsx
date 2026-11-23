@@ -23,10 +23,10 @@ export function SettingsPage({ client }: { client: Client }) {
     setLoading(true);
     setError(null);
     try {
-      const [loaded, loadedEmail, runtime] = await Promise.all([client.getIntegrationSettings(), client.getAutomaticEmailSettings(), client.getRuntimeEnvironment()]);
+      const [loaded, loadedEmail] = await Promise.all([client.getIntegrationSettings(), client.getAutomaticEmailSettings()]);
       setSettings(loaded);
       setAutomaticEmail(loadedEmail);
-      setTestIntegrationsEnabled(runtime.testIntegrationsEnabled);
+      setTestIntegrationsEnabled(loaded.mode === 'infisical' && loaded.infisical.environment?.trim().toLowerCase() === 'test');
       if (loaded.infisical.configured) {
         setInfisicalApiUrl(loaded.infisical.apiUrl ?? 'https://us.infisical.com');
         setInfisicalProjectId(loaded.infisical.projectId ?? '');

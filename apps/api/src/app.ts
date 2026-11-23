@@ -268,7 +268,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     return payload;
   });
 
-  const health = async () => ({ status: 'ok', appEnv: env.APP_ENV, testAccessRequired: hostedTestMode, testIntegrationsEnabled: env.ENABLE_TEST_INTEGRATIONS });
+  const health = async () => ({ status: 'ok', appEnv: env.APP_ENV, testAccessRequired: hostedTestMode });
   app.get('/health', health);
   app.get('/api/health', health);
 

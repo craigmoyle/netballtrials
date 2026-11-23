@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AppDeps } from '../app';
-import { hashToken } from './tokens';
+import { hashToken, SESSION_TTL_MS } from './tokens';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -21,7 +21,8 @@ export function requireAdmin(deps: AppDeps) {
       where: { tokenHash: hashToken(token) },
     });
 
-    if (!session || session.expiresAt.getTime() <= Date.now()) {
+    const now = Date.now();
+    if (!session || session.expiresAt.getTime() <= now || session.createdAt.getTime() <= now - SESSION_TTL_MS) {
       if (session) {
         await deps.prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
       }

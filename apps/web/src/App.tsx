@@ -217,7 +217,6 @@ export function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [appEnv, setAppEnv] = useState<'testing' | 'production' | null>(null);
-  const [testIntegrationsEnabled, setTestIntegrationsEnabled] = useState(false);
   const [testAccessRequired, setTestAccessRequired] = useState(false);
   const [runtimeLoaded, setRuntimeLoaded] = useState(false);
   const [testAdminAccess, setTestAdminAccess] = useState<boolean | null>(null);
@@ -225,11 +224,10 @@ export function App() {
   useEffect(() => {
     let active = true;
     client.getRuntimeEnvironment()
-      .then(({ appEnv: loaded, testAccessRequired: testAccess, testIntegrationsEnabled: testIntegrations }) => {
+      .then(({ appEnv: loaded, testAccessRequired: testAccess }) => {
         if (!active) return;
         setAppEnv(loaded);
         setTestAccessRequired(testAccess);
-        setTestIntegrationsEnabled(testIntegrations);
       })
       .catch(() => { if (active) { setAppEnv('production'); setTestAccessRequired(true); } })
       .finally(() => { if (active) setRuntimeLoaded(true); });
@@ -262,7 +260,7 @@ export function App() {
 
   return (
     <>
-      {appEnv === 'testing' ? <div className="environment-banner" role="note">{testIntegrationsEnabled ? 'TEST ENVIRONMENT — Stripe test mode; real email is sent only to current Admins from the test mailbox' : 'TEST ENVIRONMENT — payments and email are simulated'}</div> : null}
+      {appEnv === 'testing' ? <div className="environment-banner" role="note">{testAccessRequired ? 'HOSTED TEST — access is restricted to current Admins; provider mode is shown in Admin Settings' : 'LOCAL TEST — payments and email are simulated'}</div> : null}
       <Suspense fallback={<p role="status">Loading page…</p>}>
         <Routes>
       <Route path="/" element={<><PublicSiteHeader /><PublicHomePage client={client} /></>} />

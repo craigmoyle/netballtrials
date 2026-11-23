@@ -132,8 +132,10 @@ describe('check-in session', () => {
     expect((await attempt('482193', '198.51.100.50')).statusCode).toBe(429);
   });
 
-  it('still accepts an existing 4-digit pin', async () => {
+  it('rejects legacy 4-digit pins so events must reset to a six-digit minimum', async () => {
     await prisma.event.update({ where: { id: eventId }, data: { checkInPinHash: await hashPin('4821') } });
-    expect((await attempt('4821', '198.51.100.60')).statusCode).toBe(200);
+    const response = await attempt('4821', '198.51.100.60');
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe('pin_invalid');
   });
 });

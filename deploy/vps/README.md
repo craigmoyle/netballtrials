@@ -4,9 +4,9 @@ The only hosted Trials site is `https://trials-test.statsball.net`. It runs on t
 
 ## Host configuration
 
-The deployment uses `deploy/vps/compose.yaml` and the root-owned `/opt/netball/.env` file (mode `0600`). PostgreSQL has no published host port; Caddy publishes 80/443 and routes the Trials hostname to the web app and API. The Compose stack is shared with another application on the host, so use the complete environment template at `deploy/vps/.env.example`; this guide covers only Trials.
+The deployment uses `deploy/vps/compose.yaml` and the root-owned `/opt/netball/.env` file (mode `0600`). PostgreSQL has no published host port; Caddy publishes 80/443 and routes the Trials hostname to the web app and API. The Compose stack is shared with another application on the host, so use the complete environment template at `deploy/vps/.env.example`; this guide covers only Trials. The API runtime uses a restricted database login; set distinct, unquoted random hex values for `TRIALS_DB_PASSWORD` (migrations) and `TRIALS_RUNTIME_DB_PASSWORD` (normal API access). On an existing data volume, run `upgrade-trials-runtime-role.sh` before updating the API; fresh volumes create the role through the database initialization script. The upgrade script is idempotent and does not print the password.
 
-Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and Stripe TEST credentials from the Infisical `test` namespace. Keep provider credentials in Infisical, not the environment file or source. Real test email goes only to current Admins; non-Admin recipients are simulated. Hosted TEST allows up to five Admin accounts. The TEST database and roster were migrated to the VPS, old sessions and login tokens were cleared, and a current Admin successfully signed in. Stripe TEST was confirmed working.
+Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and Stripe TEST credentials from the Infisical `test` namespace. Keep provider credentials in Infisical, not the environment file or source. Real test email goes only to current Admins; non-Admin recipients are simulated. Hosted TEST allows up to five Admin accounts. Admin sign-in is by email link, so every Admin mailbox must have MFA enabled. Admin sessions expire after seven days. The TEST database and roster were migrated to the VPS, old sessions and login tokens were cleared, and a current Admin successfully signed in. Stripe TEST was confirmed working. Reset any existing check-in PINs that predate the six-digit minimum before volunteer PIN access; legacy four-digit PINs are rejected.
 
 ## Deploy or update
 
@@ -15,6 +15,7 @@ From `/opt/netball/netballtrials/deploy/vps`:
 ```sh
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml config -q
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d db
+sudo /opt/netball/netballtrials/deploy/vps/upgrade-trials-runtime-role.sh
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-api trials-migrate web
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm trials-migrate
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d trials-api web
