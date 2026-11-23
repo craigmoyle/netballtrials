@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. The operating entity is Chisholm Netball Region Inc (ABN 41 649 079 458). A parallel hosted TEST staging deployment now runs on the shared 4-vCPU/8-GiB Debian VPS at `trials-test.statsball.net`; it is not a Trials production deployment. Azure TEST remains live as the rollback source until VPS acceptance and explicit cutover approval. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com` in production and the approved test mailbox in hosted TEST.
+React, TypeScript and Vite for the web app; Fastify and TypeScript for the API; PostgreSQL with Prisma for persistence. Chosen by the user to match the sibling `netball-scoring` project. The operating entity is Chisholm Netball Region Inc (ABN 41 649 079 458). Netball Stats now serves publicly from the shared 4-vCPU/8-GiB Debian VPS; Azure Stats remains rollback during the agreed window. Hosted Trials TEST runs at `trials-test.statsball.net` on that VPS with a separate `_test` database; it is not a Trials production deployment. Azure Trials TEST resources remain for rollback. Email uses the Gmail API with OAuth from `chisholmnetball@gmail.com` in production and the approved test mailbox in hosted TEST.
 
 ## Users
 

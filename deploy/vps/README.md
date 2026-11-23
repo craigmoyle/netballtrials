@@ -1,10 +1,10 @@
 # Single-VPS staging deployment
 
-This stack stages Stats at `vps.statsball.net` and hosted Trials TEST at `trials-test.statsball.net`. It does not change `statsball.net`, the Azure Trials URL, or any Azure resource. PostgreSQL has no published host port; Caddy alone publishes 80/443.
+This stack serves public Stats at `statsball.net` (with `vps.statsball.net` as an operator alias) and hosted Trials TEST at `trials-test.statsball.net`. DNS now points Stats to the VPS; the Azure Stats deployment remains available for rollback. PostgreSQL has no published host port; Caddy alone publishes 80/443.
 
 ## Host prerequisites
 
-Debian host with Docker Engine and Compose, UFW allowing 22/tcp, 80/tcp, and 443/tcp, and DNS A records for `vps.statsball.net` and `trials-test.statsball.net`. `statsball.net` is also configured in Caddy but remains on Azure until the user changes its DNS A record. Store the generated environment file at `/opt/netball/.env`, owned by root with mode `0600`; never commit it.
+Debian host with Docker Engine and Compose, UFW allowing 22/tcp, 80/tcp, and 443/tcp, and DNS records for `statsball.net`, `vps.statsball.net`, and `trials-test.statsball.net`. Store the generated environment file at `/opt/netball/.env`, owned by root with mode `0600`; never commit it.
 
 Create unique database passwords on the host (hex avoids URL/SQL escaping):
 
@@ -14,7 +14,7 @@ sudo sh -c 'umask 077; printf "STATS_DOMAIN=vps.statsball.net\nSTATS_PRIMARY_DOM
 sudo install -d -o root -g root -m 0700 /opt/netball/reports
 ```
 
-Trials TEST now uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and the Infisical `test` namespace; Stripe/Gmail provider credentials remain in Infisical. The Azure TEST database/Admin roster was copied into the VPS database; active sessions and login tokens were cleared. After the Gmail refresh token was updated and the API restarted, a current Admin successfully signed in; Stripe TEST is confirmed working by the user. Test mail remains limited to current Admins. Stats telemetry and Ideas are stored in the private `telemetry` PostgreSQL schema with insert-only API access. `vps.statsball.net` traffic is server-tagged `testing`; traffic on `statsball.net` retains the browser's public class. The weekly report excludes internal/testing events from public totals but includes labeled Ideas submissions. It writes root-only Markdown under `/opt/netball/reports`; records older than 90 days are pruned by the weekly job. Azure remains the rollback source; primary DNS has not been cut over.
+Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and the Infisical `test` namespace; provider credentials remain in Infisical. Its Azure TEST database/Admin roster was copied to the VPS, old sessions/tokens were cleared, and a current Admin successfully signed in. Stripe TEST is confirmed working by the user. Test mail remains limited to current Admins. Stats telemetry and Ideas use the private `telemetry` PostgreSQL schema with insert-only API access. `vps.statsball.net` traffic is server-tagged `testing`; `statsball.net` traffic retains its public class. The weekly report excludes internal/testing events from public totals but includes labeled Ideas submissions. It writes root-only Markdown under `/opt/netball/reports`; records older than 90 days are pruned weekly. Azure is retained as rollback during the agreed window.
 
 ## First start
 
@@ -54,6 +54,6 @@ The full job is scheduled Sat 11:00, Sun 08:00, Tue 09:00 UTC; international is 
 
 The weekly report runs Mondays at 08:00 Australia/Sydney. Retrieve it with `sudo ls -l /opt/netball/reports` and `sudo less /opt/netball/reports/weekly-usage-YYYYMMDD.md`; files are mode 0600 because they contain Ideas feedback. To run it manually, use `sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm --no-deps stats-telemetry-report`. The API tags requests from `NETBALL_STATS_TESTING_HOSTS` as testing; the VPS alias remains excluded from public totals after the primary domain cutover.
 
-Caddy serves both `vps.statsball.net` and `statsball.net` from the same Stats build and obtains HTTPS certificates for each hostname once DNS points to the VPS. The user must change the `statsball.net` DNS A record to the VPS IP when ready; this setup does not edit DNS. `NETBALL_STATS_TESTING_HOSTS=vps.statsball.net` keeps the staging alias out of public telemetry while the primary host retains public traffic classification.
+Caddy serves both `vps.statsball.net` and `statsball.net` from the same Stats build. The `statsball.net` A and AAAA records now point to the VPS, and HTTPS/API checks pass on the primary hostname. `NETBALL_STATS_TESTING_HOSTS=vps.statsball.net` keeps the operator alias out of public telemetry while the primary host retains public classification. Deployment commands do not modify DNS.
 
 The `postgres_data` volume is persistent. Never use `docker compose down -v` on this stack. The initial database script creates separate Stats owner/read-only API and Trials roles and enables `pgaudit` plus `pg_trgm`; `stats-telemetry-init` creates restricted telemetry writer/reporter roles and the telemetry schema idempotently.
