@@ -769,6 +769,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await openEventTool(page, 'Plan rounds');
   await page.getByRole('button', { name: 'Generate draft' }).click();
   await page.getByRole('button', { name: 'Publish revision' }).click();
+  await expect(workspace(page).getByRole('link', { name: 'Print selector sheets' })).toBeVisible();
 
   const eventUrl = `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`;
   const planUrl = `${eventUrl}/plan`;
