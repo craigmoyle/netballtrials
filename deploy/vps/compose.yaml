@@ -61,7 +61,8 @@ services:
       NETBALL_STATS_REPO_ROOT: /app
       NETBALL_STATS_HOST: 0.0.0.0
       NETBALL_STATS_PORT: "8000"
-      NETBALL_STATS_ALLOWED_ORIGINS: https://${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file}
+      NETBALL_STATS_ALLOWED_ORIGINS: https://${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file},https://${STATS_PRIMARY_DOMAIN:?Set STATS_PRIMARY_DOMAIN in the host env file}
+      NETBALL_STATS_TESTING_HOSTS: ${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file}
       NETBALL_STATS_DB_BACKEND: postgres
       NETBALL_STATS_DB_HOST: db
       NETBALL_STATS_DB_PORT: "5432"
@@ -75,7 +76,6 @@ services:
       NETBALL_STATS_TELEMETRY_DB_USER: netballstats_telemetry_writer
       NETBALL_STATS_TELEMETRY_DB_PASSWORD: ${STATS_TELEMETRY_WRITER_PASSWORD:?Set STATS_TELEMETRY_WRITER_PASSWORD in the host env file}
       NETBALL_STATS_TELEMETRY_DB_SSLMODE: disable
-      NETBALL_STATS_DEFAULT_TRAFFIC_CLASS: testing
       NETBALL_STATS_TRUST_AZURE_CLIENT_IP: "false"
       NETBALL_STATS_TRUSTED_PROXY_IPS: 172.30.10.2
       NETBALL_STATS_REQUEST_TELEMETRY: "true"
@@ -151,6 +151,7 @@ services:
     restart: unless-stopped
     environment:
       STATS_DOMAIN: ${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file}
+      STATS_PRIMARY_DOMAIN: ${STATS_PRIMARY_DOMAIN:?Set STATS_PRIMARY_DOMAIN in the host env file}
       TRIALS_DOMAIN: ${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
     depends_on:
       - stats-api

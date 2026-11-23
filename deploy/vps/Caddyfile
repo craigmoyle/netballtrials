@@ -1,4 +1,4 @@
-{$STATS_DOMAIN} {
+{$STATS_DOMAIN}, {$STATS_PRIMARY_DOMAIN} {
 	encode zstd gzip
 	root * /srv/stats
 	header {
@@ -8,7 +8,7 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Cache-Control "no-cache"
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'self' https://*.in.applicationinsights.azure.com https://dc.services.visualstudio.com https://*.livediagnostics.monitor.azure.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; upgrade-insecure-requests"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; upgrade-insecure-requests"
 		-Server
 	}
 
