@@ -5,8 +5,9 @@ coverage/
 playwright-report/
 test-results/
 
-# Local environment
+# Local environment and Git worktrees
 .azure/
+.worktrees/
 .env
 .env.local
 .env.*.local
