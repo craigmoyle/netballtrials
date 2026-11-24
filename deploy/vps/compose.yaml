@@ -62,8 +62,7 @@ services:
       NETBALL_STATS_REPO_ROOT: /app
       NETBALL_STATS_HOST: 0.0.0.0
       NETBALL_STATS_PORT: "8000"
-      NETBALL_STATS_ALLOWED_ORIGINS: https://${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file},https://${STATS_PRIMARY_DOMAIN:?Set STATS_PRIMARY_DOMAIN in the host env file}
-      NETBALL_STATS_TESTING_HOSTS: ${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file}
+      NETBALL_STATS_ALLOWED_ORIGINS: https://${STATS_PRIMARY_DOMAIN:?Set STATS_PRIMARY_DOMAIN in the host env file}
       NETBALL_STATS_DB_BACKEND: postgres
       NETBALL_STATS_DB_HOST: db
       NETBALL_STATS_DB_PORT: "5432"
@@ -149,7 +148,6 @@ services:
         VITE_API_URL: ""
     restart: unless-stopped
     environment:
-      STATS_DOMAIN: ${STATS_DOMAIN:?Set STATS_DOMAIN in the host env file}
       STATS_PRIMARY_DOMAIN: ${STATS_PRIMARY_DOMAIN:?Set STATS_PRIMARY_DOMAIN in the host env file}
       TRIALS_DOMAIN: ${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
     depends_on:
