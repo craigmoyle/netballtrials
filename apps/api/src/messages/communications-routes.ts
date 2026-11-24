@@ -12,6 +12,7 @@ import {
 } from './communications';
 import { unsupportedTemplateFields } from './template-renderer';
 import { sendConfirmation } from '../registrations/confirmation';
+import { isUniqueViolation } from '../errors';
 
 const audience = z.enum(['participants', 'associations']);
 const selectedSchema = z.object({ audience, recipientIds: z.array(z.string().min(1)).max(500) });
@@ -54,10 +55,6 @@ function matchesScheduledInput(
   return row.eventId === input.eventId && row.audience === input.audience &&
     JSON.stringify(storedIds) === JSON.stringify(requestedIds) && row.subject === input.subject &&
     row.body === input.text && row.scheduledAt.getTime() === input.scheduledAt.getTime();
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
 }
 
 export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps): void {

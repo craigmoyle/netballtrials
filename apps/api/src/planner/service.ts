@@ -4,18 +4,14 @@ import { runGeneration } from './worker';
 import { verifyPlan } from './verify';
 import { frozenExceptions, slotKey } from './frozen-exceptions';
 import type { PlannerGap, PlannerInput, PlannerPlayer, PlannerPlan, PlanSlot } from './types';
+import { clockMinutes } from '../time/melbourne';
 
 type Database = PrismaClient | Prisma.TransactionClient;
 type BuiltInput = { event: Prisma.EventGetPayload<{}>; input: PlannerInput };
 export type GenerateResult = { ok: true; plan: RoundPlan } | { ok: false; gaps: PlannerGap[] };
 
-function toMinutes(value: string): number {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
 function eventWindowMinutes(event: { gameStartTime: string; endTime: string }): number {
-  return Math.max(1, toMinutes(event.endTime) - toMinutes(event.gameStartTime));
+  return Math.max(1, clockMinutes(event.endTime) - clockMinutes(event.gameStartTime));
 }
 
 export async function lockEvent(tx: Prisma.TransactionClient, eventId: string): Promise<boolean> {

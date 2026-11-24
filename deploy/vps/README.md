@@ -18,9 +18,23 @@ sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d db
 sudo /opt/netball/netballtrials/deploy/vps/upgrade-trials-runtime-role.sh
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-api trials-migrate web
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm trials-migrate
+sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-reminders trials-retention
 sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d trials-api web
 ```
 
 Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. Keep `VITE_API_URL` empty so browser requests use the same-origin `/api` route. Local development remains on fake payments and in-memory email; never enable hosted integrations locally.
 
-The `postgres_data` volume is persistent. Never run `docker compose down -v`. No persistent off-host backup destination or retention policy is configured. Trials reminder and retention timers remain disabled until their operational acceptance.
+## Reminder and retention timers
+
+Install and enable the Trials jobs after deployment:
+
+```sh
+sudo install -m 0644 systemd/netball-trials-reminders.service systemd/netball-trials-reminders.timer systemd/netball-trials-retention.service systemd/netball-trials-retention.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now netball-trials-reminders.timer netball-trials-retention.timer
+systemctl list-timers 'netball-trials-*'
+```
+
+The reminder job runs every 15 minutes and dispatches reminders, confirmation retries, checkout retries, and scheduled communications. The retention job runs daily at 03:00 local server time and removes expired personal data. Monitor both units' logs and exit codes.
+
+The `postgres_data` volume is persistent. Never run `docker compose down -v`. No persistent off-host backup destination or retention policy is configured.

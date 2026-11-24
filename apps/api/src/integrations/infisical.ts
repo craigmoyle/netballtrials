@@ -136,32 +136,6 @@ export class InfisicalSecretStore {
     };
   }
 
-  private async writeSecret(name: string, value: string): Promise<void> {
-    const token = await this.getAccessToken();
-    const existing = await this.requestSecret(name);
-    const method = existing ? 'PATCH' : 'POST';
-    let response: Response;
-    try {
-      response = await this.fetcher(`${this.baseUrl}/api/v4/secrets/${encodeURIComponent(name)}`, {
-        method,
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          projectId: this.config.projectId,
-          environment: this.config.environment,
-          secretPath: this.config.secretPath || '/',
-          secretValue: value,
-          type: 'shared',
-          secretComment: 'Managed by Netball Trials integration settings',
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch {
-      throw new Error('Could not update integration credentials in the secret manager.');
-    }
-    if (!response.ok) throw new Error('Could not update integration credentials in the secret manager.');
-    this.accessToken = token;
-  }
-
   async readCredentials(): Promise<IntegrationCredentials> {
     const [stripe, gmail] = await Promise.all([
       this.requestSecret('STRIPE_INTEGRATION'),
@@ -179,13 +153,5 @@ export class InfisicalSecretStore {
       stripe: { configured: parseStripe(stripe?.value ?? null) !== null, updatedAt: stripe?.updatedAt ?? null },
       gmail: { configured: parseGmail(gmail?.value ?? null) !== null, updatedAt: gmail?.updatedAt ?? null },
     };
-  }
-
-  async replaceStripe(credentials: StripeIntegrationCredentials): Promise<void> {
-    await this.writeSecret('STRIPE_INTEGRATION', JSON.stringify(credentials));
-  }
-
-  async replaceGmail(credentials: GmailIntegrationCredentials): Promise<void> {
-    await this.writeSecret('GMAIL_INTEGRATION', JSON.stringify(credentials));
   }
 }

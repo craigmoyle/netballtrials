@@ -198,14 +198,17 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
     }
   }
 
-  async function retryCampaign(campaign: SiteAssociationCampaignDTO) {
-    const retryable = campaign.deliveries.filter((delivery) => delivery.status === 'FAILED').map((delivery) => delivery.id);
+  async function retryCampaign(campaign: SiteAssociationCampaignDTO, includeAmbiguous = false) {
+    const retryable = campaign.deliveries
+      .filter((delivery) => delivery.status === 'FAILED' || (includeAmbiguous && delivery.status === 'AMBIGUOUS'))
+      .map((delivery) => delivery.id);
     if (!retryable.length || busy) return;
+    if (includeAmbiguous && !window.confirm('The provider may already have accepted these emails. Retrying can send duplicate messages. Continue?')) return;
     setBusy(true);
     setError(null);
     try {
-      await client.retrySiteAssociationCommunication(campaign.id, retryable);
-      setNotice('Failed deliveries retried.');
+      await client.retrySiteAssociationCommunication(campaign.id, retryable, includeAmbiguous);
+      setNotice(includeAmbiguous ? 'Outcome-unknown deliveries retried.' : 'Failed deliveries retried.');
       await load();
     } catch {
       setError('Could not retry these deliveries. Refresh the delivery history and try again.');
@@ -279,6 +282,7 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
                 <p>{campaign.deliveries.length} association contact(s) · {campaign.deliveries.filter((delivery) => delivery.status === 'SENT' && !delivery.simulated).length} sent · {campaign.deliveries.filter((delivery) => delivery.simulated).length} simulated · {campaign.deliveries.filter((delivery) => delivery.status === 'FAILED').length} failed</p>
                 {campaign.scheduledAt && campaign.status === 'SCHEDULED' ? <p>Scheduled {new Date(campaign.scheduledAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })} <button type="button" className="button-secondary" disabled={busy} onClick={() => void cancelCampaign(campaign.id)}>Cancel scheduled message</button></p> : null}
                 {campaign.deliveries.some((delivery) => delivery.status === 'FAILED') ? <button type="button" className="button-secondary" disabled={busy} onClick={() => void retryCampaign(campaign)}>Retry failed deliveries</button> : null}
+                {campaign.deliveries.some((delivery) => delivery.status === 'AMBIGUOUS') ? <button type="button" className="button-secondary" disabled={busy} onClick={() => void retryCampaign(campaign, true)}>Retry outcome-unknown deliveries</button> : null}
               </li>
             ))}</ul> : <p>No site-level association messages yet.</p>}
           </section>

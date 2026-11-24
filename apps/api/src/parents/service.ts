@@ -10,6 +10,7 @@ import { createRegistrationCheckout, sendCheckoutContinuation } from '../registr
 import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
 import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
+import { isUniqueViolation } from '../errors';
 
 export const PARENT_SESSION_TTL_HOURS = 12;
 export const INCOMPLETE_REGISTRATION_RETENTION_DAYS = 30;
@@ -23,10 +24,6 @@ export class ParentAccessError extends Error {
     super(code);
     this.name = 'ParentAccessError';
   }
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
 }
 
 function parentEmailRateKey(email: string): string {

@@ -1,7 +1,7 @@
 import { defaultAgeRange } from '@netball-trials/types';
 import { z } from 'zod';
 import { isCalendarDate } from '../validation/date';
-import { localDateTimeToUtc } from '../time/melbourne';
+import { clockMinutes, localDateTimeToUtc } from '../time/melbourne';
 
 export const timeSchema = z
   .string()
@@ -56,11 +56,6 @@ export class EventValidationError extends Error {
   }
 }
 
-function toMinutes(value: string): number {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
 export function validateWindow(times: {
   eventDate: string;
   startTime: string;
@@ -68,9 +63,9 @@ export function validateWindow(times: {
   gameStartTime: string;
 }): string[] {
   const errors: string[] = [];
-  const start = toMinutes(times.startTime);
-  const gameStart = toMinutes(times.gameStartTime);
-  const finish = toMinutes(times.endTime);
+  const start = clockMinutes(times.startTime);
+  const gameStart = clockMinutes(times.gameStartTime);
+  const finish = clockMinutes(times.endTime);
 
   if (start > gameStart) errors.push('gameStartTime');
   if (finish < gameStart) errors.push('endTime');

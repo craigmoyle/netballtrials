@@ -52,7 +52,7 @@ The club controls how rounds are built. Players choose up to three ranked positi
 - Completed event registration and communication personal data held by the application is deleted or anonymized four calendar years after the event. Incomplete submissions are anonymized after 30 days. Financial records required for the incorporated association are maintained separately for at least seven years; the app's retention jobs are not the accounting record. Gmail Sent copies are outside these retention periods.
 - Member-association primary contact details remain on file until an Admin changes or clears them; deactivating an association does not automatically erase its contact details.
 - Trial history supports operational continuity and player progression across age groups; it is not a selection outcome or ranking system.
-- Open decisions: final selector-sheet fields and layout.
+- Selector sheets use the approved baseline: round/court/event header, Team A/Team B written color names, position, player Number and name, ranked choices, rating, and notes/feedback; blank game sheets provide the same writable selection fields.
 
 ## Brand Commitments
 

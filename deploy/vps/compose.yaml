@@ -276,6 +276,59 @@ services:
       - stats_db
       - stats_egress
 
+  trials-reminders:
+    profiles: [jobs]
+    image: netballtrials-api:vps
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: api-runtime
+    command: ["npm", "run", "send-reminders"]
+    environment:
+      NODE_ENV: production
+      APP_ENV: testing
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-fake}
+      ENABLE_TEST_INTEGRATIONS: ${ENABLE_TEST_INTEGRATIONS:-false}
+      INFISICAL_API_URL: ${INFISICAL_API_URL:-https://us.infisical.com}
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${INFISICAL_UNIVERSAL_AUTH_CLIENT_ID:-}
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET:-}
+      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
+      INFISICAL_ENVIRONMENT: ${INFISICAL_ENVIRONMENT:-}
+      INFISICAL_SECRET_PATH: ${INFISICAL_SECRET_PATH:-/}
+      DATABASE_URL: postgresql://netballtrials_runtime:${TRIALS_RUNTIME_DB_PASSWORD:?Set TRIALS_RUNTIME_DB_PASSWORD in the host env file}@db:5432/netballtrials_test?schema=public
+      WEB_ORIGIN: https://${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
+      API_PUBLIC_URL: https://${TRIALS_DOMAIN:?Set TRIALS_DOMAIN in the host env file}
+      SESSION_COOKIE_SECURE: "true"
+      MAIL_FROM: cmoyle@gmail.com
+      MAIL_REPLY_TO: cmoyle@gmail.com
+      TRUST_PROXY: 172.30.30.2
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+    logging: *bounded-logs
+    networks:
+      - trials_db
+      - trials_egress
+
+  trials-retention:
+    profiles: [jobs]
+    image: netballtrials-api:vps
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: api-runtime
+    command: ["npm", "run", "retention"]
+    environment:
+      DATABASE_URL: postgresql://netballtrials_runtime:${TRIALS_RUNTIME_DB_PASSWORD:?Set TRIALS_RUNTIME_DB_PASSWORD in the host env file}@db:5432/netballtrials_test?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    logging: *bounded-logs
+    networks:
+      - trials_db
+
   trials-migrate:
     profiles: [jobs]
     image: netballtrials-migrate:vps

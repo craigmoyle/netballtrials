@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
+import { isUniqueViolation } from '../errors';
 import {
   archiveBibColor,
   BibColorArchivedError,
@@ -23,10 +24,6 @@ const updateColorSchema = z.object({ name: colorFields.name.optional(), hex: col
   .strict()
   .refine((input) => Object.keys(input).length > 0);
 const courtColorsSchema = z.object({ teamAColorId: z.string().min(1), teamBColorId: z.string().min(1) }).strict();
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
-}
 
 export function registerBibColorRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/admin/bib-colors', { preHandler: requireAdmin(deps) }, async () => listBibColors(deps.prisma));

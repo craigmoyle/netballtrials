@@ -1,5 +1,8 @@
 import type { BibColorDTO, EventCourtColorDTO, RoundPlanPlayerDTO } from '@netball-trials/types';
 import { COURT_POSITIONS, type PlanSlot } from './types';
+import { escapeHtml } from '../html';
+
+export { escapeHtml } from '../html';
 
 type EventLabel = { name: string; eventDate: string; venue: string };
 type SelectorSheetsInput = {
@@ -18,12 +21,6 @@ type SheetInput = {
   players: RoundPlanPlayerDTO[];
   courtColors: EventCourtColorDTO[];
 };
-
-export function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character]!);
-}
 
 function colorFor(colors: EventCourtColorDTO[], court: number, team: 0 | 1): BibColorDTO | null {
   const pair = colors.find((item) => item.court === court);

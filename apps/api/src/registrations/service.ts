@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient, type Registration } from '@prisma/client';
 import { melbourneDateKey } from '@netball-trials/types';
 import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibility';
 import { DEFAULT_POLICY_URL } from '../policy';
+import { isUniqueViolation } from '../errors';
 import { registrationInputSchema, type RegistrationInput } from './schemas';
 
 export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -26,14 +27,6 @@ export class RegistrationConflictError extends Error {
     this.reason = reason;
     this.existing = existing;
   }
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: string }).code === 'P2002'
-  );
 }
 
 async function createPendingRegistrationWithPolicy(

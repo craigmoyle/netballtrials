@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Netball Trials reminder and scheduled-message jobs every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=netball-trials-reminders.service
+
+[Install]
+WantedBy=timers.target

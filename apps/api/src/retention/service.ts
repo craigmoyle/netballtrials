@@ -26,6 +26,31 @@ export type RetentionDeferral = {
   deliveries: Array<{ id: string; attempts: number; status: EmailDeliveryState }>;
 };
 
+type AnonymizedReference = { registrationId: string; anonymizedRef: string };
+
+async function rewritePlanReferences(tx: Prisma.TransactionClient, mappings: AnonymizedReference[]): Promise<void> {
+  if (!mappings.length) return;
+  const ids = Prisma.join(mappings.map(({ registrationId }) => registrationId));
+  const playerCases = Prisma.join(mappings.map(({ registrationId, anonymizedRef }) =>
+    Prisma.sql`WHEN ${registrationId} THEN ${anonymizedRef}`,
+  ));
+  const slotCases = Prisma.join(mappings.map(({ registrationId, anonymizedRef }) =>
+    Prisma.sql`WHEN ${registrationId} THEN ${anonymizedRef}`,
+  ));
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "RoundPlanPlayer"
+    SET "registrationId" = CASE "registrationId" ${playerCases} ELSE "registrationId" END,
+        "playerName" = 'Former participant',
+        "bibNumber" = NULL
+    WHERE "registrationId" IN (${ids})
+  `);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "RoundSlot"
+    SET "registrationId" = CASE "registrationId" ${slotCases} ELSE "registrationId" END
+    WHERE "registrationId" IN (${ids})
+  `);
+}
+
 export async function anonymizeExpiredRegistrations(
   prisma: PrismaClient,
   now: Date,
@@ -59,49 +84,30 @@ export async function anonymizeExpiredRegistrations(
         where: { eventId, anonymizedAt: null },
         select: { id: true, status: true },
       });
-      let count = 0;
+      const rewritten: AnonymizedReference[] = [];
       for (const registration of registrations) {
         const anonymizedRef = `anon_${randomUUID()}`;
         const claimed = await tx.registration.updateMany({
           where: { id: registration.id, anonymizedAt: null },
           data: {
-            playerFirstName: '',
-            playerLastName: '',
-            playerNameNormalized: '',
-            dateOfBirth: ANONYMIZED_DOB,
-            parentAuthorityConfirmedAt: null,
-            parentName: '',
-            parentEmail: '',
-            parentMobile: '',
-            memberAssociation: '',
-            qrToken: null,
-            checkoutSessionId: null,
-            paymentIntentId: null,
-            legacyPaymentRef: null,
-            checkedInBy: null,
-            bibNumber: null,
-            ageFlagged: false,
+            playerFirstName: '', playerLastName: '', playerNameNormalized: '',
+            dateOfBirth: ANONYMIZED_DOB, parentAuthorityConfirmedAt: null,
+            parentName: '', parentEmail: '', parentMobile: '', memberAssociation: '',
+            qrToken: null, checkoutSessionId: null, paymentIntentId: null, legacyPaymentRef: null,
+            checkedInBy: null, bibNumber: null, ageFlagged: false,
             statusBeforeAnonymization: registration.status,
-            status: 'WITHDRAWN',
-            anonymizedAt: now,
-            anonymizedRef,
+            status: 'WITHDRAWN', anonymizedAt: now, anonymizedRef,
           },
         });
-        if (claimed.count !== 1) continue;
-
+        if (claimed.count === 1) rewritten.push({ registrationId: registration.id, anonymizedRef });
+      }
+      const registrationIds = rewritten.map(({ registrationId }) => registrationId);
+      if (registrationIds.length) {
         await tx.reviewItem.deleteMany({
-          where: { registrationId: registration.id, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
+          where: { registrationId: { in: registrationIds }, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
         });
-        await tx.registrationChangeLog.deleteMany({ where: { registrationId: registration.id } });
-        await tx.roundPlanPlayer.updateMany({
-          where: { registrationId: registration.id },
-          data: { registrationId: anonymizedRef, playerName: 'Former participant', bibNumber: null },
-        });
-        await tx.roundSlot.updateMany({
-          where: { registrationId: registration.id },
-          data: { registrationId: anonymizedRef },
-        });
-        count += 1;
+        await tx.registrationChangeLog.deleteMany({ where: { registrationId: { in: registrationIds } } });
+        await rewritePlanReferences(tx, rewritten);
       }
 
       // Scrub deliveries under the same lock as their preparation and claims.
@@ -126,7 +132,7 @@ export async function anonymizeExpiredRegistrations(
       await tx.scheduledMessage.deleteMany({ where: { eventId } });
       await tx.siteAssociationCommunication.deleteMany({ where: { anchorEventId: eventId } });
       await tx.checkInSession.deleteMany({ where: { eventId } });
-      return count;
+      return rewritten.length;
     }, { timeout: 60_000 });
     if (deferred) onDeferred?.(deferred);
   }
@@ -184,47 +190,30 @@ export async function anonymizeIncompleteRegistrations(
         where: { id: { in: ids }, ...incompleteStatuses, anonymizedAt: null },
         select: { id: true, status: true, parentEmail: true },
       });
-      let count = 0;
+      const rewritten: AnonymizedReference[] = [];
       for (const registration of expired) {
         const anonymizedRef = `anon_${randomUUID()}`;
         const claimed = await tx.registration.updateMany({
           where: { id: registration.id, ...incompleteStatuses, anonymizedAt: null },
           data: {
-            playerFirstName: '',
-            playerLastName: '',
-            playerNameNormalized: '',
-            dateOfBirth: ANONYMIZED_DOB,
-            parentAuthorityConfirmedAt: null,
-            parentEmailVerifiedAt: null,
-            parentFollowUpSentAt: null,
-            parentName: '',
-            parentEmail: '',
-            parentMobile: '',
-            memberAssociation: '',
-            qrToken: null,
-            checkoutSessionId: null,
-            paymentIntentId: null,
-            legacyPaymentRef: null,
-            checkedInBy: null,
-            bibNumber: null,
-            ageFlagged: false,
-            statusBeforeAnonymization: registration.status,
-            status: 'WITHDRAWN',
-            anonymizedAt: now,
-            anonymizedRef,
+            playerFirstName: '', playerLastName: '', playerNameNormalized: '', dateOfBirth: ANONYMIZED_DOB,
+            parentAuthorityConfirmedAt: null, parentEmailVerifiedAt: null, parentFollowUpSentAt: null,
+            parentName: '', parentEmail: '', parentMobile: '', memberAssociation: '',
+            qrToken: null, checkoutSessionId: null, paymentIntentId: null, legacyPaymentRef: null,
+            checkedInBy: null, bibNumber: null, ageFlagged: false,
+            statusBeforeAnonymization: registration.status, status: 'WITHDRAWN', anonymizedAt: now, anonymizedRef,
           },
         });
-        if (claimed.count !== 1) continue;
-        await tx.parentAccessToken.deleteMany({ where: { registrationId: registration.id } });
-        await tx.registrationChangeLog.deleteMany({ where: { registrationId: registration.id } });
+        if (claimed.count === 1) rewritten.push({ registrationId: registration.id, anonymizedRef });
+      }
+      const registrationIds = rewritten.map(({ registrationId }) => registrationId);
+      if (registrationIds.length) {
+        await tx.parentAccessToken.deleteMany({ where: { registrationId: { in: registrationIds } } });
+        await tx.registrationChangeLog.deleteMany({ where: { registrationId: { in: registrationIds } } });
         await tx.reviewItem.deleteMany({
-          where: { registrationId: registration.id, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
+          where: { registrationId: { in: registrationIds }, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
         });
-        await tx.roundPlanPlayer.updateMany({
-          where: { registrationId: registration.id },
-          data: { registrationId: anonymizedRef, playerName: 'Former participant', bibNumber: null },
-        });
-        await tx.roundSlot.updateMany({ where: { registrationId: registration.id }, data: { registrationId: anonymizedRef } });
+        await rewritePlanReferences(tx, rewritten);
         await tx.$executeRaw(Prisma.sql`
           UPDATE "EmailLog"
           SET "registrationId" = NULL,
@@ -232,9 +221,8 @@ export async function anonymizeIncompleteRegistrations(
               "idempotencyKey" = 'retained:' || "id",
               "to" = '', "subject" = '', "body" = '', "messagePayload" = NULL,
               "error" = NULL, "kind" = 'retention', "status" = 'ANONYMIZED', "updatedAt" = ${now}
-          WHERE "registrationId" = ${registration.id} AND "status" <> 'ANONYMIZED'
+          WHERE "registrationId" IN (${Prisma.join(registrationIds)}) AND "status" <> 'ANONYMIZED'
         `);
-        count += 1;
       }
       const affectedEmails = [...new Set(expired.map((registration) => registration.parentEmail.trim().toLowerCase()).filter(Boolean))];
       for (const email of affectedEmails) {
@@ -246,7 +234,7 @@ export async function anonymizeIncompleteRegistrations(
         await tx.parentAccessSession.deleteMany({ where: { email: { equals: email, mode: 'insensitive' } } });
         await tx.parentAccessToken.deleteMany({ where: { email: { equals: email, mode: 'insensitive' } } });
       }
-      return count;
+      return rewritten.length;
     }, { timeout: 60_000 });
     if (deferred) onDeferred?.(deferred);
   }

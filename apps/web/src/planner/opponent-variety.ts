@@ -10,6 +10,7 @@ export function measureOpponentVariety(slots: RoundSlotDTO[]) {
   }
 
   const pairMeetings = new Map<string, { playerAId: string; playerBId: string; meetings: number }>();
+  const meetingsByPlayer = new Map<string, Map<string, number>>();
   for (const { team0, team1 } of games.values()) {
     for (const playerId of team0) {
       for (const opponentId of team1) {
@@ -17,9 +18,22 @@ export function measureOpponentVariety(slots: RoundSlotDTO[]) {
         const pairKey = JSON.stringify([playerAId, playerBId]);
         const pair = pairMeetings.get(pairKey);
         pairMeetings.set(pairKey, { playerAId, playerBId, meetings: (pair?.meetings ?? 0) + 1 });
+        const playerOpponents = meetingsByPlayer.get(playerId) ?? new Map<string, number>();
+        playerOpponents.set(opponentId, (playerOpponents.get(opponentId) ?? 0) + 1);
+        meetingsByPlayer.set(playerId, playerOpponents);
+        const opponentPlayers = meetingsByPlayer.get(opponentId) ?? new Map<string, number>();
+        opponentPlayers.set(playerId, (opponentPlayers.get(playerId) ?? 0) + 1);
+        meetingsByPlayer.set(opponentId, opponentPlayers);
       }
     }
   }
 
-  return { repeatedPairings: [...pairMeetings.values()].filter((pair) => pair.meetings > 1) };
+  return {
+    byPlayer: new Map([...meetingsByPlayer].map(([id, meetings]) => [id, {
+      uniqueOpponents: meetings.size,
+      repeatMeetings: [...meetings.values()].reduce((total, count) => total + count - 1, 0),
+    }])),
+    repeatedPairs: [...pairMeetings.values()].reduce((total, pair) => total + pair.meetings - 1, 0),
+    repeatedPairings: [...pairMeetings.values()].filter((pair) => pair.meetings > 1),
+  };
 }

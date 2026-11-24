@@ -344,7 +344,7 @@ describe('RegisterPage', () => {
     const privacySummary = within(notice).getByText('Privacy details');
     const privacyDetails = privacySummary.closest('details')!;
     expect(privacyDetails).not.toHaveAttribute('open');
-    expect(within(privacyDetails).getByText(/Google\/Gmail and Bluehost/i)).toBeInTheDocument();
+    expect(within(privacyDetails).getByText(/Google\/Gmail and the VPS hosting provider/i)).toBeInTheDocument();
     expect(privacyDetails.querySelector('a[href^="mailto:"]')).toHaveAttribute('href', expect.stringContaining('Privacy%20request'));
     const firstField = await screen.findByLabelText(/player first name/i);
     expect(notice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

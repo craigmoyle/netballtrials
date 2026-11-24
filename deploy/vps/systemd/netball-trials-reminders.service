@@ -1,0 +1,10 @@
+[Unit]
+Description=Netball Trials reminders and scheduled communications
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netball/netballtrials/deploy/vps
+ExecStart=/usr/bin/docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm --no-deps trials-reminders
+TimeoutStartSec=15min
