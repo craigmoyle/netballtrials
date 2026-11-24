@@ -1,5 +1,10 @@
 import { isCalendarDate } from '../validation/date';
 
+export function clockMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
 function zoneOffsetMs(instant: Date, timeZone: string): number {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone,

@@ -37,6 +37,26 @@ function makeClient() {
 }
 
 describe('SiteCommunicationsPage', () => {
+  it('requires confirmation before retrying ambiguous association deliveries', async () => {
+    const client = makeClient();
+    client.listSiteAssociationCampaigns.mockResolvedValue([{
+      ...campaign,
+      status: 'FAILED',
+      error: 'delivery_0_failed_1_unknown_0_pending',
+      deliveries: [{ ...campaign.deliveries[0], status: 'AMBIGUOUS', sentAt: null, failedAt: '2026-10-31T00:00:00.000Z', error: 'delivery_outcome_unknown' }],
+    }]);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<SiteCommunicationsPage client={client as any} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry outcome-unknown deliveries' }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('duplicate'));
+    expect(client.retrySiteAssociationCommunication).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry outcome-unknown deliveries' }));
+    await waitFor(() => expect(client.retrySiteAssociationCommunication).toHaveBeenCalledWith('campaign-1', ['mail-1'], true));
+  });
+
   it('previews and sends one association campaign across selected events', async () => {
     const client = makeClient();
     render(<SiteCommunicationsPage client={client as any} />);

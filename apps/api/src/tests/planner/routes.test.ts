@@ -90,6 +90,7 @@ describe('planner routes', () => {
     expect(blank.headers['content-type']).toContain('text/html');
     expect((blank.body.match(/class="sheet"/g) ?? [])).toHaveLength(1);
     expect(blank.body).toContain('Round:');
+    expect(blank.body).toContain('alt="Chisholm Netball"');
     expect((await app.inject({ method: 'GET', url: '/api/admin/events/not-an-event/sheets/blank', cookies: { nt_session: cookie } })).statusCode).toBe(404);
   });
 

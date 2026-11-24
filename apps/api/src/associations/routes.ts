@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
+import { isUniqueViolation } from '../errors';
 import { createAssociation, listActiveAssociations, listAssociations, updateAssociation } from './service';
 
 const contactFields = {
@@ -26,14 +27,6 @@ const patchSchema = z.object({
   active: z.boolean().optional(),
   ...contactFields,
 }).superRefine(contactPairIsValid);
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: string }).code === 'P2002'
-  );
-}
 
 export function registerAssociationRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/public/associations', async () => listActiveAssociations(deps.prisma));

@@ -2,11 +2,9 @@ import type { Env } from '../env';
 import {
   INFISICAL_CLOUD_API_URLS,
   InfisicalSecretStore,
-  type GmailIntegrationCredentials,
   type IntegrationCredentialStatus,
   type IntegrationCredentials,
   type InfisicalConnectionSettings,
-  type StripeIntegrationCredentials,
 } from './infisical';
 
 export type IntegrationMode = 'fake' | 'environment' | 'infisical';
@@ -135,15 +133,5 @@ export class IntegrationSettings {
       stripe: { configured: credentials.stripe !== null, updatedAt: null },
       gmail: { configured: credentials.gmail !== null, updatedAt: null },
     };
-  }
-
-  async replaceStripe(credentials: StripeIntegrationCredentials): Promise<void> {
-    if (!this.store) throw new IntegrationSettingsUnavailableError();
-    await this.store.replaceStripe(credentials);
-  }
-
-  async replaceGmail(credentials: GmailIntegrationCredentials): Promise<void> {
-    if (!this.store) throw new IntegrationSettingsUnavailableError();
-    await this.store.replaceGmail(credentials);
   }
 }

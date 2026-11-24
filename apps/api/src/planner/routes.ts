@@ -301,7 +301,12 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     const { id } = req.params as { id: string };
     const event = await deps.prisma.event.findUnique({ where: { id }, select: { name: true, eventDate: true, venue: true } });
     if (!event) return reply.code(404).send({ error: 'not_found' });
-    const html = renderBlankGameSheet({ name: event.name, eventDate: event.eventDate.toISOString().slice(0, 10), venue: event.venue });
+    const html = renderBlankGameSheet({
+      name: event.name,
+      eventDate: event.eventDate.toISOString().slice(0, 10),
+      venue: event.venue,
+      logoUrl: new URL('/chisholm-netball-logo.jpg', deps.env.WEB_ORIGIN).toString(),
+    });
     return reply.type('text/html; charset=utf-8').send(html);
   });
 }

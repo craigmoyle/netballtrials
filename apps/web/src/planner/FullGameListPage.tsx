@@ -691,12 +691,13 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     return (
       <section className="player-report" aria-labelledby="player-statistics-heading">
         <div className="admin-page-title-row"><h2 id="player-statistics-heading">Player Statistics</h2><HelpTip label="Opponent meetings">A pairing appears when two players meet as opponents at least twice. Meetings shows the total number of games between them.</HelpTip></div>
-        <p>Other counts assignments outside a player's recorded choices. Court columns show how often each player appeared on that court.</p>
+        <p>Other counts assignments outside a player's recorded choices. Unique opponents counts distinct opposing players; Repeat meetings counts additional games against those same opponents. Court columns show how often each player appeared on that court.</p>
+        <p>Total repeated player-pair meetings in this schedule: {opponentStats.repeatedPairs}.</p>
         <p className="player-report-scroll-note">Scroll horizontally to view all columns.</p>
         <div className="table-scroll" role="region" aria-label="Scrollable player statistics" tabIndex={0}>
           <table className="player-statistics-table">
             <caption>Player Statistics</caption>
-            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th>{courtNumbers.map((court) => <th scope="col" key={court}>Court {court}</th>)}</tr></thead>
+            <thead><tr><th scope="col">Player</th><th scope="col">Number</th><th scope="col">Games</th><th scope="col">Rank 1</th><th scope="col">Rank 2</th><th scope="col">Rank 3</th><th scope="col">Other</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th>{courtNumbers.map((court) => <th scope="col" key={court}>Court {court}</th>)}</tr></thead>
             <tbody>{reportPlayers.map((player) => {
               const slots = assignmentsByPlayer.get(player.registrationId) ?? [];
               const counts = { rank1: 0, rank2: 0, rank3: 0, other: 0 };
@@ -708,7 +709,8 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
               }
               const courtCounts = new Map<number, number>();
               for (const slot of slots) courtCounts.set(slot.court, (courtCounts.get(slot.court) ?? 0) + 1);
-              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td>{courtNumbers.map((court) => <td key={court}>{courtCounts.get(court) ?? 0}</td>)}</tr>;
+              const variety = opponentStats.byPlayer.get(player.registrationId) ?? { uniqueOpponents: 0, repeatMeetings: 0 };
+              return <tr key={player.registrationId}><th scope="row">{player.playerName}</th><td>{player.bibNumber ?? '—'}</td><td>{slots.length}</td><td>{counts.rank1}</td><td>{counts.rank2}</td><td>{counts.rank3}</td><td>{counts.other}</td><td>{variety.uniqueOpponents}</td><td>{variety.repeatMeetings}</td>{courtNumbers.map((court) => <td key={court}>{courtCounts.get(court) ?? 0}</td>)}</tr>;
             })}</tbody>
           </table>
         </div>

@@ -4,14 +4,16 @@ import { renderBlankGameSheet } from '../../planner/blank-sheet';
 const positions = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'];
 
 describe('renderBlankGameSheet', () => {
-  it('renders one writable A4 landscape sheet with blank game fields and both teams', () => {
-    const html = renderBlankGameSheet({ name: '15/U Ladies', eventDate: '2026-09-12', venue: 'SNC' });
+  it('renders one branded writable A4 landscape sheet with blank game fields and both teams', () => {
+    const html = renderBlankGameSheet({ name: '15/U Ladies', eventDate: '2026-09-12', venue: 'SNC', logoUrl: 'https://trials.example/chisholm-netball-logo.jpg' });
 
     expect((html.match(/class="sheet"/g) ?? [])).toHaveLength(1);
     expect(html).toContain('@page { size: A4 landscape');
     expect(html).toContain('15/U Ladies');
     expect(html).toContain('2026-09-12');
     expect(html).toContain('SNC');
+    expect(html).toContain('src="https://trials.example/chisholm-netball-logo.jpg"');
+    expect(html).toContain('alt="Chisholm Netball"');
     expect(html).toMatch(/Round: <span class="blank-sheet__line"/);
     expect(html).toMatch(/Court: <span class="blank-sheet__line"/);
     expect(html).toMatch(/Team A color: <span class="blank-sheet__line"/);
@@ -33,7 +35,7 @@ describe('renderBlankGameSheet', () => {
   });
 
   it('escapes event metadata in the standalone document', () => {
-    const html = renderBlankGameSheet({ name: '<script>bad()</script>', eventDate: '2026-09-12', venue: '<b>SNC</b>' });
+    const html = renderBlankGameSheet({ name: '<script>bad()</script>', eventDate: '2026-09-12', venue: '<b>SNC</b>', logoUrl: 'https://trials.example/chisholm-netball-logo.jpg' });
     expect(html).toContain('&lt;script&gt;bad()&lt;/script&gt;');
     expect(html).toContain('&lt;b&gt;SNC&lt;/b&gt;');
     expect(html).not.toContain('<script>bad()</script>');

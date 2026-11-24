@@ -4,6 +4,7 @@ import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { isValidPinFormat } from './pin';
 import { rateLimitClientKey } from '../security/rate-limit';
+import { requestNow } from '../http-time';
 import {
   CheckInClosedError,
   CheckInUnavailableError,
@@ -23,16 +24,6 @@ import {
 } from './service';
 
 const pinSchema = z.object({ pin: z.string() });
-
-function nowFrom(request: FastifyRequest): Date {
-  if (process.env.NODE_ENV === 'test') {
-    const header = request.headers['x-test-now'];
-    if (typeof header === 'string') {
-      return new Date(header);
-    }
-  }
-  return new Date();
-}
 
 function labelFrom(request: FastifyRequest): string {
   const raw = request.headers['x-checkin-label'];
@@ -88,7 +79,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
 
   app.post('/api/admin/events/:id/check-in/session', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const now = nowFrom(req);
+    const now = requestNow(req);
     try {
       const session = await openAdminCheckInSession(deps.prisma, id, req.adminSessionId!, now);
       reply.setCookie('nt_checkin', session.token, {
@@ -115,7 +106,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(400).send({ error: 'validation_failed' });
     }
 
-    const now = nowFrom(req);
+    const now = requestNow(req);
     const clientKey = rateLimitClientKey(req.ip);
 
     try {
@@ -157,7 +148,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(401).send({ error: 'unauthorized' });
     }
 
-    const summary = await getCheckInSummary(deps.prisma, token, nowFrom(req));
+    const summary = await getCheckInSummary(deps.prisma, token, requestNow(req));
     if (!summary) {
       return reply.code(401).send({ error: 'unauthorized' });
     }
@@ -166,7 +157,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
   });
 
   app.get('/api/check-in/lookup', async (req, reply) => {
-    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, requestNow(req));
     if (!eventId) {
       return reply.code(401).send({ error: 'unauthorized' });
     }
@@ -175,7 +166,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
   });
 
   app.post('/api/check-in/scan', async (req, reply) => {
-    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, requestNow(req));
     if (!eventId) {
       return reply.code(401).send({ error: 'unauthorized' });
     }
@@ -184,32 +175,32 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(400).send({ error: 'validation_failed' });
     }
     const result = await checkInByToken(
-      deps.prisma, eventId, parsed.data.token, labelFrom(req), nowFrom(req), req.cookies!.nt_checkin!,
+      deps.prisma, eventId, parsed.data.token, labelFrom(req), requestNow(req), req.cookies!.nt_checkin!,
     );
     if (!result) return reply.code(401).send({ error: 'unauthorized' });
     return result;
   });
 
   app.post('/api/check-in/registrations/:id', async (req, reply) => {
-    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, requestNow(req));
     if (!eventId) {
       return reply.code(401).send({ error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
     const result = await manualCheckIn(
-      deps.prisma, eventId, id, labelFrom(req), nowFrom(req), req.cookies!.nt_checkin!,
+      deps.prisma, eventId, id, labelFrom(req), requestNow(req), req.cookies!.nt_checkin!,
     );
     if (!result) return reply.code(401).send({ error: 'unauthorized' });
     return result;
   });
 
   app.post('/api/check-in/registrations/:id/undo', async (req, reply) => {
-    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, nowFrom(req));
+    const eventId = await resolveCheckInEvent(deps.prisma, req.cookies?.nt_checkin, requestNow(req));
     if (!eventId) {
       return reply.code(401).send({ error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
-    const undone = await undoCheckIn(deps.prisma, eventId, id, req.cookies!.nt_checkin!, nowFrom(req));
+    const undone = await undoCheckIn(deps.prisma, eventId, id, req.cookies!.nt_checkin!, requestNow(req));
     if (undone === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!undone) return reply.code(404).send({ error: 'not_found' });
     return reply.code(204).send();

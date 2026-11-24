@@ -16,6 +16,7 @@ describe('measureOpponentVariety', () => {
       ...game(2, ['a', 'b'], ['c', 'd']),
       ...game(3, ['a', 'b'], ['e', 'f']),
     ]);
+    expect(result.byPlayer.get('a')).toEqual({ uniqueOpponents: 4, repeatMeetings: 2 });
     expect(result.repeatedPairings).toEqual([
       { playerAId: 'a', playerBId: 'c', meetings: 2 },
       { playerAId: 'a', playerBId: 'd', meetings: 2 },

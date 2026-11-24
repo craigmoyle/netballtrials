@@ -40,30 +40,6 @@ describe('InfisicalSecretStore', () => {
     expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST' });
   });
 
-  it('creates missing secrets and updates existing secrets without returning their contents', async () => {
-    const newSecretFetcher = vi.fn()
-      .mockResolvedValueOnce(authResponse())
-      .mockResolvedValueOnce(jsonResponse({}, 404))
-      .mockResolvedValueOnce(jsonResponse({ secret: { id: 'secret-id' } }));
-    const createStore = new InfisicalSecretStore(config, newSecretFetcher as typeof fetch);
-    await createStore.replaceStripe({ secretKey: 'sk_test_new', webhookSecret: 'whsec_new' });
-    expect(newSecretFetcher.mock.calls[2][1]).toMatchObject({ method: 'POST' });
-
-    const updateFetcher = vi.fn()
-      .mockResolvedValueOnce(authResponse())
-      .mockResolvedValueOnce(jsonResponse({ secret: { secretValue: '{"secretKey":"old","webhookSecret":"old"}' } }))
-      .mockResolvedValueOnce(jsonResponse({ secret: { id: 'secret-id' } }));
-    const updateStore = new InfisicalSecretStore(config, updateFetcher as typeof fetch);
-    await updateStore.replaceStripe({ secretKey: 'sk_test_new', webhookSecret: 'whsec_new' });
-
-    const updateCall = updateFetcher.mock.calls[2];
-    expect(updateCall[1]).toMatchObject({ method: 'PATCH' });
-    expect(JSON.parse(String(updateCall[1]?.body))).toMatchObject({
-      projectId: 'project-id', environment: 'test', secretPath: '/netball-trials', type: 'shared',
-      secretValue: JSON.stringify({ secretKey: 'sk_test_new', webhookSecret: 'whsec_new' }),
-    });
-  });
-
   it('fails with sanitized errors when Infisical authentication fails', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse({ message: 'machine-secret leaked by upstream' }, 401));
     const store = new InfisicalSecretStore(config, fetcher as typeof fetch);

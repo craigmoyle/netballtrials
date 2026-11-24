@@ -8,6 +8,7 @@ import { deliveryIdempotencyKey } from '../messages/service';
 import { lockMailEvent } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
 import type { WebhookEvent } from './provider';
+import { isUniqueViolation } from '../errors';
 
 export type PaymentOutcome = 'paid' | 'already_paid' | 'expired' | 'failed' | 'orphaned' | 'ignored';
 
@@ -21,11 +22,6 @@ function storedOutcome(outcome: string | undefined): PaymentOutcome {
     outcome === 'EXPIRED' ? 'expired' :
       outcome === 'FAILED' ? 'failed' :
         outcome === 'ORPHANED' ? 'orphaned' : 'ignored';
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null &&
-    (error as { code?: string }).code === 'P2002';
 }
 
 function isSettledPayment(event: Extract<WebhookEvent, { kind: 'checkout_completed' }>): boolean {

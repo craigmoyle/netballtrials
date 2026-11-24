@@ -386,7 +386,7 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
         {!adminAssisted ? <p className="registration-privacy-note">Your draft is saved in this tab for up to 1 hour after your last change. Anyone with access to this tab can see it; closing the tab clears it.</p> : null}
         <details id="privacy-information" className="registration-privacy">
           <summary>Privacy details</summary>
-          <p>Necessary information is processed by our payment, email and hosting providers (Stripe, Google/Gmail and Bluehost). Provider systems may process data outside Australia; contact the club for current hosting-region details.</p>
+          <p>Necessary information is processed by our payment, email and hosting providers (Stripe, Google/Gmail and the VPS hosting provider). Provider systems may process data outside Australia; contact the club for current hosting-region details.</p>
           <p>Admin users can access registration details; parent contact details are not shown to volunteers. Request access or correction, or raise a privacy concern, by emailing <a href="mailto:chisholmnetball@gmail.com?subject=Privacy%20request">chisholmnetball@gmail.com</a>.</p>
           <p>The app removes or anonymises personal details four calendar years after the event date. Payment/tax records may be kept separately for longer. Gmail Sent copies are outside this retention schedule.</p>
           {!adminAssisted && hasUnsavedDetails ? <p><button type="button" className="button-secondary" onClick={clearSavedDraft}>Clear saved draft and form</button></p> : null}

@@ -16,7 +16,8 @@
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspace @netball-trials/web",
     "seed:test-dataset": "npm run seed:test-dataset --workspace=@netball-trials/api",
-    "rotate:test-db-password": "npm run rotate:test-db-password --workspace=@netball-trials/api",
+    "send-reminders": "npm run send-reminders --workspace=@netball-trials/api",
+    "retention": "npm run retention --workspace=@netball-trials/api",
     "build": "npm run build --workspaces --if-present"
   },
   "overrides": {
@@ -26,8 +27,5 @@
     "prisma@7.10.1": true,
     "@prisma/engines@7.10.1": true,
     "esbuild@0.28.2": true
-  },
-  "devDependencies": {
-    "effect": "3.22.1"
   }
 }

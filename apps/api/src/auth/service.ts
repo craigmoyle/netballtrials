@@ -160,7 +160,7 @@ export async function consumeLoginToken(
   // Claim the token atomically so two simultaneous verifications cannot both
   // create a session from one link.
   const claimed = await deps.prisma.loginToken.updateMany({
-    where: { id: found.id, usedAt: null },
+    where: { id: found.id, usedAt: null, expiresAt: { gt: now } },
     data: { usedAt: now },
   });
 

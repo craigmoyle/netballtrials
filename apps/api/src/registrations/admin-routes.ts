@@ -1,6 +1,7 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
+import { requestNow } from '../http-time';
 import { sendCheckoutContinuation } from './checkout';
 import { sendRegistrationEmailVerification } from '../parents/service';
 import type { RegistrationInput } from './schemas';
@@ -10,14 +11,6 @@ import {
   RegistrationValidationError,
 } from './service';
 
-function nowFrom(request: FastifyRequest): Date {
-  if (process.env.NODE_ENV === 'test') {
-    const header = request.headers['x-test-now'];
-    if (typeof header === 'string') return new Date(header);
-  }
-  return new Date();
-}
-
 function sendReceivedOrRetry(reply: FastifyReply, sent: boolean, nextStep: 'verify-email' | 'checkout') {
   if (!sent) return reply.code(503).send({ error: nextStep === 'verify-email' ? 'email_verification_unavailable' : 'checkout_unavailable' });
   return reply.code(202).send({ status: 'received', nextStep });
@@ -26,7 +19,7 @@ function sendReceivedOrRetry(reply: FastifyReply, sent: boolean, nextStep: 'veri
 export function registerAdminRegistrationRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/admin/events/:id/day-of-registration', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const now = nowFrom(req);
+    const now = requestNow(req);
     try {
       const registration = await createAdminPendingRegistration(
         deps.prisma,

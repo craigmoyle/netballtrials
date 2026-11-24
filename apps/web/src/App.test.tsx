@@ -207,6 +207,9 @@ describe('App route boundaries', () => {
     apiMocks.listEvents.mockResolvedValue([]);
     const router = renderApp('/admin/verify#token=magic-token-012345');
 
+    expect(await screen.findByRole('button', { name: 'Continue to Admin sign-in' })).toBeInTheDocument();
+    expect(apiMocks.verify).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Admin sign-in' }));
     expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current path')).toHaveTextContent('/admin/events');
     expect(apiMocks.verify).toHaveBeenCalledWith('magic-token-012345');

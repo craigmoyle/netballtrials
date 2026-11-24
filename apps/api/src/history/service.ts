@@ -3,6 +3,8 @@ import type { PlayerHistoryEntryDTO } from '@netball-trials/types';
 import { normalizePlayerName } from '../registrations/eligibility';
 import { isPastRetentionCutoff } from '../retention/service';
 
+type HistorySlot = { round: number; court: number; position: Position; team: number; registrationId: string };
+
 export async function searchPlayerHistory(
   prisma: PrismaClient,
   playerName: string,
@@ -44,20 +46,39 @@ export async function searchPlayerHistory(
     },
   });
 
+  const gamesByEvent = new Map<string, Map<string, { team0: string[]; team1: string[] }>>();
+  const slotsByEventPlayer = new Map<string, Map<string, HistorySlot[]>>();
+  for (const registration of registrations) {
+    if (gamesByEvent.has(registration.event.id)) continue;
+    const games = new Map<string, { team0: string[]; team1: string[] }>();
+    const slotsByPlayer = new Map<string, HistorySlot[]>();
+    for (const slot of registration.event.publishedPlan?.slots ?? []) {
+      const key = `${slot.round}:${slot.court}`;
+      const game = games.get(key) ?? { team0: [], team1: [] };
+      (slot.team === 0 ? game.team0 : game.team1).push(slot.registrationId);
+      games.set(key, game);
+      const playerSlots = slotsByPlayer.get(slot.registrationId) ?? [];
+      playerSlots.push(slot);
+      slotsByPlayer.set(slot.registrationId, playerSlots);
+    }
+    gamesByEvent.set(registration.event.id, games);
+    slotsByEventPlayer.set(registration.event.id, slotsByPlayer);
+  }
+
   return registrations.filter((registration) => !isPastRetentionCutoff(registration.event.eventDate, now)).map((registration) => {
-    const slots = registration.event.publishedPlan?.slots.filter((slot) => slot.registrationId === registration.id) ?? [];
+    const slots = slotsByEventPlayer.get(registration.event.id)?.get(registration.id) ?? [];
+    const games = gamesByEvent.get(registration.event.id) ?? new Map();
     const opposingIds = new Set<string>();
     let repeatOpponentMeetings = 0;
     const priorMeetings = new Map<string, number>();
     for (const slot of slots) {
-      const opponents = registration.event.publishedPlan?.slots.filter((candidate) =>
-        candidate.round === slot.round && candidate.court === slot.court && candidate.team !== slot.team,
-      ) ?? [];
-      for (const opponent of opponents) {
-        opposingIds.add(opponent.registrationId);
-        const count = priorMeetings.get(opponent.registrationId) ?? 0;
+      const game = games.get(`${slot.round}:${slot.court}`);
+      const opponents = slot.team === 0 ? game?.team1 ?? [] : game?.team0 ?? [];
+      for (const opponentId of opponents) {
+        opposingIds.add(opponentId);
+        const count = priorMeetings.get(opponentId) ?? 0;
         if (count > 0) repeatOpponentMeetings += 1;
-        priorMeetings.set(opponent.registrationId, count + 1);
+        priorMeetings.set(opponentId, count + 1);
       }
     }
     const courtsSeen = [...new Set(slots.map((slot) => slot.court))].sort((a, b) => a - b);

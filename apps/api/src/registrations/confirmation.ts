@@ -4,6 +4,7 @@ import { sendEmailToRecipient } from '../messages/service';
 import { buildTrialCalendar } from './calendar';
 import { qrPng } from './qr';
 import type { AutomaticEmailSettingsDTO } from '@netball-trials/types';
+import { escapeHtml } from '../html';
 import { DEFAULT_AUTOMATIC_EMAIL_SETTINGS, getAutomaticEmailSettings, renderAutomaticEmailSubject, renderAutomaticEmailTemplate } from '../messages/automatic-email-settings';
 
 export type ConfirmationInput = {
@@ -24,16 +25,6 @@ export type ConfirmationEmail = {
   text: string;
   html: string;
 };
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  })[character]!);
-}
 
 export function buildConfirmation(
   input: ConfirmationInput,
