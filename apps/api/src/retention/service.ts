@@ -33,10 +33,10 @@ async function rewritePlanReferences(tx: Prisma.TransactionClient, mappings: Ano
   const ids = Prisma.join(mappings.map(({ registrationId }) => registrationId));
   const playerCases = Prisma.join(mappings.map(({ registrationId, anonymizedRef }) =>
     Prisma.sql`WHEN ${registrationId} THEN ${anonymizedRef}`,
-  ));
+  ), ' ');
   const slotCases = Prisma.join(mappings.map(({ registrationId, anonymizedRef }) =>
     Prisma.sql`WHEN ${registrationId} THEN ${anonymizedRef}`,
-  ));
+  ), ' ');
   await tx.$executeRaw(Prisma.sql`
     UPDATE "RoundPlanPlayer"
     SET "registrationId" = CASE "registrationId" ${playerCases} ELSE "registrationId" END,

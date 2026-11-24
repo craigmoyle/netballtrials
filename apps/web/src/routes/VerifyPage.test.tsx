@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { StrictMode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { useState } from 'react';
 import { VerifyPage } from './VerifyPage';
@@ -19,6 +19,8 @@ describe('VerifyPage', () => {
   it('shows the verified state in React Strict Mode despite the development effect replay', async () => {
     const verify = vi.fn().mockResolvedValue({ status: 'signed_in' });
     render(<StrictMode><Host client={{ verify }} /></StrictMode>);
+    expect(verify).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Admin sign-in' }));
     expect(await screen.findByRole('link', { name: /go to events/i })).toBeTruthy();
     expect(verify).toHaveBeenCalledTimes(1);
   });
@@ -26,6 +28,7 @@ describe('VerifyPage', () => {
   it('verifies the token once even when the parent re-renders', async () => {
     const verify = vi.fn().mockResolvedValue({ status: 'signed_in' });
     render(<Host client={{ verify }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Admin sign-in' }));
     expect(await screen.findByText(/signed in/i)).toBeTruthy();
     expect(verify).toHaveBeenCalledTimes(1);
   });
