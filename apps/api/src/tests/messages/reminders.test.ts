@@ -48,7 +48,9 @@ describe('Melbourne event start and reminders', () => {
     expect(Buffer.from(mailer.sent[0].attachments![0].content).toString()).toContain(`UID:${event.id}@chisholmnetball.com`);
     const second = await sendDueReminders({ prisma, mailer }, new Date(now.getTime() + 60_000));
     expect(second.sent).toBe(0);
-    expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'reminder' } })).toBe(2);
+    const reminderRows = await prisma.emailLog.findMany({ where: { eventId: event.id, kind: 'reminder' }, orderBy: { to: 'asc' } });
+    expect(reminderRows).toHaveLength(2);
+    expect(reminderRows.find((row) => row.to === 'anne@example.com')?.registrationIds).toHaveLength(2);
   });
 
   it('tops up an existing reminder with newly paid addresses exactly once across concurrent runs', async () => {

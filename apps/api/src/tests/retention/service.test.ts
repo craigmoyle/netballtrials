@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, pruneParentAccessArtifacts, pruneRateLimitBuckets, pruneStaffAuthArtifacts, retentionCutoff } from '../../retention/service';
+import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, earliestRetainedEventDate, pruneParentAccessArtifacts, pruneRateLimitBuckets, pruneStaffAuthArtifacts, retentionCutoff } from '../../retention/service';
 import { verifyPlan } from '../../planner/verify';
+import { listReviewQueue } from '../../review/service';
 import { eventFixture, registrationFixture as regFixture } from '../helpers/fixtures';
 
 beforeEach(resetDb);
@@ -11,6 +12,7 @@ describe('retentionCutoff', () => {
   it('uses four calendar years and handles leap-day event dates', () => {
     expect(retentionCutoff(new Date('2025-10-10T00:00:00Z')).toISOString()).toContain('2029-10-10');
     expect(retentionCutoff(new Date('2024-02-29T00:00:00Z')).toISOString()).toContain('2028-02-29');
+    expect(earliestRetainedEventDate(new Date('2028-02-29T12:00:00Z')).toISOString()).toContain('2024-02-29');
   });
 });
 
@@ -56,6 +58,8 @@ describe('anonymizeExpiredRegistrations', () => {
     const changeLog = await prisma.registrationChangeLog.create({
       data: { registrationId: reg.id, actorType: 'PARENT', changedFields: ['parentEmail'], changeData: { parentEmail: { from: 'old@example.com', to: 'anne@example.com' } } },
     });
+    await prisma.parentAccessToken.create({ data: { email: reg.parentEmail, registrationId: reg.id, purpose: 'SIGN_IN', tokenHash: 'full-event-token'.padEnd(64, 'x'), expiresAt: new Date('2030-01-01T00:00:00Z') } });
+    await prisma.parentAccessSession.create({ data: { email: reg.parentEmail, tokenHash: 'full-event-session'.padEnd(64, 'y'), expiresAt: new Date('2030-01-01T00:00:00Z') } });
 
     const now = new Date('2025-10-10T00:00:00Z');
     expect(await anonymizeExpiredRegistrations(prisma, now)).toBe(1);
@@ -67,8 +71,19 @@ describe('anonymizeExpiredRegistrations', () => {
     });
     expect(anonymised.dateOfBirth.toISOString()).toContain('1900-01-01');
     expect(await prisma.reviewItem.findUnique({ where: { id: review.id } })).toBeNull();
-    expect(await prisma.reviewItem.findUnique({ where: { id: orphanPaymentReview.id } })).toMatchObject({ reason: 'payment_without_registration', note: 'Refund or reinstate manually.' });
+    expect(await prisma.reviewItem.findUnique({ where: { id: orphanPaymentReview.id } })).toMatchObject({
+      reason: 'payment_without_registration', note: null, resolvedAt: null,
+    });
+    expect(await listReviewQueue(prisma, old.id)).toEqual([
+      expect.objectContaining({
+        id: orphanPaymentReview.id,
+        reason: 'payment_without_registration',
+        note: null,
+      }),
+    ]);
     expect(await prisma.registrationChangeLog.findUnique({ where: { id: changeLog.id } })).toBeNull();
+    expect(await prisma.parentAccessToken.findUnique({ where: { tokenHash: 'full-event-token'.padEnd(64, 'x') } })).toBeNull();
+    expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'full-event-session'.padEnd(64, 'y') } })).toBeNull();
     const anonymisedLog = await prisma.emailLog.findUniqueOrThrow({ where: { id: log.id } });
     expect(anonymisedLog).toMatchObject({ to: '', subject: '', body: '', registrationId: null, error: null, messagePayload: null, status: 'ANONYMIZED', kind: 'retention' });
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: eventMessage.id } })).toMatchObject({ to: '', subject: '', body: '', status: 'ANONYMIZED', kind: 'retention' });
@@ -130,6 +145,41 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(await prisma.parentAccessToken.findFirst({ where: { email: 'grace@example.test' } })).toBeNull();
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: log.id } })).toMatchObject({ to: '', subject: '', body: '', registrationId: null, status: 'ANONYMIZED' });
     expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(0);
+  });
+
+  it('removes shared parent artifacts when two expired events are retained concurrently', async () => {
+    const now = new Date('2025-10-10T00:00:00Z');
+    const email = 'shared-retention@example.test';
+    for (const suffix of ['a', 'b']) {
+      const event = await prisma.event.create({ data: { ...eventFixture(), name: `Expired ${suffix}`, eventDate: new Date(`2021-09-${suffix === 'a' ? '11' : '12'}T00:00:00Z`) } });
+      await prisma.registration.create({ data: regFixture(event.id, { parentEmail: email, status: 'PAID' }) });
+    }
+    await prisma.parentAccessToken.create({ data: { email, purpose: 'SIGN_IN', tokenHash: 'shared-retention-token'.padEnd(64, 'x'), expiresAt: new Date('2030-01-01T00:00:00Z') } });
+    await prisma.parentAccessSession.create({ data: { email, tokenHash: 'shared-retention-session'.padEnd(64, 'y'), expiresAt: new Date('2030-01-01T00:00:00Z') } });
+
+    const counts = await Promise.all([
+      anonymizeExpiredRegistrations(prisma, now),
+      anonymizeExpiredRegistrations(prisma, now),
+    ]);
+
+    expect(counts.reduce((sum, count) => sum + count, 0)).toBe(2);
+    expect(await prisma.parentAccessToken.findUnique({ where: { tokenHash: 'shared-retention-token'.padEnd(64, 'x') } })).toBeNull();
+    expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'shared-retention-session'.padEnd(64, 'y') } })).toBeNull();
+  });
+
+  it('scrubs grouped household messages when any included incomplete registration expires', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2027-09-12T00:00:00Z') }) });
+    const now = new Date('2026-10-28T00:00:00Z');
+    const expired = await prisma.registration.create({ data: regFixture(event.id, { playerFirstName: 'Expired', status: 'PENDING', createdAt: new Date('2026-09-01T00:00:00Z'), parentEmail: 'family@example.test' }) });
+    const recent = await prisma.registration.create({ data: regFixture(event.id, { playerFirstName: 'Recent', playerNameNormalized: 'recent player', status: 'PAID', parentEmail: 'family@example.test', createdAt: now }) });
+    const delivery = await prisma.emailLog.create({ data: {
+      eventId: event.id, registrationId: recent.id, registrationIds: [expired.id, recent.id], batchId: 'grouped-household',
+      idempotencyKey: 'grouped-household', to: 'family@example.test', subject: 'Expired and Recent', body: 'Expired Player; Recent Player', kind: 'message', status: 'SENT',
+    } });
+
+    expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(1);
+
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({ status: 'ANONYMIZED', to: '', subject: '', body: '', messagePayload: null, registrationIds: null });
   });
 
   it('claims each registration once when retention workers overlap', async () => {

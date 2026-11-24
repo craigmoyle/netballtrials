@@ -11,6 +11,7 @@ import {
   listSiteAssociationCommunications,
   previewSiteAssociationCommunication,
   retrySiteAssociationCommunication,
+  updateSiteAssociationCommunication,
 } from './site-association-communications';
 
 const selectionFields = {
@@ -21,7 +22,9 @@ const selectionFields = {
 };
 const previewSchema = z.object(selectionFields);
 const sendSchema = z.object({ ...selectionFields, batchId: z.uuid().optional() });
-const scheduleSchema = z.object({ ...selectionFields, batchId: z.uuid().optional(), scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/) });
+const scheduleFields = { ...selectionFields, scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/) };
+const scheduleSchema = z.object({ ...scheduleFields, batchId: z.uuid().optional() });
+const scheduleEditSchema = z.object({ ...scheduleFields, expectedUpdatedAt: z.string().datetime() });
 const retrySchema = z.object({ deliveryIds: z.array(z.string().min(1)).min(1).max(500), includeAmbiguous: z.boolean().default(false) });
 
 function validateTemplateFields(reply: { code(status: number): { send(body: unknown): unknown } }, audience: 'associations', subject: string, text: string): unknown | null {
@@ -85,6 +88,27 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
     }, new Date());
     if (!campaign) return reply.code(422).send({ error: 'no_eligible_recipients_or_events' });
     return reply.code(201).send(campaign);
+  });
+
+  app.put('/api/admin/communications/site/campaigns/:id', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = scheduleEditSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const invalidFields = validateTemplateFields(reply, 'associations', parsed.data.subject, parsed.data.text);
+    if (invalidFields) return invalidFields;
+    let scheduledAt: Date;
+    try { scheduledAt = melbourneLocalDateTimeToUtc(parsed.data.scheduledLocal); }
+    catch { return reply.code(400).send({ error: 'invalid_schedule_time' }); }
+    if (scheduledAt.getTime() < Date.now() + 60_000) return reply.code(400).send({ error: 'schedule_must_be_in_future' });
+    const { id } = req.params as { id: string };
+    const current = await deps.prisma.siteAssociationCommunication.findUnique({ where: { id }, select: { status: true, updatedAt: true } });
+    if (!current) return reply.code(404).send({ error: 'not_found' });
+    if (current.status !== 'SCHEDULED') return reply.code(409).send({ error: 'schedule_not_editable' });
+    if (current.updatedAt.toISOString() !== parsed.data.expectedUpdatedAt) return reply.code(409).send({ error: 'schedule_changed' });
+    const preview = await previewSiteAssociationCommunication(deps.prisma, parsed.data, new Date());
+    if (!preview) return reply.code(422).send({ error: 'no_eligible_recipients_or_events' });
+    const updated = await updateSiteAssociationCommunication(deps.prisma, id, { ...parsed.data, scheduledAt }, new Date());
+    if (!updated) return reply.code(409).send({ error: 'schedule_not_editable' });
+    return updated;
   });
 
   app.post('/api/admin/communications/site/campaigns/:id/cancel', { preHandler: requireAdmin(deps) }, async (req, reply) => {

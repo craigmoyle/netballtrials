@@ -1,8 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
 import type { EmailProvider } from '../mail/provider';
-import { mailRegistrationEligibility } from '../mail/lifecycle';
+import { INTERRUPTED_SEND, mailRegistrationEligibility } from '../mail/lifecycle';
 import { localDateTimeToUtc } from '../time/melbourne';
-import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage } from './service';
+import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage, reconcileStaleDeliveries, retryFailedDeliveries } from './service';
+import { isPastRetentionCutoff } from '../retention/service';
 import { buildTrialCalendar } from '../registrations/calendar';
 import { getAutomaticEmailSettings, renderAutomaticEmailSubject, renderAutomaticEmailTemplate } from './automatic-email-settings';
 
@@ -48,6 +49,38 @@ export async function sendDueReminders(
   let ambiguous = 0;
   let eventsDue = 0;
   const errors: ReminderRunResult['errors'] = [];
+
+  await reconcileStaleDeliveries(deps.prisma, now);
+  const emailChanges = (await deps.prisma.emailLog.findMany({
+    where: {
+      kind: 'email-change',
+      status: { in: ['PENDING', 'FAILED'] },
+      attempts: { lt: AUTOMATIC_RETRY_LIMIT },
+    },
+    include: { event: { select: { eventDate: true } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  })).filter((row) => !isPastRetentionCutoff(row.event.eventDate, now));
+  if (!options.dryRun) {
+    const interrupted = await deps.prisma.emailLog.findMany({
+      where: { kind: 'email-change', status: 'AMBIGUOUS', error: INTERRUPTED_SEND },
+      select: { id: true, eventId: true, attempts: true },
+    });
+    for (const row of interrupted) {
+      errors.push({ eventId: row.eventId, message: `email_change_notification_interrupted:${row.id}:attempt_${row.attempts}` });
+    }
+    for (const row of emailChanges) {
+      try {
+        const result = await retryFailedDeliveries(deps, row.eventId, row.batchId, [row.id], now, { maxAttempts: AUTOMATIC_RETRY_LIMIT });
+        sent += result.sentThisRun;
+        simulated += result.simulatedThisRun;
+        failed += result.failedThisRun;
+        ambiguous += result.ambiguousThisRun;
+      } catch (error) {
+        failed += 1;
+        errors.push({ eventId: row.eventId, message: error instanceof Error ? error.message : 'unknown_error' });
+      }
+    }
+  }
 
   for (const event of events) {
     const start = eventStartInstant(event.eventDate, event.startTime);

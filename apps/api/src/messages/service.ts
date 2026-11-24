@@ -30,7 +30,7 @@ type DeliveryDeps = { prisma: PrismaClient; mailer: EmailProvider };
 type OutboundContent = Omit<EmailMessage, 'to'>;
 type DeliveryOptions = { batchId?: string; senderUserId?: string; maxAttempts?: number; kind?: string };
 type DeliveryRow = Prisma.EmailLogGetPayload<{}>;
-type Recipient = { email: string; registrationId: string | null };
+type Recipient = { email: string; registrationId: string | null; registrationIds: string[] };
 type StoredPayload = {
   html?: string;
   attachments?: { filename: string; contentType: string; contentBase64: string }[];
@@ -146,26 +146,35 @@ async function prepareBatch(
 
     let recipients: Recipient[];
     if (onlyRecipient) {
-      recipients = [{ email: onlyRecipient.email.trim().toLowerCase(), registrationId: onlyRecipient.registrationId }];
+      recipients = [{ email: onlyRecipient.email.trim().toLowerCase(), registrationId: onlyRecipient.registrationId, registrationIds: onlyRecipient.registrationId ? [onlyRecipient.registrationId] : [] }];
     } else {
       const registrations = await tx.registration.findMany({
         where: { eventId, ...mailRegistrationEligibility(kind, now) },
         select: { id: true, parentEmail: true },
         orderBy: [{ parentEmail: 'asc' }, { id: 'asc' }],
       });
-      const unique = new Map<string, string>();
+      const unique = new Map<string, string[]>();
       for (const registration of registrations) {
         const email = registration.parentEmail.trim().toLowerCase();
-        if (email && !unique.has(email)) unique.set(email, registration.id);
+        if (email) unique.set(email, [...(unique.get(email) ?? []), registration.id]);
       }
-      recipients = [...unique].map(([email, registrationId]) => ({ email, registrationId }));
+      recipients = [...unique].map(([email, registrationIds]) => ({ email, registrationId: registrationIds[0] ?? null, registrationIds }));
     }
 
+    if (kind === 'reminder' && existing.length) {
+      for (const recipient of recipients) {
+        await tx.emailLog.updateMany({
+          where: { batchId, to: recipient.email },
+          data: { registrationIds: recipient.registrationIds as Prisma.InputJsonArray },
+        });
+      }
+    }
     await tx.emailLog.createMany({
       skipDuplicates: true,
-      data: recipients.map(({ email, registrationId }) => ({
+      data: recipients.map(({ email, registrationId, registrationIds }) => ({
         eventId,
         registrationId,
+        registrationIds: registrationIds.length ? registrationIds as Prisma.InputJsonArray : Prisma.DbNull,
         senderUserId: senderUserId ?? null,
         batchId,
         idempotencyKey: deliveryIdempotencyKey(batchId, email),
@@ -208,15 +217,20 @@ async function dispatchOne(
           where: { id: current.associationId, active: true, primaryContactEmail: { equals: current.to, mode: 'insensitive' } },
           select: { id: true },
         }) : null
-      : await tx.registration.findFirst({
-          where: {
-            eventId: current.eventId,
-            parentEmail: { equals: current.to, mode: 'insensitive' },
-            ...mailRegistrationEligibility(current.kind, now),
-            ...(['message', 'reminder'].includes(current.kind) ? {} : { id: current.registrationId ?? '' }),
-          },
-          select: { id: true },
-        });
+      : current.kind === 'email-change'
+        ? current.registrationId ? await tx.registration.findFirst({
+            where: { id: current.registrationId, eventId: current.eventId, anonymizedAt: null },
+            select: { id: true },
+          }) : null
+        : await tx.registration.findFirst({
+            where: {
+              eventId: current.eventId,
+              parentEmail: { equals: current.to, mode: 'insensitive' },
+              ...mailRegistrationEligibility(current.kind, now),
+              ...(['message', 'reminder'].includes(current.kind) ? {} : { id: current.registrationId ?? '' }),
+            },
+            select: { id: true },
+          });
     if (!eligible) return null;
     const claim = await tx.emailLog.updateMany({
       where: { id: current.id, status: { in: retryable } },
@@ -266,6 +280,20 @@ async function dispatchOne(
     }
     return 'AMBIGUOUS';
   }
+}
+
+export async function deliveryStatusesByBatch(
+  prisma: PrismaClient,
+  batchIds: string[],
+): Promise<Map<string, EmailDeliveryState[]>> {
+  if (!batchIds.length) return new Map();
+  const rows = await prisma.emailLog.findMany({
+    where: { batchId: { in: batchIds } },
+    select: { batchId: true, status: true },
+  });
+  const grouped = new Map<string, EmailDeliveryState[]>();
+  for (const row of rows) grouped.set(row.batchId, [...(grouped.get(row.batchId) ?? []), row.status]);
+  return grouped;
 }
 
 export async function reconcileStaleDeliveries(prisma: PrismaClient, now: Date): Promise<number> {
@@ -369,7 +397,7 @@ export async function sendEmailToRecipient(
   return sendBatch(
     deps,
     delivery.eventId,
-    { email: delivery.to, registrationId: delivery.registrationId },
+    { email: delivery.to, registrationId: delivery.registrationId, registrationIds: [delivery.registrationId] },
     message,
     now,
     delivery.kind,

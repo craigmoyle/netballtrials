@@ -35,11 +35,13 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
     setLoadError(null);
     Promise.all([
       client.getPlan(eventId),
-      client.getPublishedPlan(eventId),
       client.getEvent(eventId),
       client.getPlanPreview(eventId),
     ])
-      .then(([loadedPlan, loadedPublishedPlan, loadedEvent, loadedPreview]) => {
+      .then(async ([loadedPlan, loadedEvent, loadedPreview]) => {
+        const loadedPublishedPlan = loadedPlan?.status === 'PUBLISHED'
+          ? loadedPlan
+          : await client.getPublishedPlan(eventId);
         if (!active) return;
         setPlan(loadedPlan);
         setPublishedPlan(loadedPublishedPlan);

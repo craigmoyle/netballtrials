@@ -11,10 +11,6 @@ const TEMPLATE_FIELDS: Record<CommunicationAudience, string[]> = {
 
 const PLACEHOLDER_PATTERN = /{{\s*([^{}]*?)\s*}}/g;
 
-export function templateFields(audience: CommunicationAudience): string[] {
-  return [...TEMPLATE_FIELDS[audience]];
-}
-
 export function unsupportedTemplateFields(audience: CommunicationAudience, ...values: string[]): string[] {
   const allowed = new Set(TEMPLATE_FIELDS[audience]);
   const found = new Set<string>();

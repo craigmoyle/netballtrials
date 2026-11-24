@@ -5,6 +5,7 @@ import { resetDb } from '../helpers/db';
 import { eventFixture } from '../helpers/fixtures';
 import { hashPin } from '../../checkin/pin';
 import { setCheckInPin } from '../../checkin/service';
+import { signInAsNewAdmin } from '../helpers/auth';
 
 let app: ReturnType<typeof createApp>;
 let eventId: string;
@@ -28,6 +29,48 @@ describe('check-in session', () => {
     expect(summary.json().eventName).toBe('15/U Ladies');
     expect(summary.json().registered).toBe(0);
   });
+  it.each([
+    ['before the Melbourne event date', '2026-09-11T13:59:59.999Z'],
+    ['after the Melbourne event date', '2026-09-12T14:00:00.000Z'],
+  ])('does not open a volunteer session %s', async (_label, when) => {
+    const response = await app.inject({
+      method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '482193' },
+      headers: { 'x-test-now': when },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('does not use a volunteer session after the Melbourne event date', async () => {
+    const opened = await app.inject({ method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '482193' }, headers: nowHeader });
+    const cookie = opened.cookies.find((entry) => entry.name === 'nt_checkin')!;
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/check-in/session', cookies: { nt_checkin: cookie.value },
+      headers: { 'x-test-now': '2026-09-12T14:00:00.000Z' },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('keeps Admin check-in sessions usable on the following Melbourne date', async () => {
+    const adminCookie = await signInAsNewAdmin(app, 'checkin-admin@example.com');
+    const followingDate = '2026-09-12T14:00:00.000Z';
+    const opened = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`,
+      cookies: { nt_session: adminCookie }, headers: { 'x-test-now': followingDate },
+    });
+    const cookie = opened.cookies.find((entry) => entry.name === 'nt_checkin')!;
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/check-in/session', cookies: { nt_checkin: cookie.value },
+      headers: { 'x-test-now': followingDate },
+    });
+
+    expect(opened.statusCode).toBe(200);
+    expect(response.statusCode).toBe(200);
+  });
+
   it('rejects a wrong pin', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/check-in/session', payload: { eventId, pin: '0000' }, headers: nowHeader });
     expect(res.statusCode).toBe(401);

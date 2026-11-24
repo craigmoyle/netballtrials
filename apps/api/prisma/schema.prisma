@@ -490,6 +490,7 @@ model EmailLog {
   event          Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   registrationId String?
   registration   Registration?       @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registrationIds Json?
   associationId       String?
   association         MemberAssociation?            @relation(fields: [associationId], references: [id], onDelete: SetNull)
   siteCommunicationId String?

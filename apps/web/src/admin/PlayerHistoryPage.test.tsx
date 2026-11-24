@@ -23,7 +23,7 @@ const entries: PlayerHistoryEntryDTO[] = [
 
 describe('PlayerHistoryPage', () => {
   it('searches by exact player name and birth date and shows only trial-relevant history', async () => {
-    const searchPlayerHistory = vi.fn().mockResolvedValue(entries);
+    const searchPlayerHistory = vi.fn().mockResolvedValue({ entries, truncated: false });
     render(<MemoryRouter><PlayerHistoryPage client={{ searchPlayerHistory } as any} /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Player full name'), { target: { value: 'Ada Lovelace' } });
     fireEvent.change(screen.getByLabelText('Date of birth'), { target: { value: '2011-04-02' } });
@@ -43,8 +43,17 @@ describe('PlayerHistoryPage', () => {
     expect(document.body.textContent).not.toMatch(/parent@example|paymentIntentId|amountCents/i);
   });
 
+  it('warns when the retained result is at the 50-record display limit', async () => {
+    const searchPlayerHistory = vi.fn().mockResolvedValue({ entries: Array.from({ length: 50 }, (_, index) => ({ ...entries[0], registrationId: `reg-${index}`, eventId: `event-${index}` })), truncated: true });
+    render(<MemoryRouter><PlayerHistoryPage client={{ searchPlayerHistory } as any} /></MemoryRouter>);
+    fireEvent.change(screen.getByLabelText('Player full name'), { target: { value: 'Ada Lovelace' } });
+    fireEvent.change(screen.getByLabelText('Date of birth'), { target: { value: '2011-04-02' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search history' }));
+    expect(await screen.findByText(/showing the newest 50 retained matches/i)).toBeInTheDocument();
+  });
+
   it('does not imply permanent profile linkage when there are no matches', async () => {
-    const searchPlayerHistory = vi.fn().mockResolvedValue([]);
+    const searchPlayerHistory = vi.fn().mockResolvedValue({ entries: [], truncated: false });
     render(<MemoryRouter><PlayerHistoryPage client={{ searchPlayerHistory } as any} /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Player full name'), { target: { value: 'Unknown Player' } });
     fireEvent.change(screen.getByLabelText('Date of birth'), { target: { value: '2012-01-01' } });

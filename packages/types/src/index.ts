@@ -324,6 +324,11 @@ export interface RosterRegistrationDTO {
   checkedInAt: string | null;
 }
 
+export interface AdminRegistrationCorrectionDTO {
+  dateOfBirth?: string;
+  memberAssociation?: string;
+}
+
 export interface RosterDTO {
   eventId: string;
   registrations: RosterRegistrationDTO[];
@@ -407,6 +412,11 @@ export interface RegistrationChangeDTO {
   changes: Array<{ field: string; before: string | null; after: string | null }>;
 }
 
+export interface PlayerHistoryResultDTO {
+  entries: PlayerHistoryEntryDTO[];
+  truncated: boolean;
+}
+
 export interface PlayerHistoryEntryDTO {
   registrationId: string;
   playerName: string;
@@ -440,6 +450,8 @@ export interface CommunicationRecipientDTO {
   registrationStatus: RegistrationStatus | null;
   checkedIn: boolean | null;
   positions: Position[];
+  eligible: boolean;
+  emailVerified: boolean | null;
 }
 
 export interface EmailTemplateDTO {
@@ -483,6 +495,7 @@ export interface SiteAssociationCampaignDTO {
   attempts: number;
   error: string | null;
   createdAt: string;
+  updatedAt: string;
   deliveries: Array<Pick<EmailLogDTO, 'id' | 'to' | 'status' | 'simulated' | 'attempts' | 'sentAt' | 'failedAt' | 'error'> & { associationName: string | null }>;
 }
 
@@ -527,10 +540,12 @@ export interface ScheduledMessageDTO {
   batchId: string;
   subject: string;
   body: string;
+  attachmentName: string | null;
   scheduledAt: string;
   status: 'SCHEDULED' | 'SENDING' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
   attempts: number;
   error: string | null;
+  updatedAt: string;
 }
 
 export interface EmailLogDTO {

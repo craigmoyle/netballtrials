@@ -29,6 +29,56 @@ function renderPage(client: Record<string, unknown>) {
 }
 
 describe('RosterPage', () => {
+  it('lets an Admin correct the date of birth and member association in place', async () => {
+    const corrected = { ...roster.registrations[0], dateOfBirth: '2013-04-02', memberAssociation: 'Other Association', ageFlagged: true };
+    const correctRegistration = vi.fn().mockResolvedValue(corrected);
+    renderPage({
+      getRoster: vi.fn().mockResolvedValue(roster), downloadRoster: vi.fn(),
+      listAssociations: vi.fn().mockResolvedValue([
+        { id: 'mena', name: 'MENA', active: true },
+        { id: 'other', name: 'Other Association', active: true },
+        { id: 'old', name: 'Old Association', active: false },
+      ]),
+      correctRegistration,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /correct details for ada lovelace/i }));
+    expect(await screen.findByRole('heading', { name: /correct registration details/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Old Association' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Player date of birth'), { target: { value: '2013-04-02' } });
+    fireEvent.change(screen.getByLabelText('Member association'), { target: { value: 'Other Association' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+
+    await waitFor(() => expect(correctRegistration).toHaveBeenCalledWith('event-1', 'reg-1', {
+      dateOfBirth: '2013-04-02', memberAssociation: 'Other Association',
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent(/registration details corrected/i);
+    expect(screen.getByText(/2013-04-02/)).toBeInTheDocument();
+    expect(screen.getByText('Other Association')).toBeInTheDocument();
+    expect(screen.getByText(/review flagged/i)).toBeInTheDocument();
+  });
+
+  it('keeps the correction form open and explains duplicate, validation and missing errors', async () => {
+    const correctRegistration = vi.fn()
+      .mockRejectedValueOnce(new ApiError(409, 'already_registered'))
+      .mockRejectedValueOnce(new ApiError(400, 'validation_failed', ['dateOfBirth']))
+      .mockRejectedValueOnce(new ApiError(404, 'not_found'));
+    renderPage({
+      getRoster: vi.fn().mockResolvedValue(roster), downloadRoster: vi.fn(),
+      listAssociations: vi.fn().mockResolvedValue([{ id: 'mena', name: 'MENA', active: true }]),
+      correctRegistration,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /correct details for ada lovelace/i }));
+    fireEvent.change(await screen.findByLabelText('Player date of birth'), { target: { value: '2013-04-02' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already an active registration/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/valid date of birth/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no longer exists/i);
+  });
+
   it('shows choice counts and minimal contact/payment/check-in data', async () => {
     renderPage({ getRoster: vi.fn().mockResolvedValue(roster), downloadRoster: vi.fn() });
     expect(await screen.findByRole('heading', { name: /roster/i })).toBeInTheDocument();

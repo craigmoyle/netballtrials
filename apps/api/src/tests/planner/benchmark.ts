@@ -39,12 +39,19 @@ for (const [count, courts, windowMinutes] of [[56, 4, 38], [60, 4, 48], [84, 6, 
 }
 
 const mixed = inputFor(100, 6, true);
+const WORKER_LIMIT_MS = Number(process.env.PLANNER_WORKER_BENCHMARK_LIMIT_MS ?? 15_000);
+if (!Number.isFinite(WORKER_LIMIT_MS) || WORKER_LIMIT_MS <= 0) throw new Error('PLANNER_WORKER_BENCHMARK_LIMIT_MS must be a positive number');
 for (const mode of ['mixed-sync', 'mixed-worker']) {
   let ticks = 0;
   const interval = setInterval(() => ticks++, 10);
   const start = performance.now();
   const result = mode === 'mixed-sync' ? generatePlan(mixed, 1) : await runGeneration({ input: mixed, seed: 1 });
   clearInterval(interval);
+  const elapsed = performance.now() - start;
   if (!result.ok || verifyPlan(mixed, result.plan).length) throw new Error(`Mixed benchmark did not produce a verified schedule: ${JSON.stringify(result)}`);
-  console.log(JSON.stringify({ mode, count: 100, courts: 6, ms: Math.round(performance.now() - start), ok: result.ok, rounds: result.plan.rounds, eventLoopTicks: ticks }));
+  if (mode === 'mixed-worker' && elapsed > WORKER_LIMIT_MS) {
+    throw new Error(`Mixed worker benchmark exceeded ${WORKER_LIMIT_MS}ms at expected scale: ${Math.round(elapsed)}ms`);
+  }
+  if (mode === 'mixed-worker' && ticks === 0) throw new Error('Mixed worker benchmark unexpectedly blocked the event loop');
+  console.log(JSON.stringify({ mode, count: 100, courts: 6, ms: Math.round(elapsed), ok: result.ok, rounds: result.plan.rounds, eventLoopTicks: ticks }));
 }

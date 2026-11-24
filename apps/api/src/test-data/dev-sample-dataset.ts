@@ -1,17 +1,8 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { COURT_POSITIONS } from '../planner/types';
+import { sampleAssociations, sampleRegistration } from './sample-registrations';
 
 export const DEV_SAMPLE_EVENT_ID = 'dev-sample-2027-15u-ladies';
 
-const sampleAssociations = [
-  { name: 'MENA', primaryContactName: 'Morgan Chen', primaryContactEmail: 'contact.mena@example.test' },
-  { name: 'Ariels', primaryContactName: 'Avery Taylor', primaryContactEmail: 'contact.ariels@example.test' },
-  { name: 'Manningham', primaryContactName: 'Mackenzie Lee', primaryContactEmail: 'contact.manningham@example.test' },
-  { name: 'Whitehorse', primaryContactName: 'Willow Ford', primaryContactEmail: 'contact.whitehorse@example.test' },
-  { name: 'Boroondara', primaryContactName: 'Bailey Nguyen', primaryContactEmail: 'contact.boroondara@example.test' },
-];
-const samplePlayerFirstNames = ['Arielle', 'Briar', 'Calla', 'Daphne', 'Elodie', 'Freya', 'Gemma', 'Harlow', 'Indigo', 'Juniper'];
-const samplePlayerLastNames = ['Ashford', 'Bellamy', 'Calder', 'Delaney', 'Ellery', 'Fairchild', 'Gresham'];
 const confirmedAt = new Date('2026-10-01T00:00:00.000Z');
 
 export async function seedDevSampleDataset(prisma: PrismaClient): Promise<{
@@ -64,27 +55,21 @@ export async function seedDevSampleDataset(prisma: PrismaClient): Promise<{
     ] });
 
     const registrations: Prisma.RegistrationCreateManyInput[] = Array.from({ length: 70 }, (_, index) => {
-      const isTicketPlayer = index === 69;
+      const sample = sampleRegistration(index);
       const isWaiting = index === 0;
-      const playerFirstName = isTicketPlayer ? 'Ada' : samplePlayerFirstNames[index % samplePlayerFirstNames.length]!;
-      const playerLastName = isTicketPlayer ? 'Ticket' : samplePlayerLastNames[Math.floor(index / samplePlayerFirstNames.length)]!;
-      const association = sampleAssociations[index % sampleAssociations.length]!;
-      const rank1Index = (index * 2 + Math.floor(index / 8)) % COURT_POSITIONS.length;
-      const rank2Index = (rank1Index + 1 + (index % 3)) % COURT_POSITIONS.length;
-      const rank3Index = (rank2Index + 1 + (index % 2)) % COURT_POSITIONS.length;
       return {
         eventId: DEV_SAMPLE_EVENT_ID,
-        playerFirstName,
-        playerLastName,
-        playerNameNormalized: `${playerFirstName} ${playerLastName}`.toLowerCase(),
+        playerFirstName: sample.playerFirstName,
+        playerLastName: sample.playerLastName,
+        playerNameNormalized: sample.playerNameNormalized,
         parentName: `Sample Parent ${index + 1}`,
-        parentEmail: isTicketPlayer ? 'parent1@example.test' : `parent${index + 1}@example.test`,
+        parentEmail: sample.isTicketPlayer ? 'parent1@example.test' : `parent${index + 1}@example.test`,
         parentMobile: '0400000000',
         dateOfBirth: new Date('2012-04-02T00:00:00.000Z'),
-        memberAssociation: association.name,
-        rank1Position: COURT_POSITIONS[rank1Index],
-        rank2Position: COURT_POSITIONS[rank2Index],
-        rank3Position: index % 4 === 0 ? null : COURT_POSITIONS[rank3Index],
+        memberAssociation: sample.association.name,
+        rank1Position: sample.rank1Position,
+        rank2Position: sample.rank2Position,
+        rank3Position: sample.rank3Position,
         optInExtraPositions: index < 7,
         eligibilityConfirmedAt: confirmedAt,
         parentAuthorityConfirmedAt: confirmedAt,
@@ -94,7 +79,7 @@ export async function seedDevSampleDataset(prisma: PrismaClient): Promise<{
         paidAt: confirmedAt,
         policyReference: 'https://chisholmnetball.com/selection-policy/',
         ageFlagged: index < 2,
-        qrToken: isTicketPlayer ? 'dev-sample-ticket-token-0123456789abcdef' : `dev-sample-token-${index}-abcdefghijklmnopqrstuvwxyz`,
+        qrToken: sample.isTicketPlayer ? 'dev-sample-ticket-token-0123456789abcdef' : `dev-sample-token-${index}-abcdefghijklmnopqrstuvwxyz`,
         checkedInAt: isWaiting ? null : new Date('2027-09-12T00:00:00.000Z'),
         checkedInBy: isWaiting ? null : 'DEV sample volunteer',
         bibNumber: isWaiting ? null : index,

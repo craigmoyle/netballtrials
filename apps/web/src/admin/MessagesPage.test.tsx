@@ -6,11 +6,11 @@ import { MessagesPage } from './MessagesPage';
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const participant = (id: string, name: string, email: string, extra: Partial<Record<string, unknown>> = {}) => ({
-  id, name, email, number: null, association: 'MENA', registrationStatus: 'PAID', checkedIn: false, positions: ['GS'], ...extra,
+  id, name, email, number: null, association: 'MENA', registrationStatus: 'PAID', checkedIn: false, positions: ['GS'], eligible: true, emailVerified: true, ...extra,
 });
 const recipients = {
-  participants: [participant('p1', 'Ada Lovelace', 'ada@example.test', { number: 7, checkedIn: true }), participant('p2', 'Grace Hopper', 'grace@example.test'), participant('pending', 'Pending Player', 'pending@example.test', { registrationStatus: 'PENDING' })],
-  associations: [{ id: 'a1', name: 'MENA — Casey Contact', email: 'mena@example.test', number: null, association: 'MENA', registrationStatus: null, checkedIn: null, positions: [] }],
+  participants: [participant('p1', 'Ada Lovelace', 'ada@example.test', { number: 7, checkedIn: true }), participant('p2', 'Grace Hopper', 'grace@example.test'), participant('pending', 'Pending Player', 'pending@example.test', { registrationStatus: 'PENDING' }), participant('unverified', 'Unverified Player', 'unverified@example.test', { registrationStatus: 'PENDING', eligible: false, emailVerified: false })],
+  associations: [{ id: 'a1', name: 'MENA — Casey Contact', email: 'mena@example.test', number: null, association: 'MENA', registrationStatus: null, checkedIn: null, positions: [], eligible: true, emailVerified: null }],
 };
 
 function renderPage(overrides: Record<string, unknown> = {}) {
@@ -22,10 +22,11 @@ function renderPage(overrides: Record<string, unknown> = {}) {
     listCommunicationDeliveries: vi.fn().mockResolvedValue([]),
     previewCommunication: vi.fn().mockImplementation(async (_eventId: string, input: { recipientIds: string[] }) => ({
       count: input.recipientIds.length,
-      recipients: recipients.participants.filter((recipient) => input.recipientIds.includes(recipient.id) && recipient.registrationStatus === 'PAID'),
+      recipients: recipients.participants.filter((recipient) => input.recipientIds.includes(recipient.id) && recipient.eligible),
     })),
     sendCommunication: vi.fn().mockResolvedValue({ batchId: 'batch-1', sent: 2, simulated: 0, failed: 0, ambiguous: 0, pending: 0, deliveryIds: [] }),
-    scheduleCommunication: vi.fn().mockResolvedValue({ id: 'scheduled-1', eventId: 'event-1', audience: 'participants', recipientIds: ['p1'], batchId: 'scheduled-batch', subject: 'Trial update', body: 'See you soon', scheduledAt: '2027-01-15T23:30:00Z', status: 'SCHEDULED', attempts: 0, error: null }),
+    scheduleCommunication: vi.fn().mockResolvedValue({ id: 'scheduled-1', eventId: 'event-1', audience: 'participants', recipientIds: ['p1'], batchId: 'scheduled-batch', subject: 'Trial update', body: 'See you soon', attachmentName: null, scheduledAt: '2027-01-15T23:30:00Z', status: 'SCHEDULED', attempts: 0, error: null, updatedAt: '2026-11-24T00:00:00Z' }),
+    updateScheduledCommunication: vi.fn().mockResolvedValue({ id: 'scheduled-1', eventId: 'event-1', audience: 'participants', recipientIds: ['p1'], batchId: 'scheduled-batch', subject: 'Updated', body: 'Updated body', attachmentName: null, scheduledAt: '2027-01-15T23:30:00Z', status: 'SCHEDULED', attempts: 0, error: null, updatedAt: '2026-11-24T00:00:00Z' }),
     cancelScheduledCommunication: vi.fn().mockResolvedValue({ status: 'CANCELLED' }),
     saveCommunicationTemplate: vi.fn().mockResolvedValue({ id: 'template-1', name: 'Trial update', audience: 'participants', subject: 'Trial update', body: 'See you soon', createdAt: '', updatedAt: '' }),
     deleteCommunicationTemplate: vi.fn().mockResolvedValue(undefined),
@@ -37,21 +38,21 @@ function renderPage(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CommunicationsPage', () => {
-  it('filters participants, shows the player Number, and excludes pending registrations from selection', async () => {
+  it('filters participants, shows the player Number, and only makes verified incomplete registrations eligible', async () => {
     renderPage();
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByText('7')).toBeInTheDocument();
     expect(screen.getByText(/Paid · Checked in/i)).toBeInTheDocument();
-    const pending = screen.getByRole('checkbox', { name: 'Include Pending Player' });
-    expect(pending).toBeDisabled();
-    expect(screen.getByText('0 selected total · 3 shown · 2 visible eligible')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Include Pending Player' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Include Unverified Player' })).toBeDisabled();
+    expect(screen.getByText('0 selected total · 4 shown · 3 visible eligible')).toBeInTheDocument();
     expect(screen.getByText('Scroll horizontally to review all recipient details.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Selectable communication recipients' })).toHaveClass('communication-recipient-list');
     fireEvent.click(screen.getByRole('button', { name: 'Select visible eligible' }));
-    expect(screen.getByText('2 selected total · 3 shown · 2 visible eligible')).toBeInTheDocument();
+    expect(screen.getByText('3 selected total · 4 shown · 3 visible eligible')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Filter by payment or attendance'), { target: { value: 'PENDING' } });
-    expect(screen.getByText('2 selected total · 1 shown · 0 visible eligible')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Clear visible selection' })).toBeDisabled();
+    expect(screen.getByText('3 selected total · 2 shown · 1 visible eligible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear visible selection' })).toBeEnabled();
     fireEvent.change(screen.getByLabelText('Filter by payment or attendance'), { target: { value: 'all' } });
     expect(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Include Grace Hopper' })).toBeChecked();
@@ -124,6 +125,20 @@ describe('CommunicationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Member associations' }));
     expect(screen.getByRole('option', { name: 'Choose a template' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Trial update' })).not.toBeInTheDocument();
+  });
+
+  it('edits a scheduled message through the existing composer and keeps its schedule id', async () => {
+    const scheduled = { id: 'scheduled-1', eventId: 'event-1', audience: 'participants', recipientIds: ['p1'], batchId: 'scheduled-batch', subject: 'Original', body: 'Original body', attachmentName: 'policy.pdf', scheduledAt: '2099-01-15T23:30:00.000Z', status: 'SCHEDULED', attempts: 0, error: null, updatedAt: '2026-11-24T00:00:00Z' };
+    const client = renderPage({ listScheduledCommunications: vi.fn().mockResolvedValue([scheduled]) });
+    await screen.findByText('Ada Lovelace');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit scheduled email' }));
+    expect(screen.getByLabelText('Subject')).toHaveValue('Original');
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Updated' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Updated body' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview recipients' }));
+    await screen.findByRole('heading', { name: 'Review recipients' });
+    fireEvent.click(screen.getByRole('button', { name: 'Save schedule changes' }));
+    await waitFor(() => expect(client.updateScheduledCommunication).toHaveBeenCalledWith('event-1', 'scheduled-1', expect.objectContaining({ subject: 'Updated', text: 'Updated body', expectedUpdatedAt: '2026-11-24T00:00:00Z' })));
   });
 
   it('schedules a reviewed message and offers cancellation before it sends', async () => {

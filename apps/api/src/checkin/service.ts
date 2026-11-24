@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { melbourneDateKey } from '@netball-trials/types';
 import { generateToken, hashToken } from '../auth/tokens';
 import { ensureReviewItems } from '../review/service';
 import { consumeRateLimit, reserveRateLimit, resetRateLimit } from '../security/rate-limit';
@@ -60,6 +61,16 @@ export function checkInSessionExpiry(eventDate: Date): Date {
   return new Date(localDateTimeToUtc(midnightAfterExpiryDay, '00:00').getTime() - 1);
 }
 
+function isVolunteerEventDate(eventDate: Date, now: Date): boolean {
+  return melbourneDateKey(now) === eventDate.toISOString().slice(0, 10);
+}
+
+function volunteerSessionExpiry(eventDate: Date): Date {
+  const midnightAfterEvent = new Date(eventDate);
+  midnightAfterEvent.setUTCDate(midnightAfterEvent.getUTCDate() + 1);
+  return new Date(localDateTimeToUtc(midnightAfterEvent, '00:00').getTime() - 1);
+}
+
 type SessionWithEvent = Prisma.CheckInSessionGetPayload<{ include: { event: true; adminSession: true } }>;
 
 function isActiveSession(session: SessionWithEvent | null, now: Date): session is SessionWithEvent {
@@ -67,9 +78,12 @@ function isActiveSession(session: SessionWithEvent | null, now: Date): session i
   if (now.getTime() > checkInSessionExpiry(session.event.eventDate).getTime()) return false;
   if (session.expiresAt.getTime() > checkInSessionExpiry(session.event.eventDate).getTime()) return false;
 
-  return session.adminSessionId
-    ? Boolean(session.adminSession && session.adminSession.expiresAt.getTime() > now.getTime())
-    : Boolean(session.pinVersion === session.event.checkInPinVersion && session.event.checkInPinHash);
+  if (session.adminSessionId) {
+    return Boolean(session.adminSession && session.adminSession.expiresAt.getTime() > now.getTime());
+  }
+
+  return isVolunteerEventDate(session.event.eventDate, now)
+    && Boolean(session.pinVersion === session.event.checkInPinVersion && session.event.checkInPinHash);
 }
 
 async function findActiveSession(
@@ -91,7 +105,7 @@ export async function openCheckInSession(
   now: Date,
 ): Promise<{ token: string; expiresAt: Date; eventName: string }> {
   const event = await deps.prisma.event.findUnique({ where: { id: input.eventId } });
-  if (!event || !event.checkInPinHash || now.getTime() > checkInSessionExpiry(event.eventDate).getTime()) {
+  if (!event || !event.checkInPinHash || !isVolunteerEventDate(event.eventDate, now)) {
     throw new CheckInUnavailableError();
   }
   if (event.checkInClosedAt) throw new CheckInClosedError();
@@ -120,7 +134,7 @@ export async function openCheckInSession(
   await resetRateLimit(deps.prisma, key);
 
   const token = generateToken();
-  const expiresAt = checkInSessionExpiry(event.eventDate);
+  const expiresAt = volunteerSessionExpiry(event.eventDate);
   const session = await deps.prisma.$transaction(async (tx) => {
     const current = await tx.event.findFirst({
       where: {
@@ -131,6 +145,7 @@ export async function openCheckInSession(
       },
     });
     if (!current) return null;
+    if (!isVolunteerEventDate(current.eventDate, now)) throw new CheckInUnavailableError();
     return tx.checkInSession.create({
       data: {
         eventId: event.id,

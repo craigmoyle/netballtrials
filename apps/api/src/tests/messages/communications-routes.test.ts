@@ -5,6 +5,7 @@ import { resetDb } from '../helpers/db';
 import { signInAsNewAdmin } from '../helpers/auth';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 import { runDueScheduledMessages } from '../../messages/communications';
+import { dispatchSiteAssociationCommunication } from '../../messages/site-association-communications';
 
 const app = createApp();
 const outbox = app.testDeps.mailer as unknown as { sent: Array<{ to: string; subject: string; text: string; attachments?: Array<{ filename: string; content: Buffer }> }> };
@@ -70,6 +71,39 @@ describe('event communications routes', () => {
       payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Changed', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
     });
     expect(conflict.statusCode).toBe(409);
+  });
+
+  it('includes verified incomplete registrations but excludes unverified registrations from preview and send', async () => {
+    const verified = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Verified', playerLastName: 'Pending', playerNameNormalized: 'verified pending',
+      parentEmail: 'verified-pending@example.test', status: 'PENDING', parentEmailVerifiedAt: new Date(),
+    }) });
+    const unverified = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Unverified', playerLastName: 'Pending', playerNameNormalized: 'unverified pending',
+      parentEmail: 'unverified-pending@example.test', status: 'PENDING', parentEmailVerifiedAt: null,
+    }) });
+
+    const list = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/communications/recipients`, cookies: { nt_session: cookie } });
+    expect(list.json().participants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: verified.id, eligible: true, emailVerified: true }),
+      expect.objectContaining({ id: unverified.id, eligible: false, emailVerified: false }),
+    ]));
+    const preview = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/preview`, cookies: { nt_session: cookie },
+      payload: { audience: 'participants', recipientIds: [verified.id, unverified.id] },
+    });
+    expect(preview.json()).toMatchObject({ count: 1, recipients: [expect.objectContaining({ id: verified.id })] });
+    const sent = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
+      payload: { audience: 'participants', recipientIds: [verified.id], subject: 'Finish registration', text: 'Complete payment.', batchId: '00000000-0000-4000-8000-000000000080' },
+    });
+    expect(sent.statusCode).toBe(200);
+    expect(outbox.sent.at(-1)?.to).toBe('verified-pending@example.test');
+    const rejected = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
+      payload: { audience: 'participants', recipientIds: [unverified.id], subject: 'No', text: 'No', batchId: '00000000-0000-4000-8000-000000000081' },
+    });
+    expect(rejected.statusCode).toBe(422);
   });
 
   it('does not expose participant contacts after the retention cutoff', async () => {
@@ -210,6 +244,97 @@ describe('event communications routes', () => {
     expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: created.json().id } })).status).toBe('CANCELLED');
   });
 
+  it('edits a scheduled event message while preserving its batch id and refreshing its attachment', async () => {
+    const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'old@example.test' }) });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Edit MENA', primaryContactEmail: 'new@example.test' } });
+    const created = await prisma.scheduledMessage.create({ data: {
+      eventId, audience: 'participants', recipientIds: [paid.id], batchId: 'preserved-event-batch',
+      subject: 'Old subject', body: 'Old body', scheduledAt: new Date('2099-01-14T23:30:00.000Z'),
+      policyAttachment: { fileName: 'old.pdf', contentBase64: 'b2xk' },
+    } });
+    await prisma.eventPolicyDocument.create({ data: { eventId, fileName: 'new.pdf', bytes: Buffer.from('new policy') } });
+
+    const updated = await app.inject({
+      method: 'PUT', url: `/api/admin/events/${eventId}/communications/scheduled/${created.id}`, cookies: { nt_session: cookie },
+      payload: { audience: 'associations', recipientIds: [association.id], subject: 'New subject', text: 'New body', scheduledLocal: '2099-02-15T10:30', expectedUpdatedAt: created.updatedAt.toISOString() },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ id: created.id, batchId: 'preserved-event-batch', audience: 'associations', recipientIds: [association.id], subject: 'New subject', body: 'New body', attachmentName: 'new.pdf', scheduledAt: '2099-02-14T23:30:00.000Z' });
+    expect(await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: created.id } })).toMatchObject({ batchId: created.batchId, audience: 'associations', subject: 'New subject' });
+    const stale = await app.inject({
+      method: 'PUT', url: `/api/admin/events/${eventId}/communications/scheduled/${created.id}`, cookies: { nt_session: cookie },
+      payload: { audience: 'associations', recipientIds: [association.id], subject: 'Stale overwrite', text: 'Stale', scheduledLocal: '2099-02-17T10:30', expectedUpdatedAt: created.updatedAt.toISOString() },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: 'schedule_changed' });
+    await prisma.memberAssociation.update({ where: { id: association.id }, data: { active: false } });
+    const ineligible = await app.inject({
+      method: 'PUT', url: `/api/admin/events/${eventId}/communications/scheduled/${created.id}`, cookies: { nt_session: cookie },
+      payload: { audience: 'associations', recipientIds: [association.id], subject: 'Still new', text: 'Still new', scheduledLocal: '2099-02-16T10:30', expectedUpdatedAt: updated.json().updatedAt },
+    });
+    expect(ineligible.statusCode).toBe(422);
+
+    const past = await app.inject({
+      method: 'PUT', url: `/api/admin/events/${eventId}/communications/scheduled/${created.id}`, cookies: { nt_session: cookie },
+      payload: { audience: 'associations', recipientIds: [association.id], subject: 'No', text: 'No', scheduledLocal: '2020-02-15T10:30', expectedUpdatedAt: updated.json().updatedAt },
+    });
+    expect(past.statusCode).toBe(400);
+  });
+
+  it('edits a scheduled site association campaign while preserving its batch id', async () => {
+    const first = await prisma.event.create({ data: { ...eventFixture(), name: 'First', eventDate: new Date('2099-01-20T00:00:00.000Z') } });
+    const second = await prisma.event.create({ data: { ...eventFixture(), name: 'Second', eventDate: new Date('2099-02-20T00:00:00.000Z') } });
+    const oldAssociation = await prisma.memberAssociation.create({ data: { name: 'Old association', primaryContactEmail: 'old-association@example.test' } });
+    const newAssociation = await prisma.memberAssociation.create({ data: { name: 'New association', primaryContactEmail: 'new-association@example.test' } });
+    const created = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: first.id, eventIds: [first.id], recipientIds: [oldAssociation.id], batchId: 'site-associations:preserved-site-batch',
+      subject: 'Old site subject', body: 'Old site body', scheduledAt: new Date('2099-01-10T00:00:00.000Z'), status: 'SCHEDULED',
+    } });
+
+    const updated = await app.inject({
+      method: 'PUT', url: `/api/admin/communications/site/campaigns/${created.id}`, cookies: { nt_session: cookie },
+      payload: { eventIds: [second.id], associationIds: [newAssociation.id], subject: 'New site subject', text: 'New site body', scheduledLocal: '2099-02-15T10:30', expectedUpdatedAt: created.updatedAt.toISOString() },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ id: created.id, eventIds: [second.id], associationIds: [newAssociation.id], batchId: created.batchId, subject: 'New site subject', body: 'New site body', scheduledAt: '2099-02-14T23:30:00.000Z' });
+    const stale = await app.inject({
+      method: 'PUT', url: `/api/admin/communications/site/campaigns/${created.id}`, cookies: { nt_session: cookie },
+      payload: { eventIds: [second.id], associationIds: [newAssociation.id], subject: 'Stale site overwrite', text: 'Stale', scheduledLocal: '2099-02-17T10:30', expectedUpdatedAt: created.updatedAt.toISOString() },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: 'schedule_changed' });
+    await prisma.memberAssociation.update({ where: { id: newAssociation.id }, data: { active: false } });
+    const ineligible = await app.inject({
+      method: 'PUT', url: `/api/admin/communications/site/campaigns/${created.id}`, cookies: { nt_session: cookie },
+      payload: { eventIds: [second.id], associationIds: [newAssociation.id], subject: 'No longer eligible', text: 'No', scheduledLocal: '2099-02-16T10:30', expectedUpdatedAt: updated.json().updatedAt },
+    });
+    expect(ineligible.statusCode).toBe(422);
+  });
+
+  it('does not send a stale scheduled message if an Admin edits it after the scheduler reads it', async () => {
+    const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'parent@example.test' }) });
+    const schedule = await prisma.scheduledMessage.create({ data: {
+      eventId, audience: 'participants', recipientIds: [paid.id], batchId: 'schedule-edit-race',
+      subject: 'Stale subject', body: 'Stale body', scheduledAt: new Date(Date.now() - 60_000),
+    } });
+    let edited = false;
+    const racing = prisma.$extends({ query: { scheduledMessage: { async findMany({ args, query }) {
+      const rows = await query(args);
+      if (!edited && rows.some((row) => row.id === schedule.id && row.status === 'SCHEDULED')) {
+        edited = true;
+        await prisma.scheduledMessage.update({ where: { id: schedule.id }, data: { subject: 'Edited subject', body: 'Edited body', scheduledAt: new Date(Date.now() + 60_000) } });
+      }
+      return rows;
+    } } } });
+    const send = vi.fn();
+
+    const result = await runDueScheduledMessages({ prisma: racing as typeof prisma, mailer: { send } }, new Date());
+
+    expect(result).toEqual({ completed: 0, failed: 0 });
+    expect(send).not.toHaveBeenCalled();
+    expect(await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).toMatchObject({ status: 'SCHEDULED', subject: 'Edited subject', body: 'Edited body' });
+  });
+
   it('sends a due scheduled message from the scheduler and retains its batch delivery history', async () => {
     const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'parent@example.test' }) });
     const schedule = await prisma.scheduledMessage.create({ data: {
@@ -222,6 +347,51 @@ describe('event communications routes', () => {
     expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('COMPLETED');
     expect(await prisma.emailLog.findFirstOrThrow({ where: { batchId: schedule.batchId } })).toMatchObject({ to: 'parent@example.test', status: 'SENT' });
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'parent@example.test', subject: 'Scheduled note' });
+  });
+
+  it('does not let a late site sender overwrite a newer campaign attempt', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Late Association', primaryContactEmail: 'late-association@example.test' } });
+    const campaign = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: event.id, eventIds: [event.id], recipientIds: [association.id], batchId: 'site-late-completion',
+      subject: 'Late completion', body: 'Hello', scheduledAt: new Date(Date.now() - 60_000), status: 'SENDING', attempts: 1,
+    } });
+    let release!: () => void;
+    let entered!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => { entered = resolve; });
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    const sending = dispatchSiteAssociationCommunication(prisma, { mailer: { send: vi.fn(async () => { entered(); await releasePromise; }) } }, campaign.id, new Date());
+    await enteredPromise;
+    await prisma.siteAssociationCommunication.update({ where: { id: campaign.id }, data: { attempts: 2, lastAttemptAt: new Date() } });
+    release();
+    await sending;
+
+    expect(await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: campaign.id } })).toMatchObject({ status: 'SENDING', attempts: 2 });
+  });
+
+  it('does not send a site campaign if an Admin edits it after the scheduler reads it', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Race Association', primaryContactEmail: 'race@example.test' } });
+    const campaign = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: event.id, eventIds: [event.id], recipientIds: [association.id], batchId: 'site-schedule-edit-race',
+      subject: 'Stale site subject', body: 'Stale site body', scheduledAt: new Date(Date.now() - 60_000), status: 'SCHEDULED',
+    } });
+    let edited = false;
+    const racing = prisma.$extends({ query: { siteAssociationCommunication: { async findMany({ args, query }) {
+      const rows = await query(args);
+      if (!edited && rows.some((row) => row.id === campaign.id && row.status === 'SCHEDULED')) {
+        edited = true;
+        await prisma.siteAssociationCommunication.update({ where: { id: campaign.id }, data: { subject: 'Edited site subject', body: 'Edited site body', scheduledAt: new Date(Date.now() + 60_000) } });
+      }
+      return rows;
+    } } } });
+    const send = vi.fn();
+
+    const result = await runDueScheduledMessages({ prisma: racing as typeof prisma, mailer: { send } }, new Date());
+
+    expect(result).toEqual({ completed: 0, failed: 0 });
+    expect(send).not.toHaveBeenCalled();
+    expect(await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: campaign.id } })).toMatchObject({ status: 'SCHEDULED', subject: 'Edited site subject', body: 'Edited site body' });
   });
 
   it('recovers stale scheduled sends with no or only known-unsent deliveries', async () => {

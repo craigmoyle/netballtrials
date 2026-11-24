@@ -14,6 +14,7 @@ export function registerPlayerHistoryRoutes(app: FastifyInstance, deps: AppDeps)
   app.get('/api/admin/player-history', { preHandler: requireAdmin(deps) }, async (request, reply) => {
     const parsed = searchSchema.safeParse(request.query ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
-    return searchPlayerHistory(deps.prisma, parsed.data.playerName, parsed.data.dateOfBirth, new Date());
+    const matches = await searchPlayerHistory(deps.prisma, parsed.data.playerName, parsed.data.dateOfBirth, new Date());
+    return { entries: matches.slice(0, 50).reverse(), truncated: matches.length > 50 };
   });
 }

@@ -52,6 +52,19 @@ describe('PlannerPage', () => {
     expect(screen.getByText(/adjust event settings or the checked-in roster/i)).toBeInTheDocument();
   });
 
+  it('reuses the current plan as the published plan instead of requesting it twice', async () => {
+    const getPublishedPlan = vi.fn().mockResolvedValue(null);
+    renderPlanner({
+      getEvent: vi.fn().mockResolvedValue(event),
+      getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValue(plan('PUBLISHED')),
+      getPublishedPlan,
+    });
+
+    expect(await screen.findByText('Published revision 2 · 2 rounds')).toBeInTheDocument();
+    expect(getPublishedPlan).not.toHaveBeenCalled();
+  });
+
   it('previews draft slots and only enables print after a published revision exists', async () => {
     const client = {
       getEvent: vi.fn().mockResolvedValue(event),

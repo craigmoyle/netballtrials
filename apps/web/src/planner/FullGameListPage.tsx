@@ -134,18 +134,25 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
   const displayedPlan = historyPlan ?? plan;
   const availablePlan = displayedPlan;
   const readOnly = historyPlan !== null;
-  const snapshotById = new Map((availablePlan?.players ?? []).map((player) => [player.registrationId, player]));
-  const rosterById = new Map(roster.map((player) => [player.registrationId, player]));
-  const reportPlayers: RoundPlanPlayerDTO[] = [
+  const snapshotById = useMemo(
+    () => new Map((availablePlan?.players ?? []).map((player) => [player.registrationId, player])),
+    [availablePlan],
+  );
+  const rosterById = useMemo(() => new Map(roster.map((player) => [player.registrationId, player])), [roster]);
+  const reportPlayers = useMemo<RoundPlanPlayerDTO[]>(() => [
     ...(availablePlan?.players ?? []),
     ...(!readOnly ? roster.filter((player) => !snapshotById.has(player.registrationId)).map((player) => ({ ...player, active: true })) : []),
-  ].sort((a, b) => (a.bibNumber ?? Number.MAX_SAFE_INTEGER) - (b.bibNumber ?? Number.MAX_SAFE_INTEGER) || a.playerName.localeCompare(b.playerName));
-  const assignmentsByPlayer = new Map<string, RoundSlotDTO[]>();
-  for (const slot of availablePlan?.slots ?? []) {
-    const assignments = assignmentsByPlayer.get(slot.registrationId) ?? [];
-    assignments.push(slot);
-    assignmentsByPlayer.set(slot.registrationId, assignments);
-  }
+  ].sort((a, b) => (a.bibNumber ?? Number.MAX_SAFE_INTEGER) - (b.bibNumber ?? Number.MAX_SAFE_INTEGER) || a.playerName.localeCompare(b.playerName)),
+  [availablePlan, readOnly, roster, snapshotById]);
+  const assignmentsByPlayer = useMemo(() => {
+    const assignments = new Map<string, RoundSlotDTO[]>();
+    for (const slot of availablePlan?.slots ?? []) {
+      const playerSlots = assignments.get(slot.registrationId) ?? [];
+      playerSlots.push(slot);
+      assignments.set(slot.registrationId, playerSlots);
+    }
+    return assignments;
+  }, [availablePlan]);
   const opponentStats = useMemo(() => measureOpponentVariety(availablePlan?.slots ?? []), [availablePlan]);
 
   function playerDetails(registrationId: string, slot?: RoundSlotDTO): DisplayPlayer {
@@ -166,24 +173,43 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     () => new Map((displayedPlan?.slots ?? []).map((slot) => [slotKey(planSlot(slot)), slot])),
     [displayedPlan],
   );
-  const selectedRoundSlots = editing ? editedSlots : renderedSlots.filter((slot) => slot.round === selectedRound);
-  const selectedIds = new Set(selectedRoundSlots.map((slot) => slot.registrationId));
-  const restingPlayers = (readOnly
+  const selectedRoundSlots = useMemo(
+    () => editing ? editedSlots : renderedSlots.filter((slot) => slot.round === selectedRound),
+    [editing, editedSlots, renderedSlots, selectedRound],
+  );
+  const selectedIds = useMemo(() => new Set(selectedRoundSlots.map((slot) => slot.registrationId)), [selectedRoundSlots]);
+  const restingPlayers = useMemo(() => (readOnly
     ? (displayedPlan?.players ?? []).filter((player) => player.active).map((player) => ({
         registrationId: player.registrationId, playerName: player.playerName, bibNumber: player.bibNumber,
         rank1Position: player.rank1Position, rank2Position: player.rank2Position, rank3Position: player.rank3Position,
         optInExtraPositions: player.optInExtraPositions,
       }))
-    : roster).filter((player) => !selectedIds.has(player.registrationId));
-  const originalRoundSlots = plan?.slots.filter((slot) => slot.round === selectedRound).map(planSlot) ?? [];
-  const originalRoundPlayerIds = new Set(originalRoundSlots.map((slot) => slot.registrationId));
-  const missingRoundReplacements = editing && editedSlots.some((slot) => !slot.registrationId);
-  const dirty = editing && editedSlots.some((slot) => originalRoundSlots.find((original) => slotKey(original) === slotKey(slot))?.registrationId !== slot.registrationId);
-  const suffixDirty = suffixEditing && editedSuffixSlots.some((slot) => plan?.slots.find((original) => slotKey(planSlot(original)) === slotKey(slot))?.registrationId !== slot.registrationId);
+    : roster).filter((player) => !selectedIds.has(player.registrationId)), [displayedPlan, readOnly, roster, selectedIds]);
+  const originalRoundSlots = useMemo(
+    () => plan?.slots.filter((slot) => slot.round === selectedRound).map(planSlot) ?? [],
+    [plan, selectedRound],
+  );
+  const originalRoundSlotByKey = useMemo(
+    () => new Map(originalRoundSlots.map((slot) => [slotKey(slot), slot])),
+    [originalRoundSlots],
+  );
+  const originalRoundPlayerIds = useMemo(
+    () => new Set(originalRoundSlots.map((slot) => slot.registrationId)),
+    [originalRoundSlots],
+  );
+  const planSlotByKey = useMemo(
+    () => new Map((plan?.slots ?? []).map((slot) => [slotKey(planSlot(slot)), slot])),
+    [plan],
+  );
+  const missingRoundReplacements = useMemo(() => editing && editedSlots.some((slot) => !slot.registrationId), [editing, editedSlots]);
+  const dirty = useMemo(() => editing && editedSlots.some((slot) =>
+    originalRoundSlotByKey.get(slotKey(slot))?.registrationId !== slot.registrationId), [editing, editedSlots, originalRoundSlotByKey]);
+  const suffixDirty = useMemo(() => suffixEditing && editedSuffixSlots.some((slot) =>
+    planSlotByKey.get(slotKey(slot))?.registrationId !== slot.registrationId), [suffixEditing, editedSuffixSlots, planSlotByKey]);
   const dirtyAny = dirty || suffixDirty;
   const blocker = useBlocker(dirtyAny);
   useUnsavedSignOut(dirtyAny, 'You have unsaved game schedule changes. Leave and discard them?');
-  const earlyLeaverSet = new Set(earlyLeaverIds);
+  const earlyLeaverSet = useMemo(() => new Set(earlyLeaverIds), [earlyLeaverIds]);
 
   useEffect(() => {
     if (blocker.state !== 'blocked') {
@@ -206,12 +232,22 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     window.addEventListener('beforeunload', warnBeforeUnload);
     return () => window.removeEventListener('beforeunload', warnBeforeUnload);
   }, [dirtyAny]);
-  const earlyLeaverCandidates = plan?.players.filter((player) => player.active && rosterById.has(player.registrationId) &&
-    plan.slots.some((slot) => slot.round >= suffixFromRound && slot.registrationId === player.registrationId)) ?? [];
-  const lateArrivalPlayers = plan ? roster.filter((player) => !snapshotById.has(player.registrationId)) : [];
-  const affectedSuffixKeys = new Set(plan?.slots.filter((slot) => slot.round >= suffixFromRound && earlyLeaverSet.has(slot.registrationId)).map(slotKey));
-  const suffixReplacementSlots = editedSuffixSlots.filter((slot) => affectedSuffixKeys.has(slotKey(slot)));
-  const missingSuffixReplacements = editedSuffixSlots.some((slot) => !slot.registrationId);
+  const earlyLeaverCandidates = useMemo(() => {
+    const assignedIds = new Set(plan?.slots.filter((slot) => slot.round >= suffixFromRound).map((slot) => slot.registrationId) ?? []);
+    return plan?.players.filter((player) => player.active && rosterById.has(player.registrationId) && assignedIds.has(player.registrationId)) ?? [];
+  }, [plan, rosterById, suffixFromRound]);
+  const lateArrivalPlayers = useMemo(
+    () => plan ? roster.filter((player) => !snapshotById.has(player.registrationId)) : [],
+    [plan, roster, snapshotById],
+  );
+  const affectedSuffixKeys = useMemo(() => new Set(
+    plan?.slots.filter((slot) => slot.round >= suffixFromRound && earlyLeaverSet.has(slot.registrationId)).map(slotKey) ?? [],
+  ), [plan, suffixFromRound, earlyLeaverSet]);
+  const suffixReplacementSlots = useMemo(
+    () => editedSuffixSlots.filter((slot) => affectedSuffixKeys.has(slotKey(slot))),
+    [editedSuffixSlots, affectedSuffixKeys],
+  );
+  const missingSuffixReplacements = useMemo(() => editedSuffixSlots.some((slot) => !slot.registrationId), [editedSuffixSlots]);
 
   function beginEdit(round: number) {
     if (!plan || stalePlan || suffixEditing) return;
@@ -375,7 +411,7 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
 
   function roundChangeState(key: string, registrationId: string): 'vacated' | 'moved' | 'replacement' | undefined {
     if (!editing) return undefined;
-    const originalId = originalRoundSlots.find((slot) => slotKey(slot) === key)?.registrationId;
+    const originalId = originalRoundSlotByKey.get(key)?.registrationId;
     if (originalId === registrationId) return undefined;
     if (!registrationId) return 'vacated';
     return originalRoundPlayerIds.has(registrationId) ? 'moved' : 'replacement';
@@ -410,7 +446,8 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) return;
     drag.moved = true;
-    setDropTarget(targetAt(event.clientX, event.clientY));
+    const target = targetAt(event.clientX, event.clientY);
+    setDropTarget((current) => current === target ? current : target);
   }
 
   function finishPointerDrag(event: PointerEvent<HTMLButtonElement>) {
@@ -904,7 +941,7 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
                       <h3 id="manual-suffix-heading">Manual replacements from round {suffixFromRound}</h3>
                       <p>Replace every future assignment for the selected player(s). Their registration and check-in record will not change.</p>
                       {suffixReplacementSlots.map((slot) => {
-                        const original = plan.slots.find((item) => slotKey(planSlot(item)) === slotKey(slot));
+                        const original = planSlotByKey.get(slotKey(slot));
                         const leaver = original ? playerDetails(original.registrationId, original) : { playerName: 'Early leaver', bibNumber: null };
                         const team = slot.team === 0 ? 'Team A' : 'Team B';
                         const label = `Replacement for round ${slot.round}, court ${slot.court}, ${team}, ${slot.position}`;

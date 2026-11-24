@@ -23,11 +23,9 @@ const messageFields = {
   text: z.string().trim().min(1).max(5000),
 };
 const messageSchema = z.object({ ...messageFields, batchId: z.uuid() });
-const scheduleSchema = z.object({
-  ...messageFields,
-  batchId: z.uuid(),
-  scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
-});
+const scheduleFields = { ...messageFields, scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/) };
+const scheduleSchema = z.object({ ...scheduleFields, batchId: z.uuid() });
+const scheduleEditSchema = z.object({ ...scheduleFields, expectedUpdatedAt: z.string().datetime() });
 const templateSchema = z.object({
   name: z.string().trim().min(1).max(100), audience, subject: z.string().trim().min(1).max(200),
   body: z.string().trim().min(1).max(5000),
@@ -42,7 +40,9 @@ function scheduledMessageDto(row: ScheduledMessage): ScheduledMessageDTO {
   return {
     id: row.id, eventId: row.eventId, audience: row.audience as CommunicationAudience,
     recipientIds: row.recipientIds as string[], batchId: row.batchId, subject: row.subject, body: row.body,
+    attachmentName: (row.policyAttachment as { fileName?: string } | null)?.fileName ?? null,
     scheduledAt: row.scheduledAt.toISOString(), status: row.status, attempts: row.attempts, error: row.error,
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -183,6 +183,43 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
       return reply.code(200).send(scheduledMessageDto(duplicate));
     }
     return reply.code(201).send(scheduledMessageDto(row));
+  });
+
+  app.put('/api/admin/events/:id/communications/scheduled/:scheduleId', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = scheduleEditSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const unsupported = unsupportedTemplateFields(parsed.data.audience, parsed.data.subject, parsed.data.text);
+    if (unsupported.length) return reply.code(400).send({ error: 'unsupported_template_fields', fields: unsupported });
+    const { id, scheduleId } = req.params as { id: string; scheduleId: string };
+    let scheduledAt: Date;
+    try { scheduledAt = melbourneLocalDateTimeToUtc(parsed.data.scheduledLocal); }
+    catch { return reply.code(400).send({ error: 'invalid_schedule_time' }); }
+    const now = new Date();
+    if (scheduledAt.getTime() < now.getTime() + 60_000) return reply.code(400).send({ error: 'schedule_must_be_in_future' });
+    const current = await deps.prisma.scheduledMessage.findUnique({ where: { id: scheduleId }, select: { eventId: true, status: true, updatedAt: true } });
+    if (!current || current.eventId !== id) return reply.code(404).send({ error: 'not_found' });
+    if (current.status !== 'SCHEDULED') return reply.code(409).send({ error: 'schedule_not_editable' });
+    if (current.updatedAt.toISOString() !== parsed.data.expectedUpdatedAt) return reply.code(409).send({ error: 'schedule_changed' });
+    const preview = await previewSelectedRecipients(deps.prisma, id, selected(parsed.data));
+    if (!preview) return reply.code(404).send({ error: 'not_found' });
+    if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
+    const policyDocument = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, select: { fileName: true, bytes: true } });
+    const policyAttachment = policyDocument ? { fileName: policyDocument.fileName, contentBase64: Buffer.from(policyDocument.bytes).toString('base64') } : null;
+    const updated = await deps.prisma.scheduledMessage.updateMany({
+      where: { id: scheduleId, eventId: id, status: 'SCHEDULED', updatedAt: new Date(parsed.data.expectedUpdatedAt) },
+      data: {
+        audience: parsed.data.audience,
+        recipientIds: [...new Set(parsed.data.recipientIds)],
+        subject: parsed.data.subject,
+        body: parsed.data.text,
+        scheduledAt,
+        policyAttachment: policyAttachment ?? Prisma.DbNull,
+        error: null,
+      },
+    });
+    if (updated.count !== 1) return reply.code(409).send({ error: 'schedule_not_editable' });
+    const row = await deps.prisma.scheduledMessage.findUniqueOrThrow({ where: { id: scheduleId } });
+    return scheduledMessageDto(row);
   });
 
   app.get('/api/admin/events/:id/communications/scheduled', { preHandler: requireAdmin(deps) }, async (req, reply) => {

@@ -21,6 +21,17 @@ describe('apiClient', () => {
     expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
   });
 
+  it('patches an event registration correction with session credentials', async () => {
+    const corrected = { id: 'registration-1', playerName: 'Ada Lovelace', dateOfBirth: '2013-04-02', memberAssociation: 'MENA' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(corrected), { status: 200 }));
+    const patch = { dateOfBirth: '2013-04-02', memberAssociation: 'MENA' };
+
+    await expect(apiClient('http://api.test').correctRegistration('event-1', 'registration-1', patch)).resolves.toEqual(corrected);
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/registrations/registration-1', expect.objectContaining({
+      method: 'PATCH', credentials: 'include', body: JSON.stringify(patch),
+    }));
+  });
+
   it('loads the runtime environment through the proxied API path', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"appEnv":"testing"}', { status: 200 }));
     await expect(apiClient('').getRuntimeEnvironment()).resolves.toEqual({ appEnv: 'testing' });
