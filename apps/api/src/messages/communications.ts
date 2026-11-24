@@ -3,16 +3,20 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import type { CommunicationRecipientDTO, ScheduledMessageDTO } from '@netball-trials/types';
 import { lockMailEvent, mailRegistrationEligibility } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
-import { deliveryIdempotencyKey, dispatchSelectedRows, EmailBatchConflictError, type DeliverySummary } from './service';
+import { deliveryIdempotencyKey, deliveryStatusesByBatch, dispatchSelectedRows, EmailBatchConflictError, type DeliverySummary } from './service';
 import { renderEmailTemplate } from './template-renderer';
 import { runDueSiteAssociationCommunications } from './site-association-communications';
 
 export type CommunicationAudience = 'participants' | 'associations';
 export type SelectedCommunication = { audience: CommunicationAudience; recipientIds: string[] };
 
+function communicationEligible(status: string, emailVerifiedAt: Date | null): boolean {
+  return status === 'PAID' || (emailVerifiedAt !== null && ['PENDING', 'EXPIRED', 'FAILED'].includes(status));
+}
+
 function registrationsToRecipients(rows: Array<{
   id: string; playerFirstName: string; playerLastName: string; parentEmail: string; bibNumber: number | null;
-  checkedInAt: Date | null; memberAssociation: string; status: string;
+  checkedInAt: Date | null; memberAssociation: string; status: string; parentEmailVerifiedAt: Date | null;
   rank1Position: string; rank2Position: string | null; rank3Position: string | null;
 }>): CommunicationRecipientDTO[] {
   return rows.map((row) => ({
@@ -24,6 +28,8 @@ function registrationsToRecipients(rows: Array<{
     registrationStatus: row.status as CommunicationRecipientDTO['registrationStatus'],
     checkedIn: row.checkedInAt !== null,
     positions: [row.rank1Position, row.rank2Position, row.rank3Position].filter(Boolean) as CommunicationRecipientDTO['positions'],
+    eligible: communicationEligible(row.status, row.parentEmailVerifiedAt),
+    emailVerified: row.parentEmailVerifiedAt !== null,
   }));
 }
 
@@ -37,7 +43,7 @@ export async function listCommunicationRecipients(prisma: PrismaClient, eventId:
     where: { eventId, anonymizedAt: null },
     select: {
       id: true, playerFirstName: true, playerLastName: true, parentEmail: true, bibNumber: true,
-      checkedInAt: true, memberAssociation: true, status: true, rank1Position: true,
+      checkedInAt: true, memberAssociation: true, status: true, parentEmailVerifiedAt: true, rank1Position: true,
       rank2Position: true, rank3Position: true,
     },
     orderBy: [{ playerLastName: 'asc' }, { playerFirstName: 'asc' }],
@@ -58,6 +64,8 @@ export async function listCommunicationRecipients(prisma: PrismaClient, eventId:
       registrationStatus: null,
       checkedIn: null,
       positions: [],
+      eligible: true,
+      emailVerified: null,
     })),
   };
 }
@@ -90,7 +98,7 @@ async function createSelectedRows(
       venue: event.venue,
       eventList: `${event.name} — ${event.eventDate.toISOString().slice(0, 10)} at ${event.startTime}, ${event.venue}`,
     };
-    type Target = { to: string; registrationId: string | null; associationId: string | null; fields: Record<string, string> };
+    type Target = { to: string; registrationId: string | null; registrationIds: string[]; associationId: string | null; fields: Record<string, string> };
     const targets: Target[] = [];
     if (selected.audience === 'participants') {
       const registrations = await tx.registration.findMany({
@@ -107,7 +115,7 @@ async function createSelectedRows(
         const names = players.map((player) => `${player.playerFirstName} ${player.playerLastName}`.trim()).filter(Boolean);
         const onlyPlayer = players.length === 1 ? players[0] : null;
         targets.push({
-          to, registrationId: players[0].id, associationId: null,
+          to, registrationId: players[0].id, registrationIds: players.map((player) => player.id), associationId: null,
           fields: {
             ...eventFields,
             playerFirstName: onlyPlayer?.playerFirstName ?? '',
@@ -132,7 +140,7 @@ async function createSelectedRows(
         if (email && !byEmail.has(email)) byEmail.set(email, association);
       }
       for (const [to, association] of byEmail) targets.push({
-        to, registrationId: null, associationId: association.id,
+        to, registrationId: null, registrationIds: [], associationId: association.id,
         fields: { ...eventFields, associationName: association.name, contactName: association.primaryContactName ?? '' },
       });
     }
@@ -148,7 +156,9 @@ async function createSelectedRows(
       const expected = new Map(messages.map((message) => [message.to, message]));
       if (existing.some((row) => {
         const message = expected.get(row.to.trim().toLowerCase());
-        return !message || row.eventId !== eventId || row.subject !== message.subject || row.body !== message.body || row.kind !== kind || JSON.stringify(row.messagePayload ?? null) !== JSON.stringify(messagePayload);
+        return !message || row.eventId !== eventId || row.subject !== message.subject || row.body !== message.body || row.kind !== kind ||
+          JSON.stringify(row.registrationIds ?? (row.registrationId ? [row.registrationId] : [])) !== JSON.stringify(message.registrationIds) ||
+          JSON.stringify(row.messagePayload ?? null) !== JSON.stringify(messagePayload);
       })) throw new EmailBatchConflictError();
       return existing;
     }
@@ -156,7 +166,7 @@ async function createSelectedRows(
     await tx.emailLog.createMany({
       skipDuplicates: true,
       data: messages.map((message) => ({
-        eventId, registrationId: message.registrationId, associationId: message.associationId,
+        eventId, registrationId: message.registrationId, registrationIds: message.registrationIds.length ? message.registrationIds as Prisma.InputJsonArray : Prisma.DbNull, associationId: message.associationId,
         senderUserId: senderUserId ?? null, batchId,
         idempotencyKey: deliveryIdempotencyKey(batchId, message.to),
         to: message.to, subject: message.subject, body: message.body, kind, status: 'PENDING',
@@ -176,8 +186,7 @@ export async function previewSelectedRecipients(
   if (!available) return null;
   const requested = new Set(selected.recipientIds);
   const candidates = selected.audience === 'participants' ? available.participants : available.associations;
-  const eligible = candidates.filter((recipient) => requested.has(recipient.id) &&
-    (selected.audience === 'associations' || recipient.registrationStatus === 'PAID') && recipient.email.trim());
+  const eligible = candidates.filter((recipient) => requested.has(recipient.id) && recipient.eligible && recipient.email.trim());
   const seen = new Set<string>();
   return eligible.filter((recipient) => {
     const email = recipient.email.trim().toLowerCase();
@@ -208,7 +217,9 @@ export async function getScheduledMessages(prisma: PrismaClient, eventId: string
   return rows.map((row) => ({
     id: row.id, eventId: row.eventId, audience: row.audience as CommunicationAudience,
     recipientIds: row.recipientIds as string[], batchId: row.batchId, subject: row.subject, body: row.body,
+    attachmentName: (row.policyAttachment as { fileName?: string } | null)?.fileName ?? null,
     scheduledAt: row.scheduledAt.toISOString(), status: row.status, attempts: row.attempts, error: row.error,
+    updatedAt: row.updatedAt.toISOString(),
   }));
 }
 
@@ -225,9 +236,10 @@ async function recoverStaleScheduledMessages(prisma: PrismaClient, now: Date): P
   });
   let completed = 0;
   let failed = 0;
+  const deliveryStates = await deliveryStatusesByBatch(prisma, stale.map((scheduled) => scheduled.batchId));
   for (const scheduled of stale) {
-    const deliveries = await prisma.emailLog.findMany({ where: { batchId: scheduled.batchId }, select: { status: true } });
-    const allSent = deliveries.length > 0 && deliveries.every((delivery) => delivery.status === 'SENT');
+    const statuses = deliveryStates.get(scheduled.batchId) ?? [];
+    const allSent = statuses.length > 0 && statuses.every((status) => status === 'SENT');
     if (scheduled.status === 'FAILED') {
       if (allSent) await prisma.scheduledMessage.updateMany({
         where: { id: scheduled.id, status: 'FAILED', error: 'scheduled_worker_interrupted' },
@@ -235,7 +247,7 @@ async function recoverStaleScheduledMessages(prisma: PrismaClient, now: Date): P
       });
       continue;
     }
-    const safeToResume = deliveries.every((delivery) => delivery.status === 'PENDING' || delivery.status === 'SENT');
+    const safeToResume = statuses.every((status) => status === 'PENDING' || status === 'SENT');
     const status = allSent ? 'COMPLETED' : safeToResume ? 'SCHEDULED' : 'FAILED';
     const changed = await prisma.scheduledMessage.updateMany({
       where: { id: scheduled.id, status: 'SENDING', attempts: scheduled.attempts, lastAttemptAt: scheduled.lastAttemptAt },
@@ -264,7 +276,17 @@ export async function runDueScheduledMessages(
   let failed = recovered.failed;
   for (const scheduled of due) {
     const claim = await deps.prisma.scheduledMessage.updateMany({
-      where: { id: scheduled.id, status: 'SCHEDULED' },
+      where: {
+        id: scheduled.id,
+        status: 'SCHEDULED',
+        audience: scheduled.audience,
+        recipientIds: { equals: scheduled.recipientIds as Prisma.InputJsonValue },
+        subject: scheduled.subject,
+        body: scheduled.body,
+        scheduledAt: scheduled.scheduledAt,
+        updatedAt: scheduled.updatedAt,
+        attempts: scheduled.attempts,
+      },
       data: { status: 'SENDING', attempts: { increment: 1 }, lastAttemptAt: now, error: null },
     });
     if (claim.count !== 1) continue;

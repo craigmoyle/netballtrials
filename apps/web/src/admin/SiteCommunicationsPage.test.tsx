@@ -8,7 +8,7 @@ afterEach(cleanup);
 const campaign: SiteAssociationCampaignDTO = {
   id: 'campaign-1', eventIds: ['e1', 'e2'], eventNames: ['Spring Trials', 'Open Trials'], associationIds: ['a1'],
   batchId: 'site-batch-1', subject: 'Trials', body: 'Details', scheduledAt: null, status: 'COMPLETED',
-  attempts: 1, error: null, createdAt: '2026-10-31T00:00:00.000Z',
+  attempts: 1, error: null, createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
   deliveries: [{ id: 'mail-1', to: 'association@example.test', status: 'SENT', simulated: false, attempts: 1, sentAt: '2026-10-31T00:00:00.000Z', failedAt: null, error: null, associationName: 'MENA' }],
 };
 
@@ -30,6 +30,7 @@ function makeClient() {
     }),
     sendSiteAssociationCommunication: vi.fn().mockResolvedValue(campaign),
     scheduleSiteAssociationCommunication: vi.fn().mockResolvedValue(campaign),
+    updateSiteAssociationCommunication: vi.fn().mockResolvedValue({ ...campaign, subject: 'Updated', status: 'SCHEDULED' }),
     cancelSiteAssociationCommunication: vi.fn().mockResolvedValue({ status: 'CANCELLED' }),
     retrySiteAssociationCommunication: vi.fn().mockResolvedValue({ batchId: campaign.batchId, sent: 1, failed: 0, ambiguous: 0, pending: 0 }),
     saveCommunicationTemplate: vi.fn(), updateCommunicationTemplate: vi.fn(), deleteCommunicationTemplate: vi.fn(),
@@ -55,6 +56,20 @@ describe('SiteCommunicationsPage', () => {
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Retry outcome-unknown deliveries' }));
     await waitFor(() => expect(client.retrySiteAssociationCommunication).toHaveBeenCalledWith('campaign-1', ['mail-1'], true));
+  });
+
+  it('edits a scheduled association campaign through the existing composer', async () => {
+    const client = makeClient();
+    client.listSiteAssociationCampaigns.mockResolvedValue([{ ...campaign, scheduledAt: '2099-01-15T23:30:00.000Z', status: 'SCHEDULED', deliveries: [] }]);
+    render(<SiteCommunicationsPage client={client as any} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit scheduled campaign' }));
+    expect(screen.getByLabelText('Subject')).toHaveValue('Trials');
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Updated' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview message' }));
+    await screen.findByRole('heading', { name: 'Review association message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Save schedule changes' }));
+    await waitFor(() => expect(client.updateSiteAssociationCommunication).toHaveBeenCalledWith('campaign-1', expect.objectContaining({ subject: 'Updated', expectedUpdatedAt: '2026-11-24T00:00:00.000Z' })));
   });
 
   it('previews and sends one association campaign across selected events', async () => {

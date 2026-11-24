@@ -571,10 +571,13 @@ test('Admin assists a family on a closed event day and parent verifies email bef
   expect(externalRequests).toEqual([]);
 });
 
-test('volunteer uses manual fallback, sees referral/name/number, live count and undo without parent contacts', async ({ page }) => {
+test('volunteer uses manual fallback, sees referral/name/number, live count and undo without parent contacts', async ({ page, request }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, request);
+  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, { eventDate: melbourneDateKey(new Date()) });
+  expect(eventDate.status()).toBe(200);
   await page.goto(`/check-in?eventId=${encodeURIComponent(fixtures.mainEventId)}`);
   await expect(page.getByLabel('Event ID')).toHaveValue(fixtures.mainEventId);
   await page.getByLabel('Event PIN').fill('482193');

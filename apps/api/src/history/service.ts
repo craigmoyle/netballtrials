@@ -1,7 +1,7 @@
 import type { PrismaClient, Position } from '@prisma/client';
 import type { PlayerHistoryEntryDTO } from '@netball-trials/types';
 import { normalizePlayerName } from '../registrations/eligibility';
-import { isPastRetentionCutoff } from '../retention/service';
+import { earliestRetainedEventDate } from '../retention/service';
 
 type HistorySlot = { round: number; court: number; position: Position; team: number; registrationId: string };
 
@@ -17,9 +17,10 @@ export async function searchPlayerHistory(
       playerNameNormalized: normalized,
       dateOfBirth: new Date(`${dateOfBirth}T00:00:00.000Z`),
       anonymizedAt: null,
+      event: { is: { eventDate: { gte: earliestRetainedEventDate(now) } } },
     },
-    orderBy: [{ event: { eventDate: 'asc' } }, { createdAt: 'asc' }],
-    take: 50,
+    orderBy: [{ event: { eventDate: 'desc' } }, { createdAt: 'desc' }],
+    take: 51,
     select: {
       id: true,
       playerFirstName: true,
@@ -65,7 +66,7 @@ export async function searchPlayerHistory(
     slotsByEventPlayer.set(registration.event.id, slotsByPlayer);
   }
 
-  return registrations.filter((registration) => !isPastRetentionCutoff(registration.event.eventDate, now)).map((registration) => {
+  return registrations.map((registration) => {
     const slots = slotsByEventPlayer.get(registration.event.id)?.get(registration.id) ?? [];
     const games = gamesByEvent.get(registration.event.id) ?? new Map();
     const opposingIds = new Set<string>();

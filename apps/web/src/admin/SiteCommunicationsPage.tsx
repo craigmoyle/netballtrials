@@ -5,6 +5,15 @@ import { ApiError, type ApiClient as Client } from '../api/client';
 type Audience = 'participants' | 'associations';
 type Tab = 'associations' | 'templates';
 
+function melbourneLocalInput(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+}
+
 function templateErrorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError && error.message === 'unsupported_template_fields'
     ? `Unsupported template field(s): ${error.fields?.join(', ') || 'check the available fields below'}.`
@@ -22,6 +31,7 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
   const [subject, setSubject] = useState('');
   const [text, setText] = useState('');
   const [scheduleAt, setScheduleAt] = useState('');
+  const [editingCampaign, setEditingCampaign] = useState<{ id: string; updatedAt: string } | null>(null);
   const [preview, setPreview] = useState<(SiteAssociationCommunicationPreviewDTO & { count: number }) | null>(null);
   const [sendBatchId, setSendBatchId] = useState<string | null>(null);
   const [templateAudience, setTemplateAudience] = useState<Audience>('associations');
@@ -122,12 +132,17 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
     setError(null);
     setNotice(null);
     try {
-      const batchId = sendBatchId ?? crypto.randomUUID();
-      setSendBatchId(batchId);
-      await client.scheduleSiteAssociationCommunication({
-        eventIds: selectedEventIds, associationIds: selectedAssociationIds, subject, text, scheduledLocal: scheduleAt, batchId,
-      });
-      setNotice('Association message scheduled.');
+      const input = { eventIds: selectedEventIds, associationIds: selectedAssociationIds, subject, text, scheduledLocal: scheduleAt };
+      if (editingCampaign) {
+        await client.updateSiteAssociationCommunication(editingCampaign.id, { ...input, expectedUpdatedAt: editingCampaign.updatedAt });
+        setNotice('Scheduled association message updated.');
+      } else {
+        const batchId = sendBatchId ?? crypto.randomUUID();
+        setSendBatchId(batchId);
+        await client.scheduleSiteAssociationCommunication({ ...input, batchId });
+        setNotice('Association message scheduled.');
+      }
+      setEditingCampaign(null);
       invalidatePreview();
       setSelectedAssociationIds([]);
       setScheduleAt('');
@@ -182,6 +197,17 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function editCampaign(campaign: SiteAssociationCampaignDTO) {
+    setSelectedEventIds(campaign.eventIds);
+    setSelectedAssociationIds(campaign.associationIds);
+    setSubject(campaign.subject);
+    setText(campaign.body);
+    setScheduleAt(campaign.scheduledAt ? melbourneLocalInput(campaign.scheduledAt) : '');
+    setEditingCampaign({ id: campaign.id, updatedAt: campaign.updatedAt });
+    invalidatePreview();
+    setNotice('Editing scheduled campaign. Preview it before saving changes.');
   }
 
   async function cancelCampaign(campaignId: string) {
@@ -269,7 +295,8 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
                 <fieldset className="form-group">
                   <legend>Schedule this message</legend>
                   <p><label htmlFor="site-scheduled-local">Send at (Australia/Melbourne)</label><input id="site-scheduled-local" type="datetime-local" value={scheduleAt} onChange={(change) => setScheduleAt(change.target.value)} /></p>
-                  <button type="submit" className="button-secondary" disabled={busy || !scheduleAt || preview.count === 0}>{busy ? 'Scheduling...' : 'Schedule email'}</button>
+                  <button type="submit" className="button-secondary" disabled={busy || !scheduleAt || preview.count === 0}>{busy ? 'Saving...' : editingCampaign ? 'Save schedule changes' : 'Schedule email'}</button>
+                  {editingCampaign ? <> <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingCampaign(null); invalidatePreview(); setNotice('Scheduled campaign edit cancelled.'); }}>Cancel schedule edit</button></> : null}
                 </fieldset>
               </form>
             </section>
@@ -280,7 +307,7 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
               <li key={campaign.id}>
                 <strong>{campaign.subject}</strong> — {campaign.eventNames.join(', ')} — {campaign.status.toLowerCase()}
                 <p>{campaign.deliveries.length} association contact(s) · {campaign.deliveries.filter((delivery) => delivery.status === 'SENT' && !delivery.simulated).length} sent · {campaign.deliveries.filter((delivery) => delivery.simulated).length} simulated · {campaign.deliveries.filter((delivery) => delivery.status === 'FAILED').length} failed</p>
-                {campaign.scheduledAt && campaign.status === 'SCHEDULED' ? <p>Scheduled {new Date(campaign.scheduledAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })} <button type="button" className="button-secondary" disabled={busy} onClick={() => void cancelCampaign(campaign.id)}>Cancel scheduled message</button></p> : null}
+                {campaign.scheduledAt && campaign.status === 'SCHEDULED' ? <p>Scheduled {new Date(campaign.scheduledAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })} <button type="button" className="button-secondary" disabled={busy} onClick={() => editCampaign(campaign)}>Edit scheduled campaign</button> <button type="button" className="button-secondary" disabled={busy} onClick={() => void cancelCampaign(campaign.id)}>Cancel scheduled message</button></p> : null}
                 {campaign.deliveries.some((delivery) => delivery.status === 'FAILED') ? <button type="button" className="button-secondary" disabled={busy} onClick={() => void retryCampaign(campaign)}>Retry failed deliveries</button> : null}
                 {campaign.deliveries.some((delivery) => delivery.status === 'AMBIGUOUS') ? <button type="button" className="button-secondary" disabled={busy} onClick={() => void retryCampaign(campaign, true)}>Retry outcome-unknown deliveries</button> : null}
               </li>

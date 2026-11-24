@@ -8,6 +8,7 @@ import { normalizePlayerName } from '../registrations/eligibility';
 import { positionsAreDistinct } from '../registrations/schemas';
 import { createRegistrationCheckout, sendCheckoutContinuation } from '../registrations/checkout';
 import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
+import { deliveryIdempotencyKey } from '../messages/service';
 import { isPastRetentionCutoff } from '../retention/service';
 import { consumeRateLimit, rateLimitClientKey } from '../security/rate-limit';
 import { isUniqueViolation } from '../errors';
@@ -318,6 +319,12 @@ export async function updateParentRegistration(
 ): Promise<ParentRegistrationDTO> {
   try {
     return await prisma.$transaction(async (tx) => {
+      const target = await tx.registration.findFirst({
+        where: { id: registrationId, parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' }, parentEmailVerifiedAt: { not: null }, anonymizedAt: null },
+        select: { eventId: true },
+      });
+      if (!target) throw new ParentAccessError('not_found');
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${target.eventId} FOR UPDATE`);
       await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "Registration"
         WHERE "id" = ${registrationId}
@@ -531,6 +538,7 @@ export async function confirmParentEmailChange(
     if (claimed.count !== 1) throw new ParentAccessError('not_found');
     const registrations = await tx.registration.findMany({
       where: { parentEmail: { equals: current, mode: 'insensitive' }, anonymizedAt: null },
+      orderBy: [{ event: { eventDate: 'desc' } }, { id: 'asc' }],
       select: { id: true, eventId: true },
     });
     if (!registrations.length) throw new ParentAccessError('not_found');
@@ -568,6 +576,21 @@ export async function confirmParentEmailChange(
         changeData: { parentEmail: { from: current, to: newEmail } },
       })),
     });
+    const batchId = `email-change:${token.id}`;
+    await tx.emailLog.createMany({
+      skipDuplicates: true,
+      data: [{
+        eventId: registrations[0].eventId,
+        registrationId: registrations[0].id,
+        batchId,
+        idempotencyKey: deliveryIdempotencyKey(batchId, current),
+        to: current,
+        subject: 'Your Netball Trials email was changed',
+        body: 'The email used to manage Netball Trials registrations was changed. If you did not request this, contact the club.',
+        kind: 'email-change',
+        status: 'PENDING',
+      }],
+    });
     await tx.parentAccessSession.deleteMany({ where: { email: current, id: { not: sessionId } } });
     await tx.parentAccessSession.updateMany({
       where: { id: sessionId, email: current },
@@ -575,15 +598,6 @@ export async function confirmParentEmailChange(
     });
   });
 
-  try {
-    await deps.mailer.send({
-      to: current,
-      subject: 'Your Netball Trials email was changed',
-      text: 'The email used to manage Netball Trials registrations was changed. If you did not request this, contact the club.',
-    });
-  } catch {
-    // The new address is already verified; notification failure must not undo the change.
-  }
   return newEmail;
 }
 

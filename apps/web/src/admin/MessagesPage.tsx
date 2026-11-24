@@ -4,7 +4,16 @@ import { ApiError, type ApiClient as Client } from '../api/client';
 import { HelpTip } from './HelpTip';
 
 type Audience = 'participants' | 'associations';
-type FilterStatus = 'all' | 'PAID' | 'PENDING' | 'EXPIRED' | 'FAILED' | 'WITHDRAWN' | 'checked-in' | 'not-checked-in';
+type FilterStatus = 'all' | 'PAID' | 'PENDING' | 'EXPIRED' | 'FAILED' | 'WITHDRAWN' | 'checked-in' | 'not-checked-in' | 'eligible' | 'ineligible';
+
+function melbourneLocalInput(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+}
 
 function templateErrorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError && error.message === 'unsupported_template_fields'
@@ -14,8 +23,9 @@ function templateErrorMessage(error: unknown, fallback: string): string {
 
 function recipientStatus(recipient: CommunicationRecipientDTO): string {
   if (recipient.registrationStatus === null) return 'Association contact';
-  if (recipient.checkedIn) return `${recipient.registrationStatus} · Checked in`;
-  return `${recipient.registrationStatus} · ${recipient.registrationStatus === 'PAID' ? 'No-show' : 'Not checked in'}`;
+  const attendance = recipient.checkedIn ? 'Checked in' : recipient.registrationStatus === 'PAID' ? 'No-show' : 'Not checked in';
+  const verification = recipient.registrationStatus === 'PAID' ? '' : ` · Email ${recipient.emailVerified ? 'verified' : 'not verified'}`;
+  return `${recipient.registrationStatus} · ${attendance}${verification}`;
 }
 
 function deliveryStatus(entry: EmailLogDTO): string {
@@ -48,6 +58,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
   const [sendBatchId, setSendBatchId] = useState<string | null>(null);
   const [scheduleBatchId, setScheduleBatchId] = useState<string | null>(null);
   const [scheduleAt, setScheduleAt] = useState('');
+  const [editingScheduled, setEditingScheduled] = useState<{ id: string; updatedAt: string } | null>(null);
   const [templateName, setTemplateName] = useState('');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,15 +109,17 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
         if (recipient.registrationStatus !== statusFilter) return false;
       } else if (statusFilter === 'checked-in' && recipient.checkedIn !== true) return false;
       else if (statusFilter === 'not-checked-in' && (recipient.registrationStatus !== 'PAID' || recipient.checkedIn)) return false;
+      else if (statusFilter === 'eligible' && !recipient.eligible) return false;
+      else if (statusFilter === 'ineligible' && recipient.eligible) return false;
       if (positionFilter !== 'all' && !recipient.positions.includes(positionFilter as CommunicationRecipientDTO['positions'][number])) return false;
     }
     return true;
   }), [allRecipients, audience, associationFilter, positionFilter, search, statusFilter]);
-  const eligibleVisibleRecipients = filteredRecipients.filter((recipient) => Boolean(recipient.email.trim()) &&
-    (audience === 'associations' || recipient.registrationStatus === 'PAID'));
+  const eligibleVisibleRecipients = filteredRecipients.filter((recipient) => Boolean(recipient.email.trim()) && recipient.eligible);
   const selectedVisibleCount = filteredRecipients.filter((recipient) => selectedIds.includes(recipient.id)).length;
 
   function changeAudience(next: Audience) {
+    if (editingScheduled) setEditingScheduled(null);
     setAudience(next);
     setEditingTemplateId(null);
     setTemplateName('');
@@ -124,7 +137,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
 
   function selectVisible(checked: boolean) {
     const visibleIds = filteredRecipients
-      .filter((recipient) => Boolean(recipient.email.trim()) && (audience === 'associations' || recipient.registrationStatus === 'PAID'))
+      .filter((recipient) => Boolean(recipient.email.trim()) && recipient.eligible)
       .map((recipient) => recipient.id);
     setSelectedIds((current) => checked ? [...new Set([...current, ...visibleIds])] : current.filter((id) => !visibleIds.includes(id)));
     invalidatePreview();
@@ -183,14 +196,20 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     setError(null);
     setNotice(null);
     try {
-      const batchId = scheduleBatchId ?? crypto.randomUUID();
-      setScheduleBatchId(batchId);
-      const result = await client.scheduleCommunication(eventId, {
-        audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, scheduledLocal: scheduleAt, batchId,
-      });
-      setScheduled((current) => [result, ...current]);
-      setNotice('Message scheduled. Recipients and eligibility will be checked again when it sends.');
+      const input = { audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, scheduledLocal: scheduleAt };
+      if (editingScheduled) {
+        const result = await client.updateScheduledCommunication(eventId, editingScheduled.id, { ...input, expectedUpdatedAt: editingScheduled.updatedAt });
+        setScheduled((current) => current.map((row) => row.id === result.id ? result : row));
+        setNotice('Scheduled message updated.');
+      } else {
+        const batchId = scheduleBatchId ?? crypto.randomUUID();
+        setScheduleBatchId(batchId);
+        const result = await client.scheduleCommunication(eventId, { ...input, batchId });
+        setScheduled((current) => [result, ...current]);
+        setNotice('Message scheduled. Recipients and eligibility will be checked again when it sends.');
+      }
       setSelectedIds([]);
+      setEditingScheduled(null);
       invalidatePreview();
     } catch (error) {
       setError(templateErrorMessage(error, 'Could not schedule this message. Choose a future Melbourne time and try again.'));
@@ -232,6 +251,20 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     } finally {
       setBusy(false);
     }
+  }
+
+  function editScheduled(item: ScheduledMessageDTO) {
+    setAudience(item.audience);
+    setSelectedIds(item.recipientIds);
+    setSubject(item.subject);
+    setText(item.body);
+    setScheduleAt(melbourneLocalInput(item.scheduledAt));
+    setEditingScheduled({ id: item.id, updatedAt: item.updatedAt });
+    setAssociationFilter('all');
+    setStatusFilter('all');
+    setPositionFilter('all');
+    invalidatePreview();
+    setNotice('Editing scheduled message. Preview the recipients before saving changes.');
   }
 
   async function cancelScheduled(item: ScheduledMessageDTO) {
@@ -286,7 +319,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
         {audience === 'participants' ? (
           <div className="communication-filters">
             <label>Association<select aria-label="Filter by association" value={associationFilter} onChange={(event) => { setAssociationFilter(event.target.value); invalidatePreview(); }}><option value="all">All associations</option>{associationNames.map((name) => <option key={name}>{name}</option>)}</select></label>
-            <label>Payment / attendance<select aria-label="Filter by payment or attendance" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as FilterStatus); invalidatePreview(); }}><option value="all">All statuses</option><option value="PAID">Paid</option><option value="PENDING">Pending payment</option><option value="EXPIRED">Expired</option><option value="FAILED">Failed</option><option value="WITHDRAWN">Withdrawn</option><option value="checked-in">Checked in</option><option value="not-checked-in">Paid, not checked in</option></select></label>
+            <label>Payment / attendance<select aria-label="Filter by payment or attendance" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as FilterStatus); invalidatePreview(); }}><option value="all">All statuses</option><option value="eligible">Eligible to send</option><option value="ineligible">Not eligible to send</option><option value="PAID">Paid</option><option value="PENDING">Pending payment</option><option value="EXPIRED">Expired</option><option value="FAILED">Failed</option><option value="WITHDRAWN">Withdrawn</option><option value="checked-in">Checked in</option><option value="not-checked-in">Paid, not checked in</option></select></label>
             <label>Position<select aria-label="Filter by position" value={positionFilter} onChange={(event) => { setPositionFilter(event.target.value); invalidatePreview(); }}><option value="all">Any chosen position</option>{['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'].map((position) => <option key={position}>{position}</option>)}</select></label>
           </div>
         ) : null}
@@ -304,7 +337,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
               <caption>{audience === 'participants' ? 'Event participant contacts' : 'Member association primary contacts'}</caption>
               <thead><tr><th scope="col">Include</th><th scope="col">Player / association</th><th scope="col">Number</th><th scope="col">Email</th><th scope="col">Association</th><th scope="col">Status</th><th scope="col">Positions</th></tr></thead>
               <tbody>{filteredRecipients.map((recipient) => {
-                const eligible = Boolean(recipient.email.trim()) && (audience === 'associations' || recipient.registrationStatus === 'PAID');
+                const eligible = Boolean(recipient.email.trim()) && recipient.eligible;
                 return <tr key={recipient.id}>
                   <td><input type="checkbox" aria-label={`Include ${recipient.name}`} checked={selectedIds.includes(recipient.id)} disabled={!eligible} onChange={(event) => toggleRecipient(recipient.id, event.target.checked)} /></td>
                   <th scope="row">{recipient.name}</th><td>{recipient.number ?? 'Not assigned'}</td><td>{recipient.email || 'No email available'}</td><td>{recipient.association ?? '—'}</td><td>{recipientStatus(recipient)}{!eligible ? ' · Not eligible to send' : ''}</td><td>{recipient.positions.join(', ') || '—'}</td>
@@ -332,7 +365,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       {previewRecipients ? (
         <section className="message-confirmation" aria-labelledby="communication-preview-heading">
           <h2 id="communication-preview-heading">Review recipients</h2>
-          <p>{previewRecipients.length} distinct email recipient{previewRecipients.length === 1 ? '' : 's'} will receive this message. Only paid, non-anonymized participant registrations or active association contacts are included.</p>
+          <p>{previewRecipients.length} distinct email recipient{previewRecipients.length === 1 ? '' : 's'} will receive this message. Paid registrations, verified incomplete registrations, and active association contacts are included.</p>
           <p><strong>{subject}</strong></p><p>{text}</p>
           {policyDocumentName ? <p>The event selection policy PDF, {policyDocumentName}, will be attached.</p> : null}
           <ul>{previewRecipients.map((recipient) => <li key={recipient.id}>{recipient.name} — Number {recipient.number ?? 'Not assigned'} — {recipient.email}</li>)}</ul>
@@ -341,7 +374,8 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
             <legend>Schedule this message</legend>
             <div className="communication-schedule-help"><HelpTip label="Scheduled messages">The send time uses Australia/Melbourne. The delivery job checks for due messages on its next run.</HelpTip></div>
             <p><label htmlFor="scheduled-local">Send at (Australia/Melbourne)</label><input id="scheduled-local" type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></p>
-            <button type="button" className="button-secondary" disabled={busy || !scheduleAt} onClick={() => void schedule()}>Schedule email</button>
+            <button type="button" className="button-secondary" disabled={busy || !scheduleAt} onClick={() => void schedule()}>{editingScheduled ? 'Save schedule changes' : 'Schedule email'}</button>
+            {editingScheduled ? <> <button type="button" className="button-secondary" disabled={busy} onClick={() => { setEditingScheduled(null); invalidatePreview(); setNotice('Scheduled message edit cancelled.'); }}>Cancel schedule edit</button></> : null}
           </fieldset>
         </section>
       ) : null}
@@ -350,8 +384,9 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
         <h2 id="scheduled-heading">Scheduled messages</h2>
         {scheduled.length === 0 ? <p>No messages scheduled.</p> : <ul>{scheduled.map((item) => (
           <li key={item.id}><strong>{item.subject}</strong> — {item.audience} — {item.recipientIds.length} selected — {new Date(item.scheduledAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })} Melbourne time — {item.status.toLowerCase()}
+            {item.attachmentName ? <p>Attachment: {item.attachmentName}</p> : null}
             {item.error ? <p>{item.error}</p> : null}
-            {item.status === 'SCHEDULED' ? <button type="button" disabled={busy} onClick={() => void cancelScheduled(item)}>Cancel scheduled email</button> : null}
+            {item.status === 'SCHEDULED' ? <><button type="button" className="button-secondary" disabled={busy} onClick={() => editScheduled(item)}>Edit scheduled email</button> <button type="button" disabled={busy} onClick={() => void cancelScheduled(item)}>Cancel scheduled email</button></> : null}
           </li>
         ))}</ul>}
       </section>

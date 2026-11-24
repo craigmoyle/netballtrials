@@ -3,6 +3,8 @@ import { createApp } from '../../app';
 import { prisma } from '../../db';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { createFakePaymentProvider } from '../../payments/fake';
+import { GmailDeliveryError } from '../../mail/gmail-mailer';
+import { sendDueReminders } from '../../messages/reminders';
 import { hashToken } from '../../auth/tokens';
 import { signInAsNewAdmin } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
@@ -239,7 +241,38 @@ describe('parent registration access', () => {
     const listed = await app.inject({ method: 'GET', url: '/api/parent/registrations', cookies });
     expect(listed.statusCode).toBe(200);
     expect(listed.json()).toHaveLength(2);
-    expect(mailer.sent.some((message) => message.to === 'parent@example.test' && message.subject === 'Your Netball Trials email was changed')).toBe(true);
+    const notification = await prisma.emailLog.findFirstOrThrow({
+      where: { eventId, kind: 'email-change', to: 'parent@example.test' },
+    });
+    expect(notification).toMatchObject({ status: 'PENDING', attempts: 0 });
+    expect(mailer.sent.some((message) => message.subject === 'Your Netball Trials email was changed')).toBe(false);
+
+    vi.spyOn(mailer, 'send').mockRejectedValueOnce(new GmailDeliveryError('rejected', 403));
+    const firstRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
+    expect(firstRun).toMatchObject({ failed: 1, ambiguous: 0 });
+    expect((await prisma.emailLog.findUniqueOrThrow({ where: { id: notification.id } })).status).toBe('FAILED');
+
+    const secondRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:31:00Z'));
+    expect(secondRun).toMatchObject({ sent: 1, failed: 0, ambiguous: 0 });
+    const thirdRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:32:00Z'));
+    expect(thirdRun).toMatchObject({ sent: 0 });
+    expect(mailer.sent.filter((message) => message.to === 'parent@example.test' && message.subject === 'Your Netball Trials email was changed')).toHaveLength(1);
+  });
+
+  it('reports an interrupted durable email-change notice for operator review', async () => {
+    const registration = await addRegistration('Ada', 'Lovelace', 'parent@example.test');
+    const now = new Date('2026-09-10T22:30:00Z');
+    const delivery = await prisma.emailLog.create({ data: {
+      eventId, registrationId: registration.id, batchId: 'email-change-interrupted', idempotencyKey: 'email-change-interrupted',
+      to: 'parent@example.test', subject: 'Your Netball Trials email was changed', body: 'Review the change.', kind: 'email-change',
+      status: 'SENDING', attempts: 1, lastAttemptAt: new Date(now.getTime() - 11 * 60_000),
+    } });
+
+    const result = await sendDueReminders({ prisma, mailer }, now);
+
+    expect(result.failed).toBe(0);
+    expect(result.errors).toContainEqual({ eventId, message: expect.stringContaining(`email_change_notification_interrupted:${delivery.id}:attempt_1`) });
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({ status: 'AMBIGUOUS' });
   });
 
   it('returns a retryable response when email-change requests are rate limited', async () => {

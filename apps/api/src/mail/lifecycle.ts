@@ -52,10 +52,13 @@ export async function lockMailEvent(tx: Prisma.TransactionClient, eventId: strin
 }
 
 export function mailRegistrationEligibility(kind: string, now: Date): Prisma.RegistrationWhereInput {
-  return {
+  if (kind === 'checkout') return { anonymizedAt: null, status: 'PENDING', expiresAt: { gt: now } };
+  if (kind === 'message') return {
     anonymizedAt: null,
-    ...(kind === 'checkout'
-      ? { status: 'PENDING', expiresAt: { gt: now } }
-      : { status: 'PAID' }),
+    OR: [
+      { status: 'PAID' },
+      { status: { in: ['PENDING', 'EXPIRED', 'FAILED'] }, parentEmailVerifiedAt: { not: null } },
+    ],
   };
+  return { anonymizedAt: null, status: 'PAID' };
 }

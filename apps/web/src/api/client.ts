@@ -1,4 +1,4 @@
-import type { AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryEntryDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO, AdminStaffListDTO } from '@netball-trials/types';
+import type { AdminRegistrationCorrectionDTO, AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryResultDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RosterRegistrationDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO, AdminStaffListDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -140,7 +140,7 @@ export function apiClient(baseUrl: string) {
     listEvents: () => request<EventDTO[]>(baseUrl, '/api/admin/events'),
     getRegistrationOverview: () => request<RegistrationOverviewEventDTO[]>(baseUrl, '/api/admin/registration-overview'),
     searchPlayerHistory: (playerName: string, dateOfBirth: string) =>
-      request<PlayerHistoryEntryDTO[]>(baseUrl, `/api/admin/player-history?playerName=${encodeURIComponent(playerName)}&dateOfBirth=${encodeURIComponent(dateOfBirth)}`),
+      request<PlayerHistoryResultDTO>(baseUrl, `/api/admin/player-history?playerName=${encodeURIComponent(playerName)}&dateOfBirth=${encodeURIComponent(dateOfBirth)}`),
     getEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}`),
     createEvent: (input: EventInput) =>
       request<EventDTO>(baseUrl, '/api/admin/events', {
@@ -163,6 +163,10 @@ export function apiClient(baseUrl: string) {
     clearCheckInPin: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'DELETE' }),
     closeCheckIn: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in/close`, { method: 'POST' }),
     getRoster: (id: string) => request<RosterDTO>(baseUrl, `/api/admin/events/${id}/roster`),
+    correctRegistration: (eventId: string, registrationId: string, patch: AdminRegistrationCorrectionDTO) =>
+      request<RosterRegistrationDTO>(baseUrl, `/api/admin/events/${eventId}/registrations/${registrationId}`, {
+        method: 'PATCH', body: JSON.stringify(patch),
+      }),
     downloadRoster: async (id: string) => {
       const response = await fetchResponse(baseUrl, `/api/admin/events/${id}/roster/export`);
       if (!response.ok) {
@@ -300,6 +304,8 @@ export function apiClient(baseUrl: string) {
       request<SiteAssociationCampaignDTO>(baseUrl, '/api/admin/communications/site/send', { method: 'POST', body: JSON.stringify(input) }),
     scheduleSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; subject: string; text: string; scheduledLocal: string; batchId?: string }) =>
       request<SiteAssociationCampaignDTO>(baseUrl, '/api/admin/communications/site/schedule', { method: 'POST', body: JSON.stringify(input) }),
+    updateSiteAssociationCommunication: (id: string, input: { eventIds: string[]; associationIds: string[]; subject: string; text: string; scheduledLocal: string; expectedUpdatedAt: string }) =>
+      request<SiteAssociationCampaignDTO>(baseUrl, `/api/admin/communications/site/campaigns/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     cancelSiteAssociationCommunication: (id: string) => request<{ status: string }>(baseUrl, `/api/admin/communications/site/campaigns/${id}/cancel`, { method: 'POST' }),
     retrySiteAssociationCommunication: (id: string, deliveryIds: string[], includeAmbiguous = false) =>
       request<{ batchId: string; sent: number; simulated: number; failed: number; ambiguous: number; pending: number }>(baseUrl, `/api/admin/communications/site/campaigns/${id}/retry`, { method: 'POST', body: JSON.stringify({ deliveryIds, includeAmbiguous }) }),
@@ -312,6 +318,8 @@ export function apiClient(baseUrl: string) {
     listScheduledCommunications: (eventId: string) => request<ScheduledMessageDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled`),
     scheduleCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string; batchId: string }) =>
       request<ScheduledMessageDTO>(baseUrl, `/api/admin/events/${eventId}/communications/schedule`, { method: 'POST', body: JSON.stringify(input) }),
+    updateScheduledCommunication: (eventId: string, id: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string; expectedUpdatedAt: string }) =>
+      request<ScheduledMessageDTO>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     cancelScheduledCommunication: (eventId: string, id: string) => request<{ status: string }>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}/cancel`, { method: 'POST' }),
     listCommunicationDeliveries: (eventId: string) => request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/deliveries`),
     retryCommunication: (eventId: string, batchId: string, deliveryIds: string[], includeAmbiguous = false) =>

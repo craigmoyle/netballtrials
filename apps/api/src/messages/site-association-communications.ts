@@ -4,7 +4,7 @@ import type { CommunicationRecipientDTO, SiteAssociationCampaignDTO } from '@net
 import type { EmailProvider } from '../mail/provider';
 import { lockMailEvent } from '../mail/lifecycle';
 import { isPastRetentionCutoff } from '../retention/service';
-import { deliveryIdempotencyKey, dispatchSelectedRows, EmailBatchConflictError, retryFailedDeliveries, type DeliverySummary } from './service';
+import { deliveryIdempotencyKey, deliveryStatusesByBatch, dispatchSelectedRows, EmailBatchConflictError, retryFailedDeliveries, type DeliverySummary } from './service';
 import { renderEmailTemplate } from './template-renderer';
 
 export type SiteAssociationCommunicationInput = {
@@ -122,6 +122,8 @@ export async function previewSiteAssociationCommunication(
     registrationStatus: null,
     checkedIn: null,
     positions: [],
+    eligible: true,
+    emailVerified: null,
   }));
   const fields = eventTemplateFields(context.events);
   const sample = targetAssociations[0];
@@ -175,6 +177,32 @@ export async function createSiteAssociationCommunication(
   if (!row) return listSiteAssociationCommunications(prisma).then((rows) => rows.find((item) => item.batchId === batchId) ?? null);
   if (input.scheduledAt) return toCampaignDTO(row, [], context.events);
   return dispatchSiteAssociationCommunication(prisma, { mailer }, row.id, now);
+}
+
+export async function updateSiteAssociationCommunication(
+  prisma: PrismaClient,
+  id: string,
+  input: SiteAssociationCommunicationInput & { scheduledAt: Date; expectedUpdatedAt: string },
+  now: Date,
+): Promise<SiteAssociationCampaignDTO | null> {
+  const eventIds = selectedIds(input.eventIds);
+  const associationIds = selectedIds(input.associationIds);
+  const context = await getSiteContext(prisma, eventIds, associationIds, now);
+  if (!context) return null;
+  const updated = await prisma.siteAssociationCommunication.updateMany({
+    where: { id, status: 'SCHEDULED', updatedAt: new Date(input.expectedUpdatedAt) },
+    data: {
+      anchorEventId: context.anchorEventId,
+      eventIds: eventIds as Prisma.InputJsonArray,
+      recipientIds: associationIds as Prisma.InputJsonArray,
+      subject: input.subject,
+      body: input.text,
+      scheduledAt: input.scheduledAt,
+      error: null,
+    },
+  });
+  if (updated.count !== 1) return null;
+  return listSiteAssociationCommunications(prisma).then((rows) => rows.find((row) => row.id === id) ?? null);
 }
 
 async function createSiteDeliveryRows(
@@ -248,7 +276,7 @@ async function createSiteDeliveryRows(
 }
 
 function toCampaignDTO(
-  campaign: { id: string; eventIds: Prisma.JsonValue; recipientIds: Prisma.JsonValue; batchId: string; subject: string; body: string; scheduledAt: Date | null; status: string; attempts: number; error: string | null; createdAt: Date },
+  campaign: { id: string; eventIds: Prisma.JsonValue; recipientIds: Prisma.JsonValue; batchId: string; subject: string; body: string; scheduledAt: Date | null; status: string; attempts: number; error: string | null; createdAt: Date; updatedAt: Date },
   deliveries: Array<{ id: string; to: string; status: string; simulated: boolean; attempts: number; sentAt: Date | null; failedAt: Date | null; error: string | null; association: { name: string } | null }>,
   events: SiteEvent[],
 ): SiteAssociationCampaignDTO {
@@ -265,6 +293,7 @@ function toCampaignDTO(
     attempts: campaign.attempts,
     error: campaign.error,
     createdAt: campaign.createdAt.toISOString(),
+    updatedAt: campaign.updatedAt.toISOString(),
     deliveries: deliveries.map((row) => ({
       id: row.id, to: row.to, status: row.status as SiteAssociationCampaignDTO['deliveries'][number]['status'], simulated: row.simulated,
       attempts: row.attempts, sentAt: row.sentAt?.toISOString() ?? null, failedAt: row.failedAt?.toISOString() ?? null,
@@ -299,7 +328,7 @@ export async function dispatchSiteAssociationCommunication(
   const prepared = await createSiteDeliveryRows(prisma, campaignId, now);
   if (!prepared) {
     await prisma.siteAssociationCommunication.updateMany({
-      where: { id: campaignId, status: { in: ['SENDING', 'SCHEDULED'] } },
+      where: { id: campaignId, status: 'SENDING', attempts: campaign.attempts },
       data: { status: 'FAILED', error: 'no_eligible_recipients_or_event_unavailable', completedAt: now },
     });
     return listSiteAssociationCommunications(prisma).then((rows) => rows.find((row) => row.id === campaignId) ?? null);
@@ -307,7 +336,7 @@ export async function dispatchSiteAssociationCommunication(
   const summary = await dispatchSelectedRows({ prisma, mailer: deps.mailer }, prepared.rows, now);
   const completed = summary.sent + summary.simulated > 0 && summary.failed === 0 && summary.ambiguous === 0 && summary.pending === 0;
   await prisma.siteAssociationCommunication.updateMany({
-    where: { id: campaignId, status: { in: ['SENDING', 'SCHEDULED'] } },
+    where: { id: campaignId, status: 'SENDING', attempts: campaign.attempts },
     data: {
       status: completed ? 'COMPLETED' : 'FAILED', completedAt: completed ? now : null,
       lastAttemptAt: now,
@@ -357,9 +386,10 @@ async function recoverStaleSiteCampaigns(prisma: PrismaClient, now: Date): Promi
   });
   let completed = 0;
   let failed = 0;
+  const deliveryStates = await deliveryStatusesByBatch(prisma, stale.map((campaign) => campaign.batchId));
   for (const campaign of stale) {
-    const deliveries = await prisma.emailLog.findMany({ where: { batchId: campaign.batchId }, select: { status: true } });
-    const allSent = deliveries.length > 0 && deliveries.every((delivery) => delivery.status === 'SENT');
+    const statuses = deliveryStates.get(campaign.batchId) ?? [];
+    const allSent = statuses.length > 0 && statuses.every((status) => status === 'SENT');
     if (campaign.status === 'FAILED') {
       if (allSent) await prisma.siteAssociationCommunication.updateMany({
         where: { id: campaign.id, status: 'FAILED', error: 'scheduled_worker_interrupted' },
@@ -367,7 +397,7 @@ async function recoverStaleSiteCampaigns(prisma: PrismaClient, now: Date): Promi
       });
       continue;
     }
-    const safeToResume = deliveries.every((delivery) => delivery.status === 'PENDING' || delivery.status === 'SENT');
+    const safeToResume = statuses.every((status) => status === 'PENDING' || status === 'SENT');
     const status = allSent ? 'COMPLETED' : safeToResume ? 'SCHEDULED' : 'FAILED';
     const changed = await prisma.siteAssociationCommunication.updateMany({
       where: { id: campaign.id, status: 'SENDING', attempts: campaign.attempts, lastAttemptAt: campaign.lastAttemptAt },
@@ -398,7 +428,17 @@ export async function runDueSiteAssociationCommunications(
   let failed = recovered.failed;
   for (const campaign of due) {
     const claim = await prisma.siteAssociationCommunication.updateMany({
-      where: { id: campaign.id, status: 'SCHEDULED' },
+      where: {
+        id: campaign.id,
+        status: 'SCHEDULED',
+        eventIds: { equals: campaign.eventIds as Prisma.InputJsonValue },
+        recipientIds: { equals: campaign.recipientIds as Prisma.InputJsonValue },
+        subject: campaign.subject,
+        body: campaign.body,
+        scheduledAt: campaign.scheduledAt,
+        updatedAt: campaign.updatedAt,
+        attempts: campaign.attempts,
+      },
       data: { status: 'SENDING', attempts: { increment: 1 }, lastAttemptAt: now, error: null },
     });
     if (claim.count !== 1) continue;
@@ -408,7 +448,7 @@ export async function runDueSiteAssociationCommunications(
       else failed += 1;
     } catch {
       await prisma.siteAssociationCommunication.updateMany({
-        where: { id: campaign.id, status: 'SENDING' },
+        where: { id: campaign.id, status: 'SENDING', attempts: campaign.attempts + 1 },
         data: { status: 'FAILED', error: 'scheduled_send_failed', completedAt: now },
       });
       failed += 1;

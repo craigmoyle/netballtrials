@@ -310,6 +310,7 @@ thead { background: var(--blue-pale); }
 .lookup-result-status { color: var(--success-ink); font-size: 0.9rem; font-weight: 650; }
 
 @media (max-width: 38rem) {
+  .roster-correction-fields { grid-template-columns: 1fr; }
   .public-site-header { gap: 0.35rem 1rem; padding-block: 0.5rem; }
   .public-site-header .public-access-nav { width: 100%; margin-left: 0; column-gap: 0.75rem; row-gap: 0.25rem; }
   .public-site-header .public-access-group { column-gap: 0.5rem; row-gap: 0.25rem; }
@@ -484,6 +485,14 @@ thead { background: var(--blue-pale); }
 .site-selection-list input[type="checkbox"] { flex: 0 0 auto; min-width: 1.25rem; min-height: 1.25rem; margin-top: 0.1rem; }
 .template-field-help { max-width: 70ch; color: var(--placeholder-ink); }
 .roster-table { min-width: 62rem; }
+.roster-table th > button { margin-top: 0.4rem; }
+.roster-correction-row > td { padding: 1rem; background: var(--canvas); border-bottom-color: var(--burgundy); }
+.roster-correction-form { max-width: 46rem; margin: 0; padding: 1rem; background: var(--paper); border: 1px solid var(--line); }
+.roster-correction-form h3 { margin-block: 0 0.35rem; }
+.roster-correction-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.roster-correction-fields p { margin-block: 0.5rem; }
+.roster-correction-fields input, .roster-correction-fields select { width: 100%; }
+.roster-correction-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0; }
 .player-history-table { min-width: 58rem; }
 .player-history-table th:first-child { min-width: 16rem; }
 .communications-page td:first-child { text-align: center; }

@@ -25,7 +25,7 @@ describe('shared API test fixtures', () => {
   });
 
   it('provides a registration that can be safely overridden for a test case', () => {
-    expect(registrationFixture('event-1')).toMatchObject({
+    expect(registrationFixture('event-1', { eventId: 'wrong-event' })).toMatchObject({
       eventId: 'event-1', playerFirstName: 'Ada', playerLastName: 'Lovelace',
       playerNameNormalized: 'ada lovelace', parentEmail: 'anne@example.com', rank1Position: 'GS',
     });

@@ -6,6 +6,7 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
   const [playerName, setPlayerName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [history, setHistory] = useState<PlayerHistoryEntryDTO[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,7 +16,9 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
     setError(null);
     setHistory(null);
     try {
-      setHistory(await client.searchPlayerHistory(playerName.trim(), dateOfBirth));
+      const result = await client.searchPlayerHistory(playerName.trim(), dateOfBirth);
+      setHistory(result.entries);
+      setTruncated(result.truncated);
     } catch {
       setError('Could not search player history. Check the details and try again.');
     } finally {
@@ -39,6 +42,7 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
         <section aria-labelledby="history-results-heading">
           <h2 id="history-results-heading">Possible matching registrations</h2>
           <p role="note">Confirm these records are for the same player before relying on this history. A matching name and date of birth is not proof of identity.</p>
+          {truncated ? <p role="note">Showing the newest 50 retained matches. Narrow the identity search if an expected event is missing.</p> : null}
           <p className="scroll-region-note">Scroll horizontally to compare all trial details.</p>
           <div className="table-scroll" role="region" aria-label="Player trial history" tabIndex={0}>
             <table className="player-history-table">
