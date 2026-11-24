@@ -1,6 +1,6 @@
 # Trials TEST on the VPS
 
-The only hosted Trials site is `https://trials-test.statsball.net`. It runs on the VPS with `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, a dedicated `netballtrials_test` database, and restricted Admin access. There is no Trials production deployment.
+The shared VPS serves Stats only at `https://statsball.net` and hosted Trials TEST at `https://trials-test.statsball.net`. Trials runs with `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, a dedicated `netballtrials_test` database, and restricted Admin access. There is no Trials production deployment.
 
 ## Host configuration
 

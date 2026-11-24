@@ -1,4 +1,4 @@
-{$STATS_DOMAIN}, {$STATS_PRIMARY_DOMAIN} {
+{$STATS_PRIMARY_DOMAIN} {
 	encode zstd gzip
 	root * /srv/stats
 	header {
