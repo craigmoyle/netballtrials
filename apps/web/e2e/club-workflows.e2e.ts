@@ -41,6 +41,7 @@ async function signIn(page: Page, request: APIRequestContext): Promise<void> {
   const link = email?.text.match(/https?:\/\/[^\s]+/)?.[0];
   expect(link).toBeTruthy();
   await page.goto(link!);
+  await page.getByRole('button', { name: 'Continue to Admin sign-in' }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
   await page.goto('/');
   await page.getByRole('link', { name: 'Admin sign-in' }).click();
