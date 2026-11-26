@@ -39,7 +39,7 @@ describe('retryPendingConfirmations', () => {
     await prisma.registration.update({ where: { id: registration.id }, data: { playerFirstName: 'Corrected' } });
     await prisma.event.update({ where: { id: event.id }, data: { name: 'Edited', venue: 'Elsewhere' } });
     const retry = createDevMailer([]);
-    expect(await retryPendingConfirmations({ prisma, mailer: retry, webOrigin: 'https://changed.example' }, now)).toMatchObject({ sent: 1, errors: 0 });
+    expect(await retryPendingConfirmations({ prisma, mailer: retry, webOrigin: 'https://changed.example' }, now)).toMatchObject({ sent: 0, simulated: 1, errors: 0 });
     expect(retry.sent).toEqual(rejected.sent);
   });
 
@@ -66,7 +66,7 @@ describe('retryPendingConfirmations', () => {
 
     const mailer = createDevMailer([]);
     const result = await retryPendingConfirmations({ prisma, mailer, webOrigin: WEB_ORIGIN }, now);
-    expect(result).toMatchObject({ due: 2, sent: 2, failed: 0, ambiguous: 0, errors: 0 });
+    expect(result).toMatchObject({ due: 2, sent: 0, simulated: 2, failed: 0, ambiguous: 0, errors: 0 });
     expect(mailer.sent.map((message) => message.to).sort()).toEqual(['failed@example.com', 'placeholder@example.com']);
 
     const statuses = Object.fromEntries((await prisma.emailLog.findMany({ include: { registration: true } }))

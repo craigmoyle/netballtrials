@@ -13,7 +13,7 @@ describe('changed reminder content', () => {
     const event = await prisma.event.create({ data: eventFixture() });
     await prisma.registration.create({ data: registrationFixture(event.id, { status: 'PAID' }) });
     const mailer = createDevMailer([]);
-    expect((await sendDueReminders({ prisma, mailer }, now)).sent).toBe(1);
+    expect((await sendDueReminders({ prisma, mailer }, now)).simulated).toBe(1);
     const original = await prisma.emailLog.findFirstOrThrow();
     await prisma.emailLog.update({ where: { id: original.id }, data: { status } });
     await prisma.event.update({ where: { id: event.id }, data: { venue: 'New venue' } });

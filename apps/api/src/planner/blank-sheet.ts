@@ -5,10 +5,10 @@ type BlankSheetEvent = { name: string; eventDate: string; venue: string; logoUrl
 
 function renderTeam(teamName: 'Team A' | 'Team B'): string {
   const rows = COURT_POSITIONS.map((position) =>
-    `<tr><th scope="row">${position}</th><td></td><td></td><td class="blank-sheet__rating"></td><td class="blank-sheet__notes"></td></tr>`,
+    `<tr><th scope="row">${position}</th><td></td><td></td><td class="blank-sheet__choices"></td><td class="blank-sheet__rating"></td><td class="blank-sheet__notes"></td></tr>`,
   ).join('');
   return `<section class="blank-sheet__team"><header><h2>${teamName}</h2><p>${teamName} color: <span class="blank-sheet__line" aria-hidden="true"></span></p></header>
-<table><caption>${teamName}</caption><thead><tr><th scope="col">Position</th><th scope="col">Number</th><th scope="col">Player</th><th scope="col">Rating</th><th scope="col">Notes/Feedback</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+<table><caption>${teamName}</caption><thead><tr><th scope="col">Position</th><th scope="col">Number</th><th scope="col">Player</th><th scope="col">Choices (1/2/3)</th><th scope="col">Rating</th><th scope="col">Notes/Feedback</th></tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
 export function renderBlankGameSheet(event: BlankSheetEvent): string {
@@ -35,12 +35,14 @@ export function renderBlankGameSheet(event: BlankSheetEvent): string {
 .blank-sheet th, .blank-sheet td { padding: 1.3mm 1.5mm; border: 1px solid #333; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .blank-sheet thead { background: #a9bfe1; }
 .blank-sheet th:first-child { width: 20mm; }
-.blank-sheet th:nth-child(2) { width: 19mm; }
-.blank-sheet th:nth-child(3) { width: 35mm; }
-.blank-sheet th:nth-child(4) { width: 18mm; }
+.blank-sheet th:nth-child(2) { width: 17mm; }
+.blank-sheet th:nth-child(3) { width: 25mm; }
+.blank-sheet th:nth-child(4) { width: 20mm; }
+.blank-sheet th:nth-child(5) { width: 14mm; }
 .blank-sheet tbody th, .blank-sheet tbody td { height: 17mm; }
-.blank-sheet .blank-sheet__rating { width: 20mm; }
-.blank-sheet .blank-sheet__notes { width: 42mm; }
+.blank-sheet .blank-sheet__choices { width: 20mm; }
+.blank-sheet .blank-sheet__rating { width: 14mm; }
+.blank-sheet .blank-sheet__notes { width: 38mm; }
 </style></head>
 <body><main class="blank-sheet"><section class="sheet">
 <header class="blank-sheet__header"><img src="${escapeHtml(event.logoUrl)}" alt="Chisholm Netball" /><div><h1>${escapeHtml(event.name)}</h1><p>${escapeHtml(event.eventDate)} · ${escapeHtml(event.venue)}</p>

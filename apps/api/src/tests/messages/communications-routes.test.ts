@@ -55,7 +55,7 @@ describe('event communications routes', () => {
       payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Trials update', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
     });
     expect(sent.statusCode).toBe(200);
-    expect(sent.json()).toMatchObject({ sent: 1, failed: 0 });
+    expect(sent.json()).toMatchObject({ sent: 0, simulated: 1, failed: 0 });
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'paid@example.test', subject: 'Trials update', text: 'Bring water.' });
     const log = await prisma.emailLog.findFirstOrThrow({ where: { batchId: sent.json().batchId } });
     expect(log).toMatchObject({ registrationId: paid.id, kind: 'message', status: 'SENT' });
@@ -108,13 +108,54 @@ describe('event communications routes', () => {
 
   it('does not expose participant contacts after the retention cutoff', async () => {
     const oldEvent = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
-    const association = await prisma.memberAssociation.create({ data: { name: 'Old event association', primaryContactEmail: 'association@example.test' } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Old event association', primaryContactName: 'Old contact', primaryContactEmail: 'association@example.test' } });
     await prisma.registration.create({ data: registrationFixture(oldEvent.id, { status: 'PAID', parentEmail: 'private@example.test' }) });
     const response = await app.inject({ method: 'GET', url: `/api/admin/events/${oldEvent.id}/communications/recipients`, cookies: { nt_session: cookie } });
     expect(response.statusCode).toBe(200);
     expect(response.json().participants).toEqual([]);
     expect(response.json().associations).toEqual([expect.objectContaining({ id: association.id })]);
     expect(response.body).not.toContain('private@example.test');
+  });
+
+  it('keeps every selected sibling in the communication preview', async () => {
+    const first = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Bea', playerLastName: 'One', playerNameNormalized: 'bea one', parentEmail: 'family@example.test', status: 'PAID',
+    }) });
+    const second = await prisma.registration.create({ data: registrationFixture(eventId, {
+      playerFirstName: 'Cy', playerLastName: 'Two', playerNameNormalized: 'cy two', parentEmail: 'family@example.test', status: 'PAID',
+    }) });
+
+    const preview = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/preview`, cookies: { nt_session: cookie },
+      payload: { audience: 'participants', recipientIds: [first.id, second.id] },
+    });
+
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({ count: 1, recipients: expect.arrayContaining([
+      expect.objectContaining({ id: first.id }),
+      expect.objectContaining({ id: second.id }),
+    ]) });
+  });
+
+  it('rejects a send when the reviewed recipient list has changed', async () => {
+    const player = await prisma.registration.create({ data: registrationFixture(eventId, {
+      status: 'PAID', parentEmail: 'before@example.test',
+    }) });
+    const snapshot = [{ id: player.id, email: 'before@example.test' }];
+    await prisma.registration.update({ where: { id: player.id }, data: { parentEmail: 'after@example.test' } });
+
+    const sent = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
+      payload: {
+        audience: 'participants', recipientIds: [player.id], previewedRecipients: snapshot,
+        subject: 'Changed audience', text: 'Do not send to an unreviewed address.',
+        batchId: '00000000-0000-4000-8000-000000000090',
+      },
+    });
+
+    expect(sent.statusCode).toBe(409);
+    expect(sent.json()).toEqual({ error: 'recipients_changed' });
+    expect(outbox.sent.some((message) => message.subject === 'Changed audience')).toBe(false);
   });
 
   it('renders participant placeholders and combines sibling names in one household email', async () => {
@@ -141,7 +182,7 @@ describe('event communications routes', () => {
       payload: { audience: 'participants', recipientIds: [firstSibling.id, secondSibling.id], subject: 'Your players', text: '{{playerNames}}', batchId: '00000000-0000-4000-8000-000000000077' },
     });
     expect(household.statusCode).toBe(200);
-    expect(household.json().sent).toBe(1);
+    expect(household.json()).toMatchObject({ sent: 0, simulated: 1 });
     expect(outbox.sent.at(-1)).toMatchObject({ to: 'family@example.test', text: expect.stringContaining('Bea One') });
     expect(outbox.sent.at(-1)?.text).toContain('Cy Two');
   });
@@ -156,12 +197,26 @@ describe('event communications routes', () => {
       payload: { audience: 'associations', recipientIds: [association.id], subject: 'Association notice', text: 'Please share with your teams.', batchId: '00000000-0000-4000-8000-000000000078' },
     });
     expect(sent.statusCode).toBe(200);
-    expect(sent.json()).toMatchObject({ sent: 1 });
+    expect(sent.json()).toMatchObject({ sent: 0, simulated: 1 });
     const email = outbox.sent.at(-1)!;
     expect(email.to).toBe('association@example.test');
     expect(email.attachments?.[0]).toMatchObject({ filename: 'Selection policy.pdf' });
     expect(Buffer.from(email.attachments![0]!.content).toString()).toBe('%PDF-1.4 test');
     expect(await prisma.emailLog.findFirstOrThrow({ where: { batchId: sent.json().batchId } })).toMatchObject({ associationId: association.id, registrationId: null, kind: 'association' });
+  });
+
+  it('anchors a multi-event campaign to its latest event', async () => {
+    const later = await prisma.event.create({ data: eventFixture({ name: 'Later event', eventDate: new Date('2027-10-12T00:00:00.000Z') }) });
+    const earlier = await prisma.event.create({ data: eventFixture({ name: 'Earlier event', eventDate: new Date('2027-09-12T00:00:00.000Z') }) });
+    const association = await prisma.memberAssociation.create({ data: { name: 'MENA', primaryContactName: 'Anchor contact', primaryContactEmail: 'anchor@example.test' } });
+
+    const sent = await app.inject({
+      method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie },
+      payload: { eventIds: [later.id, earlier.id], associationIds: [association.id], subject: 'Trials', text: '{{eventList}}', batchId: '00000000-0000-4000-8000-000000000090' },
+    });
+
+    expect(sent.statusCode).toBe(200);
+    expect(await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: sent.json().id } })).toMatchObject({ anchorEventId: later.id });
   });
 
   it('sends one site-level association message for multiple events and renders association/event fields', async () => {
@@ -189,7 +244,7 @@ describe('event communications routes', () => {
     expect(outbox.sent.at(-1)?.text).toContain('Spring Trials');
     expect(outbox.sent.at(-1)?.text).toContain('Open Trials');
     const log = await prisma.emailLog.findFirstOrThrow({ where: { siteCommunicationId: sent.json().id } });
-    expect(log).toMatchObject({ eventId: first.id, associationId: association.id, registrationId: null, kind: 'association', status: 'SENT' });
+    expect(log).toMatchObject({ eventId: second.id, associationId: association.id, registrationId: null, kind: 'association', status: 'SENT' });
 
     const sentCount = outbox.sent.length;
     const duplicate = await app.inject({ method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie }, payload: input });
@@ -201,6 +256,21 @@ describe('event communications routes', () => {
       payload: { ...input, text: 'different body' },
     });
     expect(conflict.statusCode).toBe(409);
+  });
+
+  it('sends a site campaign to active recipients when another selected association is inactive', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ name: 'Association event', eventDate: new Date('2027-09-12T00:00:00Z') }) });
+    const active = await prisma.memberAssociation.create({ data: { name: 'Active', primaryContactName: 'Active contact', primaryContactEmail: 'active@example.test' } });
+    const inactive = await prisma.memberAssociation.create({ data: { name: 'Inactive', active: false, primaryContactName: 'Inactive contact', primaryContactEmail: 'inactive@example.test' } });
+
+    const sent = await app.inject({
+      method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie },
+      payload: { eventIds: [event.id], associationIds: [active.id, inactive.id], subject: 'Trials', text: 'Hello', batchId: '00000000-0000-4000-8000-000000000091' },
+    });
+
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json()).toMatchObject({ status: 'COMPLETED', deliveries: [expect.objectContaining({ to: 'active@example.test', status: 'SENT' })] });
+    expect(await prisma.emailLog.count({ where: { siteCommunicationId: sent.json().id } })).toBe(1);
   });
 
   it('sends a due scheduled site-level association message', async () => {
@@ -244,9 +314,29 @@ describe('event communications routes', () => {
     expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: created.json().id } })).status).toBe('CANCELLED');
   });
 
+  it('rejects a site campaign after its reviewed contact changes', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ name: 'Reviewed contact event', eventDate: new Date('2027-09-12T00:00:00Z') }) });
+    const association = await prisma.memberAssociation.create({ data: {
+      name: 'Reviewed association', primaryContactName: 'Review contact', primaryContactEmail: 'before@example.test',
+    } });
+    await prisma.memberAssociation.update({ where: { id: association.id }, data: { primaryContactEmail: 'after@example.test' } });
+
+    const sent = await app.inject({
+      method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie },
+      payload: {
+        eventIds: [event.id], associationIds: [association.id],
+        previewedRecipients: [{ id: association.id, email: 'before@example.test' }],
+        subject: 'Association update', text: 'Review this address.', batchId: '00000000-0000-4000-8000-000000000092',
+      },
+    });
+
+    expect(sent.statusCode).toBe(409);
+    expect(sent.json()).toEqual({ error: 'recipients_changed' });
+  });
+
   it('edits a scheduled event message while preserving its batch id and refreshing its attachment', async () => {
     const paid = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', parentEmail: 'old@example.test' }) });
-    const association = await prisma.memberAssociation.create({ data: { name: 'Edit MENA', primaryContactEmail: 'new@example.test' } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Edit MENA', primaryContactName: 'Edit contact', primaryContactEmail: 'new@example.test' } });
     const created = await prisma.scheduledMessage.create({ data: {
       eventId, audience: 'participants', recipientIds: [paid.id], batchId: 'preserved-event-batch',
       subject: 'Old subject', body: 'Old body', scheduledAt: new Date('2099-01-14T23:30:00.000Z'),
@@ -284,8 +374,8 @@ describe('event communications routes', () => {
   it('edits a scheduled site association campaign while preserving its batch id', async () => {
     const first = await prisma.event.create({ data: { ...eventFixture(), name: 'First', eventDate: new Date('2099-01-20T00:00:00.000Z') } });
     const second = await prisma.event.create({ data: { ...eventFixture(), name: 'Second', eventDate: new Date('2099-02-20T00:00:00.000Z') } });
-    const oldAssociation = await prisma.memberAssociation.create({ data: { name: 'Old association', primaryContactEmail: 'old-association@example.test' } });
-    const newAssociation = await prisma.memberAssociation.create({ data: { name: 'New association', primaryContactEmail: 'new-association@example.test' } });
+    const oldAssociation = await prisma.memberAssociation.create({ data: { name: 'Old association', primaryContactName: 'Old contact', primaryContactEmail: 'old-association@example.test' } });
+    const newAssociation = await prisma.memberAssociation.create({ data: { name: 'New association', primaryContactName: 'New contact', primaryContactEmail: 'new-association@example.test' } });
     const created = await prisma.siteAssociationCommunication.create({ data: {
       anchorEventId: first.id, eventIds: [first.id], recipientIds: [oldAssociation.id], batchId: 'site-associations:preserved-site-batch',
       subject: 'Old site subject', body: 'Old site body', scheduledAt: new Date('2099-01-10T00:00:00.000Z'), status: 'SCHEDULED',
@@ -351,7 +441,7 @@ describe('event communications routes', () => {
 
   it('does not let a late site sender overwrite a newer campaign attempt', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
-    const association = await prisma.memberAssociation.create({ data: { name: 'Late Association', primaryContactEmail: 'late-association@example.test' } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Late Association', primaryContactName: 'Late contact', primaryContactEmail: 'late-association@example.test' } });
     const campaign = await prisma.siteAssociationCommunication.create({ data: {
       anchorEventId: event.id, eventIds: [event.id], recipientIds: [association.id], batchId: 'site-late-completion',
       subject: 'Late completion', body: 'Hello', scheduledAt: new Date(Date.now() - 60_000), status: 'SENDING', attempts: 1,
@@ -371,7 +461,7 @@ describe('event communications routes', () => {
 
   it('does not send a site campaign if an Admin edits it after the scheduler reads it', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
-    const association = await prisma.memberAssociation.create({ data: { name: 'Race Association', primaryContactEmail: 'race@example.test' } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Race Association', primaryContactName: 'Race contact', primaryContactEmail: 'race@example.test' } });
     const campaign = await prisma.siteAssociationCommunication.create({ data: {
       anchorEventId: event.id, eventIds: [event.id], recipientIds: [association.id], batchId: 'site-schedule-edit-race',
       subject: 'Stale site subject', body: 'Stale site body', scheduledAt: new Date(Date.now() - 60_000), status: 'SCHEDULED',
@@ -446,7 +536,7 @@ describe('event communications routes', () => {
 
   it('recovers a stale site campaign that had not created any deliveries', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
-    const association = await prisma.memberAssociation.create({ data: { name: 'Restart Association', primaryContactEmail: 'restart@example.test' } });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Restart Association', primaryContactName: 'Restart contact', primaryContactEmail: 'restart@example.test' } });
     const staleAt = new Date(Date.now() - 15 * 60_000);
     const campaign = await prisma.siteAssociationCommunication.create({ data: {
       anchorEventId: event.id, eventIds: [event.id], recipientIds: [association.id], batchId: 'site-interrupted-empty',

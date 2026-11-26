@@ -11,10 +11,12 @@ import {
   listSiteAssociationCommunications,
   previewSiteAssociationCommunication,
   retrySiteAssociationCommunication,
+  SiteRecipientsChangedError,
   updateSiteAssociationCommunication,
 } from './site-association-communications';
 
 const selectionFields = {
+  previewedRecipients: z.array(z.object({ id: z.string().min(1), email: z.email() }).strict()).min(1).max(500).optional(),
   eventIds: z.array(z.string().min(1)).min(1).max(100),
   associationIds: z.array(z.string().min(1)).min(1).max(500),
   subject: z.string().trim().min(1).max(200),
@@ -26,6 +28,14 @@ const scheduleFields = { ...selectionFields, scheduledLocal: z.string().regex(/^
 const scheduleSchema = z.object({ ...scheduleFields, batchId: z.uuid().optional() });
 const scheduleEditSchema = z.object({ ...scheduleFields, expectedUpdatedAt: z.string().datetime() });
 const retrySchema = z.object({ deliveryIds: z.array(z.string().min(1)).min(1).max(500), includeAmbiguous: z.boolean().default(false) });
+
+function previewMatches(current: Array<{ id: string; email: string }>, expected?: Array<{ id: string; email: string }>): boolean {
+  if (!expected) return true;
+  const serialize = (rows: Array<{ id: string; email: string }>) => rows
+    .map((row) => `${row.id}\0${row.email.trim().toLowerCase()}`)
+    .sort();
+  return JSON.stringify(serialize(current)) === JSON.stringify(serialize(expected));
+}
 
 function validateTemplateFields(reply: { code(status: number): { send(body: unknown): unknown } }, audience: 'associations', subject: string, text: string): unknown | null {
   const fields = unsupportedTemplateFields(audience, subject, text);
@@ -51,6 +61,9 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const invalidFields = validateTemplateFields(reply, 'associations', parsed.data.subject, parsed.data.text);
     if (invalidFields) return invalidFields;
+    const preview = await previewSiteAssociationCommunication(deps.prisma, parsed.data, new Date());
+    if (!preview) return reply.code(422).send({ error: 'no_eligible_recipients_or_events' });
+    if (!previewMatches(preview.recipients, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     try {
       const campaign = await createSiteAssociationCommunication({ prisma: deps.prisma, mailer: deps.mailer }, {
         eventIds: parsed.data.eventIds,
@@ -59,10 +72,12 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
         text: parsed.data.text,
         senderUserId: req.adminUserId,
         batchId: parsed.data.batchId,
+        previewedRecipients: parsed.data.previewedRecipients,
       }, new Date());
       if (!campaign) return reply.code(422).send({ error: 'no_eligible_recipients_or_events' });
       return campaign;
     } catch (error) {
+      if (error instanceof SiteRecipientsChangedError) return reply.code(409).send({ error: 'recipients_changed' });
       if (error instanceof EmailBatchConflictError) return reply.code(409).send({ error: 'idempotency_conflict' });
       return reply.code(502).send({ error: 'communication_send_failed' });
     }
@@ -77,6 +92,9 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
     try { scheduledAt = melbourneLocalDateTimeToUtc(parsed.data.scheduledLocal); }
     catch { return reply.code(400).send({ error: 'invalid_schedule_time' }); }
     if (scheduledAt.getTime() < Date.now() + 60_000) return reply.code(400).send({ error: 'schedule_must_be_in_future' });
+    const preview = await previewSiteAssociationCommunication(deps.prisma, parsed.data, new Date());
+    if (!preview) return reply.code(422).send({ error: 'no_eligible_recipients_or_events' });
+    if (!previewMatches(preview.recipients, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     const campaign = await createSiteAssociationCommunication({ prisma: deps.prisma, mailer: deps.mailer }, {
       eventIds: parsed.data.eventIds,
       associationIds: parsed.data.associationIds,
@@ -106,6 +124,7 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
     if (current.updatedAt.toISOString() !== parsed.data.expectedUpdatedAt) return reply.code(409).send({ error: 'schedule_changed' });
     const preview = await previewSiteAssociationCommunication(deps.prisma, parsed.data, new Date());
     if (!preview) return reply.code(422).send({ error: 'no_eligible_recipients_or_events' });
+    if (!previewMatches(preview.recipients, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     const updated = await updateSiteAssociationCommunication(deps.prisma, id, { ...parsed.data, scheduledAt }, new Date());
     if (!updated) return reply.code(409).send({ error: 'schedule_not_editable' });
     return updated;

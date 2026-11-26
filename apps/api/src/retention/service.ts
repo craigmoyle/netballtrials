@@ -61,6 +61,30 @@ async function pruneUnusedParentArtifacts(tx: Prisma.TransactionClient, affected
   await tx.parentAccessToken.deleteMany({ where: { email: emailFilter } });
 }
 
+async function scrubPlanWarnings(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  registrationIds: string[],
+): Promise<void> {
+  const ids = new Set(registrationIds);
+  const plans = await tx.roundPlan.findMany({
+    where: { eventId },
+    select: { id: true, validationWarnings: true },
+  });
+  for (const plan of plans) {
+    if (!Array.isArray(plan.validationWarnings)) continue;
+    const retained = plan.validationWarnings.filter((warning) => {
+      if (!warning || typeof warning !== 'object' || Array.isArray(warning)) return true;
+      const detail = (warning as { detail?: unknown }).detail;
+      return !detail || typeof detail !== 'object' || Array.isArray(detail) ||
+        !ids.has((detail as { registrationId?: string }).registrationId ?? '');
+    });
+    if (retained.length !== plan.validationWarnings.length) {
+      await tx.roundPlan.update({ where: { id: plan.id }, data: { validationWarnings: retained } });
+    }
+  }
+}
+
 async function rewritePlanReferences(tx: Prisma.TransactionClient, mappings: AnonymizedReference[]): Promise<void> {
   if (!mappings.length) return;
   const ids = Prisma.join(mappings.map(({ registrationId }) => registrationId));
@@ -145,6 +169,25 @@ export async function anonymizeExpiredRegistrations(
         await pruneUnusedParentArtifacts(tx, registrations.map((registration) => registration.parentEmail));
       }
 
+      const existingEventIds = await tx.event.findMany({ select: { id: true } }).then((rows) => new Set(rows.map((row) => row.id)));
+      const campaigns = await tx.siteAssociationCommunication.findMany({
+        where: { anchorEventId: eventId },
+        select: { id: true, eventIds: true },
+      });
+      const expiredSet = new Set(expiredEventIds);
+      const deletableCampaigns = campaigns.filter((campaign) => {
+        const eventIds = Array.isArray(campaign.eventIds) ? campaign.eventIds : [];
+        return eventIds.length === 0 || eventIds.every((referencedEventId) =>
+          typeof referencedEventId === 'string' && (!existingEventIds.has(referencedEventId) || expiredSet.has(referencedEventId)),
+        );
+      });
+      const retainedCampaignIds = campaigns
+        .filter((campaign) => !deletableCampaigns.includes(campaign))
+        .map((campaign) => campaign.id);
+      const excludeRetainedCampaigns = retainedCampaignIds.length
+        ? Prisma.sql`AND ("siteCommunicationId" IS NULL OR "siteCommunicationId" NOT IN (${Prisma.join(retainedCampaignIds)}))`
+        : Prisma.empty;
+
       // Scrub deliveries under the same lock as their preparation and claims.
       await tx.$executeRaw(Prisma.sql`
         UPDATE "EmailLog"
@@ -161,6 +204,7 @@ export async function anonymizeExpiredRegistrations(
             "status" = 'ANONYMIZED',
             "updatedAt" = ${now}
         WHERE "eventId" = ${eventId} AND "status" <> 'ANONYMIZED'
+          ${excludeRetainedCampaigns}
       `);
       await tx.reviewItem.deleteMany({
         where: { eventId, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
@@ -169,8 +213,9 @@ export async function anonymizeExpiredRegistrations(
         where: { eventId, reason: ORPHANED_PAYMENT_REVIEW_REASON, resolvedAt: null },
         data: { note: null, resolutionHistory: Prisma.DbNull },
       });
+      await tx.roundPlan.updateMany({ where: { eventId }, data: { validationWarnings: [] } });
       await tx.scheduledMessage.deleteMany({ where: { eventId } });
-      await tx.siteAssociationCommunication.deleteMany({ where: { anchorEventId: eventId } });
+      await tx.siteAssociationCommunication.deleteMany({ where: { id: { in: deletableCampaigns.map((campaign) => campaign.id) } } });
       await tx.checkInSession.deleteMany({ where: { eventId } });
       return rewritten.length;
     }, { timeout: 60_000 });
@@ -250,17 +295,54 @@ export async function anonymizeIncompleteRegistrations(
         await tx.reviewItem.deleteMany({
           where: { registrationId: { in: registrationIds }, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
         });
+        await tx.reviewItem.updateMany({
+          where: { registrationId: { in: registrationIds }, reason: ORPHANED_PAYMENT_REVIEW_REASON, resolvedAt: null },
+          data: { note: null, resolutionHistory: Prisma.DbNull },
+        });
         await rewritePlanReferences(tx, rewritten);
-        await tx.$executeRaw(Prisma.sql`
-          UPDATE "EmailLog"
-          SET "registrationId" = NULL,
-              "batchId" = 'retained:' || "id",
-              "idempotencyKey" = 'retained:' || "id",
-              "to" = '', "subject" = '', "body" = '', "messagePayload" = NULL,
-              "error" = NULL, "kind" = 'retention', "registrationIds" = NULL, "status" = 'ANONYMIZED', "updatedAt" = ${now}
-          WHERE ("registrationId" IN (${Prisma.join(registrationIds)}) OR "registrationIds" ?| ARRAY[${Prisma.join(registrationIds)}])
-            AND "status" <> 'ANONYMIZED'
-        `);
+        await scrubPlanWarnings(tx, eventId, registrationIds);
+        const deliveries = await tx.emailLog.findMany({
+          where: { eventId, status: { not: 'ANONYMIZED' } },
+          select: { id: true, registrationId: true, registrationIds: true, kind: true, status: true },
+        });
+        const expiredIds = new Set(registrationIds);
+        const scrubIds: string[] = [];
+        for (const delivery of deliveries) {
+          if (!deliveryTouchesRegistrations(delivery, expiredIds)) continue;
+          const groupedIds = Array.isArray(delivery.registrationIds)
+            ? delivery.registrationIds.filter((id): id is string => typeof id === 'string' && !expiredIds.has(id))
+            : [];
+          const retainedIds = [...new Set([
+            ...(delivery.registrationId && !expiredIds.has(delivery.registrationId) ? [delivery.registrationId] : []),
+            ...groupedIds,
+          ])];
+          if (retainedIds.length === 0) {
+            scrubIds.push(delivery.id);
+            continue;
+          }
+          await tx.emailLog.update({
+            where: { id: delivery.id },
+            data: {
+              registrationId: retainedIds.includes(delivery.registrationId ?? '') ? delivery.registrationId : retainedIds[0],
+              ...(Array.isArray(delivery.registrationIds) ? { registrationIds: groupedIds } : {}),
+              ...(delivery.kind === 'email-change' ? {} : {
+                subject: '', body: '', messagePayload: Prisma.DbNull,
+                status: delivery.status === 'SENT' ? 'SENT' : 'ANONYMIZED',
+              }),
+            },
+          });
+        }
+        if (scrubIds.length) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE "EmailLog"
+            SET "registrationId" = NULL,
+                "batchId" = 'retained:' || "id",
+                "idempotencyKey" = 'retained:' || "id",
+                "to" = '', "subject" = '', "body" = '', "messagePayload" = NULL,
+                "error" = NULL, "kind" = 'retention', "registrationIds" = NULL, "status" = 'ANONYMIZED', "updatedAt" = ${now}
+            WHERE "id" IN (${Prisma.join(scrubIds)}) AND "status" <> 'ANONYMIZED'
+          `);
+        }
       }
       await pruneUnusedParentArtifacts(tx, expired.map((registration) => registration.parentEmail));
       return rewritten.length;

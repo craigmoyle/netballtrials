@@ -149,7 +149,8 @@ describe('apiClient', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(history), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(roster), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 201 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(plan), { status: 200 }));
     const client = apiClient('http://api.test') as any;
     const input = { sourcePlanId: 'plan-1', overrideWarnings: false, slots: [{ round: 2, court: 1, position: 'GS', team: 0, registrationId: 'player-1' }] };
 
@@ -157,13 +158,16 @@ describe('apiClient', () => {
     await expect(client.getPlanRevision('event-1', 'plan-2')).resolves.toEqual(plan);
     await expect(client.getGameRoster('event-1')).resolves.toEqual(roster);
     await expect(client.saveManualRound('event-1', 2, input)).resolves.toEqual({ ok: true, plan });
+    await expect(client.completePlanRound('event-1', 1, 'plan-1')).resolves.toEqual({ ok: true, plan });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://api.test/api/admin/events/event-1/plan/revisions',
       'http://api.test/api/admin/events/event-1/plan/revisions/plan-2',
       'http://api.test/api/admin/events/event-1/game-roster',
       'http://api.test/api/admin/events/event-1/plan/rounds/2/manual',
+      'http://api.test/api/admin/events/event-1/plan/rounds/1/complete',
     ]);
     expect(JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string)).toEqual(input);
+    expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string)).toEqual({ sourcePlanId: 'plan-1' });
     expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
   });
 

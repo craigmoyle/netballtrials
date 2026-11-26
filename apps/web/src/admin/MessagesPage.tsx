@@ -117,6 +117,9 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
   }), [allRecipients, audience, associationFilter, positionFilter, search, statusFilter]);
   const eligibleVisibleRecipients = filteredRecipients.filter((recipient) => Boolean(recipient.email.trim()) && recipient.eligible);
   const selectedVisibleCount = filteredRecipients.filter((recipient) => selectedIds.includes(recipient.id)).length;
+  const previewEmailCount = previewRecipients
+    ? new Set(previewRecipients.map((recipient) => recipient.email.trim().toLowerCase())).size
+    : 0;
 
   function changeAudience(next: Audience) {
     if (editingScheduled) setEditingScheduled(null);
@@ -177,7 +180,9 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       const batchId = sendBatchId ?? crypto.randomUUID();
       setSendBatchId(batchId);
       const result = await client.sendCommunication(eventId, {
-        audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, batchId,
+        audience, recipientIds: [...selectedIds],
+        previewedRecipients: previewRecipients.map(({ id, email }) => ({ id, email })),
+        subject, text, batchId,
       });
       setNotice(`${result.sent} sent, ${result.simulated ?? 0} simulated, ${result.failed} failed${result.ambiguous ? `, ${result.ambiguous} outcome unknown` : ''}.`);
       setSelectedIds([]);
@@ -196,7 +201,11 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
     setError(null);
     setNotice(null);
     try {
-      const input = { audience, recipientIds: previewRecipients.map((recipient) => recipient.id), subject, text, scheduledLocal: scheduleAt };
+      const input = {
+        audience, recipientIds: [...selectedIds],
+        previewedRecipients: previewRecipients.map(({ id, email }) => ({ id, email })),
+        subject, text, scheduledLocal: scheduleAt,
+      };
       if (editingScheduled) {
         const result = await client.updateScheduledCommunication(eventId, editingScheduled.id, { ...input, expectedUpdatedAt: editingScheduled.updatedAt });
         setScheduled((current) => current.map((row) => row.id === result.id ? result : row));
@@ -365,11 +374,11 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
       {previewRecipients ? (
         <section className="message-confirmation" aria-labelledby="communication-preview-heading">
           <h2 id="communication-preview-heading">Review recipients</h2>
-          <p>{previewRecipients.length} distinct email recipient{previewRecipients.length === 1 ? '' : 's'} will receive this message. Paid registrations, verified incomplete registrations, and active association contacts are included.</p>
+          <p>{previewEmailCount} distinct email recipient{previewEmailCount === 1 ? '' : 's'} will receive this message. Paid registrations, verified incomplete registrations, and active association contacts are included.</p>
           <p><strong>{subject}</strong></p><p>{text}</p>
           {policyDocumentName ? <p>The event selection policy PDF, {policyDocumentName}, will be attached.</p> : null}
           <ul>{previewRecipients.map((recipient) => <li key={recipient.id}>{recipient.name} — Number {recipient.number ?? 'Not assigned'} — {recipient.email}</li>)}</ul>
-          <p><button type="button" disabled={busy} onClick={() => void send()}>{busy ? 'Sending...' : `Send now to ${previewRecipients.length}`}</button></p>
+          <p><button type="button" disabled={busy} onClick={() => void send()}>{busy ? 'Sending...' : `Send now to ${previewEmailCount}`}</button></p>
           <fieldset className="form-group">
             <legend>Schedule this message</legend>
             <div className="communication-schedule-help"><HelpTip label="Scheduled messages">The send time uses Australia/Melbourne. The delivery job checks for due messages on its next run.</HelpTip></div>

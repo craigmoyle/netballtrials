@@ -10,7 +10,12 @@ SQL_FILE="$(cd "$(dirname "$0")" && pwd)/sql/upgrade-trials-runtime-role.sql"
 [[ -r "$ENV_FILE" && -r "$PLATFORM_ENV_FILE" && -r "$SQL_FILE" ]] || { echo 'Required environment or SQL file is missing.' >&2; exit 1; }
 
 read_env_value() {
-  awk -F= -v key="$2" '$1 == key { print substr($0, index($0, "=") + 1); found=1; exit } END { if (!found) exit 1 }' "$1"
+  local value
+  value=$(awk -F= -v key="$2" '$1 == key { print substr($0, index($0, "=") + 1); found=1; exit } END { if (!found) exit 1 }' "$1")
+  if (( ${#value} >= 2 )) && { [[ "$value" == \"*\" ]] || [[ "$value" == \'*\' ]]; }; then
+    value=${value:1:${#value}-2}
+  fi
+  printf '%s\n' "$value"
 }
 
 POSTGRES_ADMIN_PASSWORD=$(read_env_value "$PLATFORM_ENV_FILE" POSTGRES_ADMIN_PASSWORD)

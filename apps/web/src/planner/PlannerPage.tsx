@@ -97,6 +97,27 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
     }
   }
 
+  async function onCompleteRound() {
+    if (!publishedPlan || publishedPlan.frozenThroughRound >= publishedPlan.rounds || busy) return;
+    const round = publishedPlan.frozenThroughRound + 1;
+    if (!window.confirm(`Complete round ${round}? That round will be frozen and cannot be edited afterward.`)) return;
+    setBusy(true);
+    setActionError(null);
+    setGaps([]);
+    try {
+      const result = await client.completePlanRound(eventId, round, publishedPlan.id);
+      if (!mounted.current) return;
+      applyAction(result);
+      if (result.ok) setFromRound(Math.min(result.plan.rounds, result.plan.frozenThroughRound + 1));
+    } catch (error) {
+      if (mounted.current) setActionError(error instanceof ApiError && error.status === 409
+        ? 'Another Admin changed the plan. Reload before completing this round.'
+        : 'Could not complete this round. The published plan is unchanged.');
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   async function onRegenerate() {
     if (!publishedPlan || busy) return;
     setBusy(true);
@@ -160,6 +181,9 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
       {publishedPlan ? (
         <>
           <p><Link to={`/admin/events/${eventId}/sheets`}>Print selector sheets</Link></p>
+          {publishedPlan.frozenThroughRound < publishedPlan.rounds ? (
+            <p><button type="button" onClick={onCompleteRound} disabled={busy}>{busy ? 'Working...' : `Complete round ${publishedPlan.frozenThroughRound + 1}`}</button></p>
+          ) : <p>All rounds are complete.</p>}
           {canRegenerate ? (
             <p>
               <label htmlFor="fromRound">Regenerate from round</label>

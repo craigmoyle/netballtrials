@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { generateDraftPlan, publishPlan, regenerateFromRound } from '../../planner/service';
+import { completeRound, generateDraftPlan, publishPlan, regenerateFromRound } from '../../planner/service';
 import { verifyPlan } from '../../planner/verify';
 import { seedEventWithPlayers } from '../helpers/planner';
 import { withdrawRegistration } from '../../registrations/service';
@@ -91,6 +91,27 @@ describe('plan service', () => {
     );
     const plan = await prisma.roundPlan.findUniqueOrThrow({ where: { id: regenerated.plan.id }, include: { slots: true } });
     expect(verifyPlan(await inputForEvent(event.id, plan.rounds), plan as any)).toEqual([]);
+  });
+
+  it('completes only the next round in a new immutable published revision', async () => {
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const draft = await generateDraftPlan(prisma, event.id, 1);
+    if (!draft.ok) throw new Error('setup failed');
+    const published = await publishPlan(prisma, event.id, draft.plan.id);
+    if (!published.ok) throw new Error('publish setup failed');
+    const sourceSlots = orderedSlots(await prisma.roundSlot.findMany({ where: { planId: published.plan.id } }));
+
+    const completed = await completeRound(prisma, event.id, published.plan.id, 1, new Date('2027-09-12T00:10:00Z'));
+
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) return;
+    expect(completed.plan).toMatchObject({ status: 'PUBLISHED', revision: published.plan.revision + 1, sourcePlanId: published.plan.id, frozenThroughRound: 1 });
+    expect(orderedSlots(await prisma.roundSlot.findMany({ where: { planId: completed.plan.id } }))).toEqual(sourceSlots);
+    expect((await prisma.roundPlan.findUniqueOrThrow({ where: { id: published.plan.id } })).frozenThroughRound).toBe(0);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).publishedPlanId).toBe(completed.plan.id);
+
+    const outOfOrder = await completeRound(prisma, event.id, completed.plan.id, 1);
+    expect(outOfOrder).toMatchObject({ ok: false, reason: 'invalid_round' });
   });
 
   it('does not publish a draft after the checked-in roster changes', async () => {

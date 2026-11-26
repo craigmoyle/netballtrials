@@ -212,25 +212,31 @@ async function dispatchOne(
       },
     });
     if (!current || !current.to || current.error === INTERRUPTED_SEND) return null;
+    const referencedRegistrationIds = Array.isArray(current.registrationIds)
+      ? current.registrationIds.filter((id): id is string => typeof id === 'string')
+      : [];
+    const eligibleRegistrationIds = referencedRegistrationIds.length
+      ? referencedRegistrationIds
+      : current.registrationId ? [current.registrationId] : [];
     const eligible = current.kind === 'association'
       ? current.associationId ? await tx.memberAssociation.findFirst({
           where: { id: current.associationId, active: true, primaryContactEmail: { equals: current.to, mode: 'insensitive' } },
           select: { id: true },
         }) : null
       : current.kind === 'email-change'
-        ? current.registrationId ? await tx.registration.findFirst({
-            where: { id: current.registrationId, eventId: current.eventId, anonymizedAt: null },
+        ? eligibleRegistrationIds.length ? await tx.registration.findFirst({
+            where: { id: { in: eligibleRegistrationIds }, anonymizedAt: null },
             select: { id: true },
           }) : null
-        : await tx.registration.findFirst({
+        : eligibleRegistrationIds.length ? await tx.registration.findFirst({
             where: {
+              id: { in: eligibleRegistrationIds },
               eventId: current.eventId,
               parentEmail: { equals: current.to, mode: 'insensitive' },
               ...mailRegistrationEligibility(current.kind, now),
-              ...(['message', 'reminder'].includes(current.kind) ? {} : { id: current.registrationId ?? '' }),
             },
             select: { id: true },
-          });
+          }) : null;
     if (!eligible) return null;
     const claim = await tx.emailLog.updateMany({
       where: { id: current.id, status: { in: retryable } },

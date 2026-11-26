@@ -21,12 +21,13 @@ describe('renderBlankGameSheet', () => {
     expect(html).not.toMatch(/Round [1-9]|Court [1-9]|White|Black|Grey|Orange/);
     expect(html).toContain('Team A');
     expect(html).toContain('Team B');
-    for (const header of ['Position', 'Number', 'Player', 'Rating', 'Notes/Feedback']) expect(html).toContain(header);
+    for (const header of ['Position', 'Number', 'Player', 'Choices (1/2/3)', 'Rating', 'Notes/Feedback']) expect(html).toContain(header);
     for (const position of positions) expect((html.match(new RegExp(`<th scope="row">${position}</th>`, 'g')) ?? [])).toHaveLength(2);
+    expect((html.match(/class="blank-sheet__choices"/g) ?? [])).toHaveLength(14);
     expect((html.match(/class="blank-sheet__rating"/g) ?? [])).toHaveLength(14);
     expect((html.match(/class="blank-sheet__notes"/g) ?? [])).toHaveLength(14);
     expect(html).not.toMatch(/<td>[^<]+<\/td>/);
-    expect(html).toContain('.blank-sheet__notes { width: 42mm; }');
+    expect(html).toContain('.blank-sheet__notes { width: 38mm; }');
     expect(html).toContain('.blank-sheet th:first-child { width: 20mm; }');
     expect(html).toContain('height: 17mm;');
     expect(html).toContain('font-size: 12px;');

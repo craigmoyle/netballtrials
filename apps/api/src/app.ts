@@ -1,4 +1,4 @@
-import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import type { PrismaClient } from '@prisma/client';
@@ -268,7 +268,16 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     return payload;
   });
 
-  const health = async () => ({ status: 'ok', appEnv: env.APP_ENV, testAccessRequired: hostedTestMode });
+  const healthStatus = () => ({ appEnv: env.APP_ENV, testAccessRequired: hostedTestMode });
+  const health = async (_request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await database.$queryRaw`SELECT 1`;
+      return { status: 'ok', ...healthStatus() };
+    } catch {
+      deps.log?.error({ code: 'database_health_failed' }, 'database_health_failed');
+      return reply.code(503).send({ status: 'unavailable', ...healthStatus() });
+    }
+  };
   app.get('/health', health);
   app.get('/api/health', health);
 

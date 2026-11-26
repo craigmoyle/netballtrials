@@ -181,7 +181,7 @@ export async function sendCheckoutContinuation(
       },
       now,
     );
-    return delivery.sent === 1;
+    return delivery.sent + delivery.simulated === 1;
   } catch {
     // Durable delivery diagnostics/retries are recorded by the email log.
     return false;

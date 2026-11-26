@@ -3,7 +3,7 @@ import { createApp } from '../../app';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { signInAsNewAdmin } from '../helpers/auth';
-import { registrationFixture } from '../helpers/fixtures';
+import { eventFixture, registrationFixture } from '../helpers/fixtures';
 import { DEFAULT_POLICY_URL } from '../../policy';
 
 const app = createApp();
@@ -109,6 +109,35 @@ describe('event admin routes', () => {
     expect(removed.json()).toEqual({ error: 'event_has_registrations' });
     expect((await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}`, cookies: { nt_session: cookie } })).statusCode).toBe(200);
     expect(await prisma.registration.findUnique({ where: { id: registration.id } })).not.toBeNull();
+  });
+
+  it('blocks deletion while multi-event communication history references the event', async () => {
+    const first = await prisma.event.create({ data: eventFixture({ name: 'First event' }) });
+    const second = await prisma.event.create({ data: eventFixture({ name: 'Second event' }) });
+    const campaign = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: second.id, eventIds: [first.id, second.id], recipientIds: ['association-1'],
+      batchId: 'event-delete-reference', subject: 'Association update', body: 'Details', status: 'COMPLETED',
+    } });
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/admin/events/${first.id}`, cookies: { nt_session: cookie } });
+
+    expect(removed.statusCode).toBe(409);
+    expect(removed.json()).toEqual({ error: 'event_has_communications' });
+    expect(await prisma.siteAssociationCommunication.findUnique({ where: { id: campaign.id } })).not.toBeNull();
+  });
+
+  it('blocks deletion while ordinary scheduled communication history remains', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ name: 'Scheduled event' }) });
+    const scheduled = await prisma.scheduledMessage.create({ data: {
+      eventId: event.id, audience: 'participants', recipientIds: ['registration-1'], batchId: 'event-delete-scheduled',
+      subject: 'Reminder', body: 'Details', scheduledAt: new Date('2099-01-01T00:00:00Z'), status: 'SCHEDULED',
+    } });
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/admin/events/${event.id}`, cookies: { nt_session: cookie } });
+
+    expect(removed.statusCode).toBe(409);
+    expect(removed.json()).toEqual({ error: 'event_has_communications' });
+    expect(await prisma.scheduledMessage.findUnique({ where: { id: scheduled.id } })).not.toBeNull();
   });
 
   it('never returns the check-in PIN hash from event responses', async () => {

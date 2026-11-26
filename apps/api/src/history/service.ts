@@ -105,6 +105,9 @@ export async function searchPlayerHistory(
       games: slots.length,
       courtsSeen,
       positionsPlayed,
+      appearances: slots
+        .map((slot) => ({ round: slot.round, court: slot.court, team: slot.team === 0 ? 0 as const : 1 as const, position: slot.position }))
+        .sort((a, b) => a.round - b.round || a.court - b.court || a.team - b.team),
       uniqueOpponents: opposingIds.size,
       repeatOpponentMeetings,
     };

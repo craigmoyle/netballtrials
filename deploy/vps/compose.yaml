@@ -56,6 +56,12 @@ services:
     restart: unless-stopped
     depends_on:
       - trials-api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/web-health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     mem_limit: 128m
     logging: *bounded-logs
     networks:
@@ -66,6 +72,7 @@ services:
   trials-migrate:
     profiles: [jobs]
     image: netballtrials-migrate:vps
+    user: "1000:1000"
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -83,7 +90,6 @@ services:
     logging: *bounded-logs
     networks:
       - trials_db
-      - trials_egress
 
   trials-reminders:
     profiles: [jobs]
@@ -92,7 +98,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: api-runtime
-    command: ["npm", "run", "send-reminders"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["if [ \"$${ENABLE_TEST_INTEGRATIONS}\" = true ]; then exec npm run send-reminders; else exec npm run send-reminders -- --dry-run; fi"]
     environment:
       NODE_ENV: production
       APP_ENV: testing
@@ -153,7 +160,6 @@ services:
     logging: *bounded-logs
     networks:
       - trials_db
-      - trials_egress
 
 networks:
   edge:

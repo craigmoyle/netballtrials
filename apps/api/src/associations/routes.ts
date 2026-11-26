@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { isUniqueViolation } from '../errors';
-import { createAssociation, listActiveAssociations, listAssociations, updateAssociation } from './service';
+import { AssociationContactPairError, createAssociation, listActiveAssociations, listAssociations, updateAssociation } from './service';
 
 const contactFields = {
   primaryContactName: z.string().trim().min(1).max(120).nullable().optional(),
@@ -26,7 +26,7 @@ const createSchema = z.object({
 const patchSchema = z.object({
   active: z.boolean().optional(),
   ...contactFields,
-}).superRefine(contactPairIsValid);
+});
 
 export function registerAssociationRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/public/associations', async () => listActiveAssociations(deps.prisma));
@@ -59,10 +59,13 @@ export function registerAssociationRoutes(app: FastifyInstance, deps: AppDeps): 
     }
 
     const { id } = req.params as { id: string };
-    const updated = await updateAssociation(deps.prisma, id, parsed.data);
-    if (!updated) {
-      return reply.code(404).send({ error: 'not_found' });
+    try {
+      const updated = await updateAssociation(deps.prisma, id, parsed.data);
+      if (!updated) return reply.code(404).send({ error: 'not_found' });
+      return updated;
+    } catch (error) {
+      if (error instanceof AssociationContactPairError) return reply.code(400).send({ error: 'validation_failed' });
+      throw error;
     }
-    return updated;
   });
 }

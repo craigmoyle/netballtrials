@@ -304,7 +304,7 @@ describe('EventFormPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete event' }));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/15\/U Ladies.*no registrations/i));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/15\/U Ladies.*registrations or association communication history/i));
     await waitFor(() => expect(deleteEvent).toHaveBeenCalledWith('e1'));
     expect(await screen.findByRole('heading', { name: 'Events list' })).toBeInTheDocument();
     expect(confirm).toHaveBeenCalledTimes(1);

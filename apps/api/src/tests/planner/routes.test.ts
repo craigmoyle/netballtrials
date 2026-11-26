@@ -26,6 +26,7 @@ describe('planner routes', () => {
     ).toBe(401);
     expect((await app.inject({ method: 'GET', url: '/api/admin/events/x/sheets' })).statusCode).toBe(401);
     expect((await app.inject({ method: 'GET', url: '/api/admin/events/x/sheets/blank' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/api/admin/events/x/plan/rounds/1/complete', payload: { sourcePlanId: 'plan-1' } })).statusCode).toBe(401);
   });
   it('previews the lower bound and exposes a published-only plan for printing', async () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
@@ -71,6 +72,25 @@ describe('planner routes', () => {
     expect(published.statusCode).toBe(200);
     expect(published.json().status).toBe('PUBLISHED');
   });
+  it('completes a round through the admin route and rejects stale sources', async () => {
+    const cookie = await signInAsNewAdmin(app, 'complete-round-admin@example.com');
+    const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });
+    const generated = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/generate`, cookies: { nt_session: cookie } });
+    const published = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/publish`, payload: { planId: generated.json().id }, cookies: { nt_session: cookie } });
+
+    const completed = await app.inject({
+      method: 'POST', url: `/api/admin/events/${event.id}/plan/rounds/1/complete`, payload: { sourcePlanId: published.json().id }, cookies: { nt_session: cookie },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: 'PUBLISHED', sourcePlanId: published.json().id, frozenThroughRound: 1, revision: published.json().revision + 1 });
+
+    const stale = await app.inject({
+      method: 'POST', url: `/api/admin/events/${event.id}/plan/rounds/2/complete`, payload: { sourcePlanId: published.json().id }, cookies: { nt_session: cookie },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: 'stale_plan' });
+  });
+
   it('does not expose a draft through the final selector-sheet route', async () => {
     const cookie = await signInAsNewAdmin(app, 'admin@example.com');
     const event = await seedEventWithPlayers(28, { courts: 2, checkedIn: 28 });

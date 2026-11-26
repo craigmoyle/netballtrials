@@ -24,6 +24,7 @@ const LOGIN_LINK_WINDOW_MS = 15 * 60_000;
 const LOGIN_LINK_EMAIL_LIMIT = 3;
 // Match the link lifetime: whenever an address is throttled, a link that caused it is still valid.
 const LOGIN_LINK_EMAIL_WINDOW_MS = LOGIN_TOKEN_TTL_MINUTES * 60_000;
+const LOGIN_LINK_RESPONSE_MS = 50;
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/auth/request-link', async (req, reply) => {
@@ -46,11 +47,27 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!(await consumeRateLimit(deps.prisma, emailKey, now, LOGIN_LINK_EMAIL_LIMIT, LOGIN_LINK_EMAIL_WINDOW_MS))) {
       return reply.code(202).send({ status: 'sent' });
     }
-    await requestLoginLink(
-      { prisma: deps.prisma, mailer: deps.mailer, webOrigin: deps.env.WEB_ORIGIN },
-      normalizedEmail,
-      now,
-    );
+    const mailer = {
+      send(message: Parameters<typeof deps.mailer.send>[0]) {
+        try {
+          void deps.mailer.send(message).catch((error) =>
+            req.log.error({ err: error }, 'Unable to deliver admin login link'));
+        } catch (error) {
+          req.log.error({ err: error }, 'Unable to deliver admin login link');
+        }
+        return Promise.resolve();
+      },
+    };
+    // Token creation remains durable before the response; mailbox delivery is
+    // detached and the minimum delay neutralizes known/unknown database work.
+    await Promise.all([
+      requestLoginLink(
+        { prisma: deps.prisma, mailer, webOrigin: deps.env.WEB_ORIGIN },
+        normalizedEmail,
+        now,
+      ),
+      new Promise((resolve) => setTimeout(resolve, LOGIN_LINK_RESPONSE_MS)),
+    ]);
     return reply.code(202).send({ status: 'sent' });
   });
 

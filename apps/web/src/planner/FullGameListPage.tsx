@@ -542,6 +542,34 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
     }
   }
 
+  async function completeNextRound() {
+    if (!plan || plan.frozenThroughRound >= plan.rounds || busy || stalePlan || editing || suffixEditing) return;
+    const round = plan.frozenThroughRound + 1;
+    if (!window.confirm(`Complete round ${round}? That round will be frozen and cannot be edited afterward.`)) return;
+    setBusy(true);
+    setActionError(null);
+    setSavedMessage(null);
+    try {
+      const result = await client.completePlanRound(eventId, round, plan.id);
+      if (!mounted.current) return;
+      if (!result.ok) {
+        setActionError(result.gaps.map((gap) => gap.message).join(' ') || `Round ${round} could not be completed.`);
+        return;
+      }
+      activateRevision(result.plan);
+      setSuffixFromRound(Math.min(result.plan.rounds, result.plan.frozenThroughRound + 1));
+      setSavedMessage(`Round ${round} is complete and frozen.`);
+    } catch (error) {
+      if (!mounted.current) return;
+      if (error instanceof ApiError && error.status === 409) {
+        setStalePlan(true);
+        setActionError('Another Admin changed the active revision. Refresh before completing a round.');
+      } else setActionError(`Could not complete round ${round}. The active schedule is unchanged.`);
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   async function rebuildSuffix() {
     if (!plan || earlyLeaverIds.length === 0 || stalePlan) return;
     setBusy(true);
@@ -854,6 +882,9 @@ function EventGameList({ client, eventId }: { client: Client; eventId: string })
           ) : (
             <>
               <p className="game-plan-revision">Revision {availablePlan.revision} · {availablePlan.rounds} rounds</p>
+              {!readOnly && plan && plan.frozenThroughRound < plan.rounds ? (
+                <p><button type="button" onClick={() => void completeNextRound()} disabled={busy || stalePlan || editing || suffixEditing}>{busy ? 'Working...' : `Complete round ${plan.frozenThroughRound + 1}`}</button></p>
+              ) : null}
               {availablePlan.validationWarnings.length > 0 ? (
                 <section className="game-warning-list" aria-labelledby="saved-warnings-heading">
                   <h2 id="saved-warnings-heading">Saved planning warnings</h2>

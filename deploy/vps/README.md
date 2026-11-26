@@ -21,13 +21,13 @@ cd /opt/netball/netballtrials/deploy/vps
 sudo ./deploy.sh
 ```
 
-`deploy.sh` validates the Compose file, builds the API, web and job images, runs migrations, recreates `trials-api` and `trials-web`, and installs the systemd units. On an existing database volume, run `upgrade-trials-runtime-role.sh` once before the first deploy that changes the API role; the script is idempotent and never prints passwords.
+`deploy.sh` validates root ownership, mode, provider configuration, hex-only database passwords, platform/env agreement, Compose files, platform networks and the running database; serializes migrations and jobs; builds the images; applies the idempotent runtime-role grants; runs migrations; checks internal edge routing; and waits for API/web health before enabling both timers. It verifies that both timers are active. A failure before API/schema mutation automatically restarts the prior timers. After mutation starts, failed deployments deliberately leave jobs paused for operator diagnosis. The role-upgrade script can still be run manually and never prints passwords.
 
 Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. `VITE_API_URL` stays empty so browser requests use the same-origin `/api` route. Local development stays on fake payments and in-memory email; never enable hosted integrations locally.
 
 ## Request path
 
-Client → edge (TLS, `netball-vps`) → `trials-web` (static files, headers, API proxy) → `trials-api`. `trials-web` trusts only the edge subnet (`172.30.50.0/24`); `trials-api` trusts only `trials-web` (`172.30.30.2`).
+Client → edge (TLS, `netball-vps`) → `trials-web` (static files, headers, API proxy) → `trials-api`. `trials-web` trusts only the exact edge IP (`172.30.50.2`); `trials-api` trusts only `trials-web` (`172.30.30.2`). The API health route checks PostgreSQL, while `/web-health` checks the static web process independently.
 
 ## Access and operations
 
@@ -38,10 +38,10 @@ Client → edge (TLS, `netball-vps`) → `trials-web` (static files, headers, AP
 
 ## Jobs and timers
 
-- `netball-trials-reminders` runs every 15 minutes: reminders, confirmation and checkout retries, and scheduled communications.
+- `netball-trials-reminders` runs every 15 minutes. Hosted TEST integrations send reminders and retries live; the fake-provider profile performs a safe dry-run without external sends or state changes.
 - `netball-trials-retention` runs daily at 03:00 local server time and removes expired personal data.
 
-Run a job manually with `sudo docker compose --env-file /opt/netball/trials.env -f compose.yaml --profile jobs run --rm --no-deps <service>`.
+Run scheduled jobs manually with `sudo systemctl start netball-trials-reminders.service` or `sudo systemctl start netball-trials-retention.service`. These units use the same lock as migrations, so scheduled/manual jobs cannot overlap a migration.
 
 ## Rules
 

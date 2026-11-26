@@ -7,7 +7,7 @@ import { requireAdmin } from '../auth/guard';
 import { melbourneLocalDateTimeToUtc } from '../time/melbourne';
 import { EmailBatchConflictError, getDeliverySummary, reconcileStaleDeliveries, retryFailedDeliveries } from './service';
 import {
-  getScheduledMessages, listCommunicationRecipients, previewSelectedRecipients, sendSelectedCommunication,
+  CommunicationRecipientsChangedError, getScheduledMessages, listCommunicationRecipients, previewSelectedRecipients, sendSelectedCommunication,
   type CommunicationAudience, type SelectedCommunication,
 } from './communications';
 import { unsupportedTemplateFields } from './template-renderer';
@@ -16,7 +16,9 @@ import { isUniqueViolation } from '../errors';
 
 const audience = z.enum(['participants', 'associations']);
 const selectedSchema = z.object({ audience, recipientIds: z.array(z.string().min(1)).max(500) });
+const previewedRecipientSchema = z.object({ id: z.string().min(1), email: z.email() }).strict();
 const messageFields = {
+  previewedRecipients: z.array(previewedRecipientSchema).min(1).max(500).optional(),
   audience,
   recipientIds: z.array(z.string().min(1)).max(500),
   subject: z.string().trim().min(1).max(200),
@@ -34,6 +36,17 @@ const retrySchema = z.object({ deliveryIds: z.array(z.string().min(1)).min(1).ma
 
 function selected(data: { audience: CommunicationAudience; recipientIds: string[] }): SelectedCommunication {
   return { audience: data.audience, recipientIds: data.recipientIds };
+}
+
+function previewMatches(
+  current: Array<{ id: string; email: string }>,
+  expected?: Array<{ id: string; email: string }>,
+): boolean {
+  if (!expected) return true;
+  const serialize = (rows: Array<{ id: string; email: string }>) => rows
+    .map((row) => `${row.id}\0${row.email.trim().toLowerCase()}`)
+    .sort();
+  return JSON.stringify(serialize(current)) === JSON.stringify(serialize(expected));
 }
 
 function scheduledMessageDto(row: ScheduledMessage): ScheduledMessageDTO {
@@ -112,7 +125,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const { id } = req.params as { id: string };
     const recipients = await previewSelectedRecipients(deps.prisma, id, selected(parsed.data));
     if (!recipients) return reply.code(404).send({ error: 'not_found' });
-    return { count: recipients.length, recipients };
+    return { count: new Set(recipients.map((recipient) => recipient.email.trim().toLowerCase())).size, recipients };
   });
 
   app.post('/api/admin/events/:id/communications/send', { preHandler: requireAdmin(deps) }, async (req, reply) => {
@@ -124,14 +137,16 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const selectedRecipients = selected(parsed.data);
     const preview = await previewSelectedRecipients(deps.prisma, id, selectedRecipients);
     if (!preview) return reply.code(404).send({ error: 'not_found' });
+    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
     try {
       return await sendSelectedCommunication(
         { prisma: deps.prisma, mailer: deps.mailer }, id, selectedRecipients,
         { subject: parsed.data.subject, text: parsed.data.text }, new Date(),
-        { batchId: parsed.data.batchId, senderUserId: req.adminUserId },
+        { batchId: parsed.data.batchId, senderUserId: req.adminUserId, previewedRecipients: parsed.data.previewedRecipients },
       );
     } catch (error) {
+      if (error instanceof CommunicationRecipientsChangedError) return reply.code(409).send({ error: 'recipients_changed' });
       if (error instanceof EmailBatchConflictError) return reply.code(409).send({ error: 'idempotency_conflict' });
       throw error;
     }
@@ -162,6 +177,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const selectedRecipients = selected(parsed.data);
     const preview = await previewSelectedRecipients(deps.prisma, id, selectedRecipients);
     if (!preview) return reply.code(404).send({ error: 'not_found' });
+    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
     const policyDocument = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, select: { fileName: true, bytes: true } });
     const policyAttachment = policyDocument ? { fileName: policyDocument.fileName, contentBase64: Buffer.from(policyDocument.bytes).toString('base64') } : undefined;
@@ -202,6 +218,7 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     if (current.updatedAt.toISOString() !== parsed.data.expectedUpdatedAt) return reply.code(409).send({ error: 'schedule_changed' });
     const preview = await previewSelectedRecipients(deps.prisma, id, selected(parsed.data));
     if (!preview) return reply.code(404).send({ error: 'not_found' });
+    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
     const policyDocument = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, select: { fileName: true, bytes: true } });
     const policyAttachment = policyDocument ? { fileName: policyDocument.fileName, contentBase64: Buffer.from(policyDocument.bytes).toString('base64') } : null;

@@ -253,10 +253,42 @@ describe('parent registration access', () => {
     expect((await prisma.emailLog.findUniqueOrThrow({ where: { id: notification.id } })).status).toBe('FAILED');
 
     const secondRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:31:00Z'));
-    expect(secondRun).toMatchObject({ sent: 1, failed: 0, ambiguous: 0 });
+    expect(secondRun).toMatchObject({ sent: 0, simulated: 1, failed: 0, ambiguous: 0 });
     const thirdRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:32:00Z'));
     expect(thirdRun).toMatchObject({ sent: 0 });
     expect(mailer.sent.filter((message) => message.to === 'parent@example.test' && message.subject === 'Your Netball Trials email was changed')).toHaveLength(1);
+  });
+
+  it('rebinds pending confirmation and checkout mail after a parent email change', async () => {
+    const paid = await addRegistration('Ada', 'Lovelace', 'parent@example.test', { status: 'PAID', qrToken: 'paid-ticket' });
+    const pending = await addRegistration('Grace', 'Hopper', 'parent@example.test');
+    const oldToken = 'old-address-token-after-email-change';
+    await prisma.parentAccessToken.create({ data: {
+      email: 'parent@example.test', purpose: 'SIGN_IN', tokenHash: hashToken(oldToken),
+      expiresAt: new Date(Date.now() + 60 * 60_000),
+    } });
+    const confirmation = await prisma.emailLog.create({ data: {
+      eventId, registrationId: paid.id, batchId: 'confirmation-rebind', idempotencyKey: 'confirmation-rebind-old',
+      to: 'parent@example.test', subject: 'Ticket', body: 'Ticket details', kind: 'confirmation', status: 'FAILED', attempts: 1,
+    } });
+    const checkout = await prisma.emailLog.create({ data: {
+      eventId, registrationId: pending.id, batchId: 'checkout-rebind', idempotencyKey: 'checkout-rebind-old',
+      to: 'parent@example.test', subject: 'Continue checkout', body: 'Checkout details', kind: 'checkout', status: 'PENDING',
+    } });
+    const cookie = await parentSession('parent@example.test');
+    const cookies = { nt_parent: cookie };
+    await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family@example.test' } });
+    const verification = mailer.sent.find((message) => message.subject === 'Confirm your new Netball Trials email');
+    const changed = await app.inject({ method: 'POST', url: '/api/parent/email-change/confirm', cookies, payload: { token: rawToken(verification!.text) } });
+
+    expect(changed.statusCode).toBe(200);
+    expect(await prisma.parentAccessToken.findUnique({ where: { tokenHash: hashToken(oldToken) } })).toBeNull();
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: confirmation.id } })).toMatchObject({
+      to: 'family@example.test', status: 'FAILED', subject: 'Ticket', body: 'Ticket details',
+    });
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: checkout.id } })).toMatchObject({
+      to: 'family@example.test', status: 'PENDING', subject: 'Continue checkout', body: 'Checkout details',
+    });
   });
 
   it('reports an interrupted durable email-change notice for operator review', async () => {

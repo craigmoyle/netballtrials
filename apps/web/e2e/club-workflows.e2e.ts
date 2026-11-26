@@ -415,7 +415,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText(/68 distinct email recipients will receive this message/i)).toBeVisible();
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Send now to 68' }).click();
-  await expect(page.getByText('68 sent, 0 simulated, 0 failed.')).toBeVisible();
+  await expect(page.getByText('0 sent, 68 simulated, 0 failed.')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
@@ -488,6 +488,8 @@ test('Parent magic link manages every registration linked to the guardian email'
 
 test('Admin opens event-scoped check-in without a PIN', async ({ page, request }) => {
   await signIn(page, request);
+  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, { eventDate: melbourneDateKey(new Date()) });
+  expect(eventDate.status()).toBe(200);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
   await openEventTool(page, 'Event operations');
@@ -769,6 +771,8 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
     if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && !['localhost', '127.0.0.1'].includes(url.hostname)) externalRequests.push(requestEvent.url());
   });
   await signIn(page, request);
+  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, { eventDate: melbourneDateKey(new Date()) });
+  expect(eventDate.status()).toBe(200);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Plan rounds');
   await page.getByRole('button', { name: 'Generate draft' }).click();

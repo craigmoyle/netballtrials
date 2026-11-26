@@ -65,6 +65,9 @@ export function TestEmailOutboxPanel({ client }: { client: Client }) {
                 <details>
                   <summary>{message.subject} — {message.to} — {new Date(message.createdAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', timeZoneName: 'short' })}</summary>
                   <pre>{message.body}</pre>
+                  {message.htmlPresent ? <p>Includes an HTML body.</p> : null}
+                  {message.attachmentMetadata?.length ? <div><p>Attachments that would be sent:</p><ul>{message.attachmentMetadata.map((attachment) => <li key={attachment.filename}>{attachment.filename} — {attachment.contentType} — {attachment.sizeBytes.toLocaleString()} bytes</li>)}</ul></div> : null}
+                  {message.inlineImageMetadata?.length ? <p>Includes {message.inlineImageMetadata.length} inline image{message.inlineImageMetadata.length === 1 ? '' : 's'}.</p> : null}
                   {links.length > 0 ? <ul aria-label="Links in simulated email">{links.map((url) => <li key={url}><button type="button" className="button-secondary" onClick={() => void copyLink(url)}>Copy test email link</button></li>)}</ul> : null}
                 </details>
               </li>

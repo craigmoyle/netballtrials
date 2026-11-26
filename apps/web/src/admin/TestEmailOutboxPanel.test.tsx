@@ -12,6 +12,8 @@ describe('TestEmailOutboxPanel', () => {
       listTestEmailOutbox: vi.fn().mockResolvedValue([{
         id: 'mail-1', to: 'nicole@example.test', subject: 'Your Admin sign-in link',
         body: `Sign in: ${window.location.origin}/admin/verify#token=short-lived\nIgnore https://attacker.example/`,
+        htmlPresent: true, attachmentMetadata: [{ filename: 'policy.pdf', contentType: 'application/pdf', sizeBytes: 42 }],
+        inlineImageMetadata: [{ filename: 'logo.png', contentType: 'image/png', cid: 'club-logo', sizeBytes: 12 }],
         createdAt: '2026-11-04T00:00:00.000Z', expiresAt: '2026-11-05T00:00:00.000Z',
       }]),
       clearTestEmailOutbox: vi.fn().mockResolvedValue(undefined),
@@ -22,6 +24,8 @@ describe('TestEmailOutboxPanel', () => {
     expect(await screen.findByText(/Your Admin sign-in link — nicole@example.test/)).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'https://attacker.example/' })).not.toBeInTheDocument();
+    expect(screen.getByText(/policy.pdf — application\/pdf — 42 bytes/)).toBeInTheDocument();
+    expect(screen.getByText('Includes an HTML body.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy test email link' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/admin/verify#token=short-lived`));
