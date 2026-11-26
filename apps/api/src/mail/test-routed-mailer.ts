@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import type { EmailMessage, EmailProvider } from './provider';
 
 const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
@@ -22,6 +22,17 @@ export function createTestRoutedMailer(
           subject: message.subject,
           body: message.text,
           html: message.html ?? null,
+          attachmentMetadata: message.attachments?.map((attachment) => ({
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            sizeBytes: Buffer.byteLength(attachment.content),
+          })) ?? Prisma.DbNull,
+          inlineImageMetadata: message.inlineImages?.map((image) => ({
+            filename: image.filename,
+            contentType: image.contentType,
+            cid: image.cid,
+            sizeBytes: Buffer.byteLength(image.content),
+          })) ?? Prisma.DbNull,
           createdAt: now,
           expiresAt: new Date(now.getTime() + OUTBOX_TTL_MS),
         },

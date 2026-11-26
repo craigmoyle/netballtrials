@@ -546,9 +546,11 @@ export async function confirmParentEmailChange(
     for (const eventId of [...new Set(registrations.map((registration) => registration.eventId))].sort()) {
       if (!await lockMailEvent(tx, eventId)) throw new ParentAccessError('not_found');
     }
+    const eventIds = [...new Set(registrations.map((registration) => registration.eventId))];
     const inFlightDelivery = await tx.emailLog.findFirst({
       where: {
-        registrationId: { in: registrationIds },
+        eventId: { in: eventIds },
+        to: { equals: current, mode: 'insensitive' },
         OR: [{ status: 'SENDING' }, { status: 'AMBIGUOUS', error: INTERRUPTED_SEND }],
       },
       select: { id: true },
@@ -565,9 +567,31 @@ export async function confirmParentEmailChange(
     });
     if (updated.count === 0) throw new ParentAccessError('not_found');
     const changedRegistrations = await tx.registration.findMany({
-      where: { id: { in: registrationIds }, parentEmail: newEmail, parentEmailVerifiedAt: now, anonymizedAt: null },
+      where: { id: { in: registrationIds }, parentEmail: newEmail, anonymizedAt: null },
       select: { id: true },
     });
+    await tx.parentAccessToken.deleteMany({
+      where: {
+        email: { equals: current, mode: 'insensitive' },
+        purpose: { not: 'EMAIL_CHANGE' },
+        OR: [{ registrationId: { in: registrationIds } }, { registrationId: null }],
+      },
+    });
+    const retryableCustomerMail = await tx.emailLog.findMany({
+      where: {
+        registrationId: { in: registrationIds },
+        kind: { in: ['checkout', 'confirmation'] },
+        status: { in: ['PENDING', 'FAILED'] },
+        to: { equals: current, mode: 'insensitive' },
+      },
+      select: { id: true, batchId: true },
+    });
+    for (const delivery of retryableCustomerMail) {
+      await tx.emailLog.update({
+        where: { id: delivery.id },
+        data: { to: newEmail, idempotencyKey: deliveryIdempotencyKey(delivery.batchId, newEmail) },
+      });
+    }
     await tx.registrationChangeLog.createMany({
       data: changedRegistrations.map((registration) => ({
         registrationId: registration.id,
@@ -582,6 +606,7 @@ export async function confirmParentEmailChange(
       data: [{
         eventId: registrations[0].eventId,
         registrationId: registrations[0].id,
+        registrationIds: registrationIds as Prisma.InputJsonArray,
         batchId,
         idempotencyKey: deliveryIdempotencyKey(batchId, current),
         to: current,

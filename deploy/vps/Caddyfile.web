@@ -2,7 +2,7 @@
 {
 	auto_https off
 	servers {
-		trusted_proxies static 172.30.50.0/24
+		trusted_proxies static 172.30.50.2
 	}
 }
 
@@ -21,6 +21,12 @@ http://:8080 {
 	}
 
 	route {
+		@webHealth path /web-health
+		handle @webHealth {
+			header >Cache-Control "no-store, max-age=0"
+			respond "ok" 200
+		}
+
 		@api path /api/* /health
 		handle @api {
 			header >Cache-Control "no-store, max-age=0"

@@ -47,7 +47,7 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
           <div className="table-scroll" role="region" aria-label="Player trial history" tabIndex={0}>
             <table className="player-history-table">
               <caption>Trial records for {history[0]?.playerName}</caption>
-              <thead><tr><th scope="col">Event</th><th scope="col">Association</th><th scope="col">Position choices</th><th scope="col">Attendance</th><th scope="col">Games</th><th scope="col">Courts seen</th><th scope="col">Positions played</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th></tr></thead>
+              <thead><tr><th scope="col">Event</th><th scope="col">Association</th><th scope="col">Position choices</th><th scope="col">Attendance</th><th scope="col">Games</th><th scope="col">Courts seen</th><th scope="col">Positions played</th><th scope="col">Appearances</th><th scope="col">Unique opponents</th><th scope="col">Repeat meetings</th></tr></thead>
               <tbody>{history.map((entry) => {
                 const eventContext = [entry.division, entry.section].filter(Boolean).join(' ');
                 const eventLabel = eventContext && entry.eventName.toLocaleLowerCase().includes(eventContext.toLocaleLowerCase())
@@ -55,13 +55,14 @@ export function PlayerHistoryPage({ client }: { client: Client }) {
                   : [eventContext, entry.eventName].filter(Boolean).join(' — ');
                 return (
                   <tr key={entry.registrationId}>
-                    <th scope="row">{entry.eventDate} · {eventLabel}<br />Number {entry.number ?? 'Not assigned'}{entry.ageFlagged ? ' · review flagged' : ''}</th>
+                    <th scope="row">{entry.eventDate} · {eventLabel}<br />Season {entry.competitionYear} · Number {entry.number ?? 'Not assigned'}{entry.ageFlagged ? ' · review flagged' : ''}</th>
                     <td>{entry.association || '—'}</td>
                     <td>{[entry.rank1Position, entry.rank2Position, entry.rank3Position].filter(Boolean).join(', ')}</td>
                     <td>{entry.checkedIn ? 'Checked in' : entry.registrationStatus === 'PAID' ? 'No-show' : entry.registrationStatus}</td>
                     <td>{entry.games}</td>
                     <td>{entry.courtsSeen.length ? entry.courtsSeen.join(', ') : '—'}</td>
                     <td>{Object.entries(entry.positionsPlayed).map(([position, count]) => `${position}: ${count}`).join(', ') || '—'}</td>
+                    <td>{entry.appearances.length ? <ul>{entry.appearances.map((appearance) => <li key={`${appearance.round}-${appearance.court}-${appearance.team}-${appearance.position}`}>Round {appearance.round} · Court {appearance.court} · Team {appearance.team === 0 ? 'A' : 'B'} · {appearance.position}</li>)}</ul> : '—'}</td>
                     <td>{entry.uniqueOpponents}</td>
                     <td>{entry.repeatOpponentMeetings}</td>
                   </tr>

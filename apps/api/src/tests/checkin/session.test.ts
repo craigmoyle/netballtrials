@@ -53,22 +53,32 @@ describe('check-in session', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('keeps Admin check-in sessions usable on the following Melbourne date', async () => {
+  it('requires the Melbourne event date to open an Admin check-in session', async () => {
     const adminCookie = await signInAsNewAdmin(app, 'checkin-admin@example.com');
-    const followingDate = '2026-09-12T14:00:00.000Z';
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`,
+      cookies: { nt_session: adminCookie }, headers: { 'x-test-now': '2026-09-12T14:00:00.000Z' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.cookies.find((entry) => entry.name === 'nt_checkin')).toBeUndefined();
+  });
+
+  it('stops accepting an Admin check-in session after the Melbourne event date', async () => {
+    const adminCookie = await signInAsNewAdmin(app, 'checkin-admin@example.com');
     const opened = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`,
-      cookies: { nt_session: adminCookie }, headers: { 'x-test-now': followingDate },
+      cookies: { nt_session: adminCookie }, headers: nowHeader,
     });
     const cookie = opened.cookies.find((entry) => entry.name === 'nt_checkin')!;
 
     const response = await app.inject({
       method: 'GET', url: '/api/check-in/session', cookies: { nt_checkin: cookie.value },
-      headers: { 'x-test-now': followingDate },
+      headers: { 'x-test-now': '2026-09-12T14:00:00.000Z' },
     });
 
     expect(opened.statusCode).toBe(200);
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(401);
   });
 
   it('rejects a wrong pin', async () => {
@@ -112,14 +122,14 @@ describe('check-in session', () => {
     method: 'POST', url: '/api/check-in/session', payload: { eventId, pin }, headers: nowHeader, remoteAddress,
   });
 
-  it('locks the event after 30 wrong pins from many different clients', async () => {
+  it('opens with the correct PIN after 30 wrong pins from other clients', async () => {
     for (let i = 0; i < 30; i++) {
       const res = await attempt('000000', `198.51.100.${i + 1}`);
       expect(res.statusCode).toBe(401);
     }
-    const locked = await attempt('482193', '203.0.113.7');
-    expect(locked.statusCode).toBe(429);
-    expect(locked.json().error).toBe('pin_locked');
+    const opened = await attempt('482193', '203.0.113.7');
+    expect(opened.statusCode).toBe(200);
+    expect((await attempt('000000', '203.0.113.8')).statusCode).toBe(401);
   });
 
   it('does not count correct pins against the event-wide failure cap', async () => {
@@ -139,7 +149,7 @@ describe('check-in session', () => {
 
   it('clears an event-wide lockout when the pin is rotated', async () => {
     for (let i = 0; i < 30; i++) await attempt('000000', `198.51.100.${i + 1}`);
-    expect((await attempt('482193', '203.0.113.7')).statusCode).toBe(429);
+    expect((await attempt('000000', '203.0.113.7')).statusCode).toBe(429);
     const previous = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
     await setCheckInPin(prisma, eventId, '739104', new Date(BEFORE));
     expect((await attempt('739104', '203.0.113.8')).statusCode).toBe(200);

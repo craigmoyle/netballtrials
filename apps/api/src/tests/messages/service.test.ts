@@ -35,7 +35,7 @@ describe('sendEventMessage delivery batches', () => {
       { prisma, mailer }, event.id, { subject: 'Venue change', text: 'New court' }, new Date(),
       { batchId: 'batch-one', senderUserId: admin.id },
     );
-    expect(sent).toMatchObject({ sent: 2, failed: 0, ambiguous: 0, batchId: 'batch-one' });
+    expect(sent).toMatchObject({ sent: 0, simulated: 2, failed: 0, ambiguous: 0, batchId: 'batch-one' });
     const replay = await sendEventMessage(
       { prisma, mailer }, event.id, { subject: 'Venue change', text: 'New court' }, new Date(),
       { batchId: 'batch-one', senderUserId: admin.id },
@@ -45,7 +45,7 @@ describe('sendEventMessage delivery batches', () => {
     const rows = await prisma.emailLog.findMany({ where: { eventId: event.id }, orderBy: { to: 'asc' } });
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.status)).toEqual(['SENT', 'SENT']);
-    expect(rows.every((row) => row.senderUserId === admin.id && row.batchId === 'batch-one' && row.sentAt !== null)).toBe(true);
+    expect(rows.every((row) => row.senderUserId === admin.id && row.batchId === 'batch-one' && row.simulated && row.sentAt === null)).toBe(true);
     expect(new Set(rows.map((row) => row.idempotencyKey)).size).toBe(2);
   });
 
@@ -105,6 +105,24 @@ describe('sendEventMessage delivery batches', () => {
     expect(retryMailer.send).not.toHaveBeenCalled();
     expect(retry.sentThisRun).toBe(0);
     expect((await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe('FAILED');
+  });
+
+  it('does not retry a selected message for an unselected sibling at the same address', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const selected = await paid(event.id, 'family@example.com', 'Selected');
+    const unselected = await paid(event.id, 'family@example.com', 'Unselected');
+    await prisma.registration.update({ where: { id: selected.id }, data: { status: 'WITHDRAWN' } });
+    const send = vi.fn();
+    const delivery = await prisma.emailLog.create({ data: {
+      eventId: event.id, registrationId: selected.id, registrationIds: [selected.id], batchId: 'selected-only', idempotencyKey: 'selected-only-family',
+      to: 'family@example.com', subject: 'Selected player', body: 'Selected only', kind: 'message', status: 'FAILED', attempts: 1,
+    } });
+
+    const retried = await retryFailedDeliveries({ prisma, mailer: { send } }, event.id, delivery.batchId, [delivery.id], new Date());
+
+    expect(send).not.toHaveBeenCalled();
+    expect(retried.sentThisRun).toBe(0);
+    expect(unselected.status).toBe('PAID');
   });
 
   it('still retries a paid household when the batch representative withdraws but a sibling remains paid', async () => {

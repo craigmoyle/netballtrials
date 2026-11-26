@@ -7,7 +7,7 @@ import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { getEventCourtColors } from '../colors/service';
 import { getGameRoster, saveManualRoundRevision, saveManualSuffixRevision } from './games';
-import { generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
+import { completeRound, generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
 import { renderBlankGameSheet } from './blank-sheet';
 import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
@@ -190,6 +190,18 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     const roster = await getGameRoster(deps.prisma, id);
     if (!roster) return reply.code(404).send({ error: 'not_found' });
     return roster;
+  });
+
+  app.post('/api/admin/events/:id/plan/rounds/:round/complete', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = z.object({ sourcePlanId: z.string().min(1) }).strict().safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const { id, round } = req.params as { id: string; round: string };
+    const result = await completeRound(deps.prisma, id, parsed.data.sourcePlanId, Number(round), new Date());
+    if (!result.ok) {
+      return reply.code(result.reason === 'stale_plan' ? 409 : 422).send({ error: result.reason, message: result.message });
+    }
+    const loaded = await loadPlan(deps, id, result.plan.id);
+    return reply.code(200).send(serializePlan(loaded!));
   });
 
   app.post('/api/admin/events/:id/plan/rounds/:round/manual', { preHandler: requireAdmin(deps) }, async (req, reply) => {

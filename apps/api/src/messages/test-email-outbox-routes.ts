@@ -12,8 +12,9 @@ export function registerTestEmailOutboxRoutes(app: FastifyInstance, deps: AppDep
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 100,
     });
-    return messages.map(({ id, to, subject, body, createdAt, expiresAt }) => ({
-      id, to, subject, body, createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString(),
+    return messages.map(({ id, to, subject, body, html, attachmentMetadata, inlineImageMetadata, createdAt, expiresAt }) => ({
+      id, to, subject, body, htmlPresent: html !== null, attachmentMetadata, inlineImageMetadata,
+      createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString(),
     }));
   });
 

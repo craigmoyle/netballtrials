@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createApp } from '../../app';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
@@ -22,6 +22,24 @@ describe('auth routes', () => {
     expect(known.statusCode).toBe(202);
     expect(unknown.statusCode).toBe(202);
     expect(outbox.sent.map((message) => message.to)).toEqual(['craig@example.com']);
+  });
+
+  it('does not wait for mailbox delivery to answer request-link', async () => {
+    let release!: () => void;
+    const delivery = new Promise<void>((resolve) => { release = resolve; });
+    const send = vi.spyOn(outbox, 'send').mockReturnValue(delivery);
+    try {
+      const response = await Promise.race([
+        app.inject({ method: 'POST', url: '/api/auth/request-link', payload: { email: 'craig@example.com' } }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('request-link waited for mail')), 500)),
+      ]);
+
+      expect(response.statusCode).toBe(202);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    } finally {
+      release();
+      vi.restoreAllMocks();
+    }
   });
   it('sends at most three links per email per link lifetime but still answers 202', async () => {
     const statuses: number[] = [];

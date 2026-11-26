@@ -124,6 +124,7 @@ function makeClient(overrides: Record<string, unknown> = {}) {
     getPlanRevision: vi.fn().mockResolvedValue(makePlan({ id: 'plan-0', revision: 1, sourcePlanId: null })),
     getCourtColors: vi.fn().mockResolvedValue(colors),
     saveManualRound: vi.fn().mockResolvedValue({ ok: true, plan }),
+    completePlanRound: vi.fn().mockResolvedValue({ ok: true, plan: makePlan({ id: 'completed-plan', revision: 3, sourcePlanId: plan.id, frozenThroughRound: 1 }) }),
     regeneratePlan: vi.fn().mockResolvedValue({ ok: true, plan: makePlan({ id: 'draft-3', status: 'DRAFT', revision: 3, sourcePlanId: plan.id }) }),
     saveManualSuffix: vi.fn().mockResolvedValue({ ok: true, plan }),
     ...overrides,
@@ -343,6 +344,21 @@ describe('FullGameListPage', () => {
     expect(within(table).getByText('Player 15')).toBeInTheDocument();
     expect(within(table).getByText('Number 15')).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: /Round 1 by position/ })).not.toBeInTheDocument();
+  });
+
+  it('completes and freezes the next round through the active plan', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const completed = makePlan({ id: 'completed-plan', revision: 3, sourcePlanId: plan.id, frozenThroughRound: 1 });
+    const completePlanRound = vi.fn().mockResolvedValue({ ok: true, plan: completed });
+    renderPage(makeClient({ completePlanRound }));
+    await screen.findByText('Active revision 2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Complete round 1' }));
+
+    expect(await screen.findByText('Active revision 3')).toBeInTheDocument();
+    expect(screen.getByText('Round 1 is complete and frozen.')).toBeInTheDocument();
+    expect(completePlanRound).toHaveBeenCalledWith('event-1', 1, 'plan-1');
+    expect(screen.getByRole('button', { name: 'Complete round 2' })).toBeInTheDocument();
   });
 
   it('does not offer edits for rounds in the frozen prefix', async () => {

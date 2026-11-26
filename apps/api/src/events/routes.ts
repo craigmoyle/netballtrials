@@ -140,6 +140,7 @@ export function registerEventRoutes(app: FastifyInstance, deps: AppDeps): void {
     const result = await deleteEvent(deps.prisma, id);
     if (result === 'not_found') return reply.code(404).send({ error: 'not_found' });
     if (result === 'has_registrations') return reply.code(409).send({ error: 'event_has_registrations' });
+    if (result === 'has_communications') return reply.code(409).send({ error: 'event_has_communications' });
     return reply.code(204).send();
   });
 }

@@ -5,7 +5,7 @@ import type { PlannerGapDTO, RoundPlanDTO } from '@netball-trials/types';
 import { PlannerPage } from './PlannerPage';
 import { ApiError } from '../api/client';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const event = {
   id: 'e1', name: 'Trials', competitionYear: 2027, division: '15/U', section: 'Ladies',
@@ -85,6 +85,38 @@ describe('PlannerPage', () => {
     expect(screen.getByText('Published revision 2 · 2 rounds')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /regenerate suffix/i })).toBeInTheDocument();
     expect(client.publishPlan).toHaveBeenCalledWith('e1', 'plan-1');
+  });
+
+  it('completes the next round against the active published revision', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const published = plan('PUBLISHED');
+    const completed = { ...published, id: 'plan-2', revision: 3, sourcePlanId: published.id, frozenThroughRound: 1 };
+    const completePlanRound = vi.fn().mockResolvedValue({ ok: true, plan: completed });
+    renderPlanner({
+      getEvent: vi.fn().mockResolvedValue(event), getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValue(published), completePlanRound,
+    });
+    await screen.findByText('Published revision 2 · 2 rounds');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Complete round 1' }));
+
+    expect(await screen.findByText('Published revision 3 · 2 rounds')).toBeInTheDocument();
+    expect(completePlanRound).toHaveBeenCalledWith('e1', 1, 'plan-1');
+    expect(screen.getByRole('button', { name: 'Complete round 2' })).toBeInTheDocument();
+  });
+
+  it('does not complete a round when the Admin cancels the confirmation', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false));
+    const completePlanRound = vi.fn();
+    renderPlanner({
+      getEvent: vi.fn().mockResolvedValue(event), getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValue(plan('PUBLISHED')), completePlanRound,
+    });
+    await screen.findByRole('button', { name: 'Complete round 1' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Complete round 1' }));
+
+    expect(completePlanRound).not.toHaveBeenCalled();
   });
 
   it.each(['publish', 'regenerate'])('does not silently %s a newer revision created by another Admin', async (action) => {

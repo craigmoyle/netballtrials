@@ -9,6 +9,9 @@ import { clockMinutes } from '../time/melbourne';
 type Database = PrismaClient | Prisma.TransactionClient;
 type BuiltInput = { event: Prisma.EventGetPayload<{}>; input: PlannerInput };
 export type GenerateResult = { ok: true; plan: RoundPlan } | { ok: false; gaps: PlannerGap[] };
+export type CompleteRoundResult =
+  | { ok: true; plan: RoundPlan }
+  | { ok: false; reason: 'stale_plan' | 'invalid_round'; message: string };
 
 function eventWindowMinutes(event: { gameStartTime: string; endTime: string }): number {
   return Math.max(1, clockMinutes(event.endTime) - clockMinutes(event.gameStartTime));
@@ -285,6 +288,62 @@ export async function generateDraftPlan(
     return saveDraftRevision(tx, built, result.plan, seed, { sourcePlanId: source?.id, players, inactiveRegistrationIds });
   });
   return plan ? { ok: true, plan } : { ok: false, gaps: [stalePlanGap()] };
+}
+
+export async function completeRound(
+  prisma: PrismaClient,
+  eventId: string,
+  sourcePlanId: string,
+  round: number,
+  now = new Date(),
+): Promise<CompleteRoundResult> {
+  return prisma.$transaction(async (tx): Promise<CompleteRoundResult> => {
+    if (!(await lockEvent(tx, eventId))) return { ok: false, reason: 'stale_plan', message: 'The active plan changed. Reload and try again.' };
+    const event = await tx.event.findUnique({ where: { id: eventId } });
+    const source = await tx.roundPlan.findFirst({
+      where: { id: sourcePlanId, eventId, status: 'PUBLISHED' },
+      include: { slots: true, players: true },
+    });
+    if (!event || !source || event.publishedPlanId !== source.id || !settingsMatch(source, event)) {
+      return { ok: false, reason: 'stale_plan', message: 'The active plan changed. Reload and try again.' };
+    }
+    const nextRound = source.frozenThroughRound + 1;
+    if (!Number.isInteger(round) || round !== nextRound || round > source.rounds) {
+      return { ok: false, reason: 'invalid_round', message: `Only round ${nextRound} can be completed next.` };
+    }
+    const created = await tx.roundPlan.create({
+      data: {
+        eventId,
+        revision: await nextRevision(tx, eventId),
+        sourcePlanId: source.id,
+        frozenThroughRound: round,
+        validationWarnings: source.validationWarnings as Prisma.InputJsonValue,
+        seed: source.seed,
+        status: 'PUBLISHED',
+        rounds: source.rounds,
+        courts: source.courts,
+        playMinutes: source.playMinutes,
+        changeoverMinutes: source.changeoverMinutes,
+        windowMinutes: source.windowMinutes,
+        rank1Min: source.rank1Min,
+        rank2Min: source.rank2Min,
+        rank3Min: source.rank3Min,
+        eventName: source.eventName,
+        eventDate: source.eventDate,
+        venue: source.venue,
+        gameStartTime: source.gameStartTime,
+        publishedAt: now,
+      },
+    });
+    await tx.roundPlanPlayer.createMany({
+      data: source.players.map(({ planId: _planId, ...player }) => ({ ...player, planId: created.id })),
+    });
+    await tx.roundSlot.createMany({
+      data: source.slots.map(({ id: _id, planId: _planId, ...slot }) => ({ ...slot, planId: created.id })),
+    });
+    await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: created.id } });
+    return { ok: true, plan: created };
+  });
 }
 
 export async function publishPlan(

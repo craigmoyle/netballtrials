@@ -110,7 +110,9 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
       const batchId = sendBatchId ?? crypto.randomUUID();
       setSendBatchId(batchId);
       const result = await client.sendSiteAssociationCommunication({
-        eventIds: selectedEventIds, associationIds: selectedAssociationIds, subject, text, batchId,
+        eventIds: selectedEventIds, associationIds: selectedAssociationIds,
+        previewedRecipients: preview.recipients.map(({ id, email }) => ({ id, email })),
+        subject, text, batchId,
       });
       const sent = result.deliveries.filter((delivery) => delivery.status === 'SENT' && !delivery.simulated).length;
       const simulated = result.deliveries.filter((delivery) => delivery.simulated).length;
@@ -132,7 +134,11 @@ export function SiteCommunicationsPage({ client }: { client: Client }) {
     setError(null);
     setNotice(null);
     try {
-      const input = { eventIds: selectedEventIds, associationIds: selectedAssociationIds, subject, text, scheduledLocal: scheduleAt };
+      const input = {
+        eventIds: selectedEventIds, associationIds: selectedAssociationIds,
+        previewedRecipients: preview.recipients.map(({ id, email }) => ({ id, email })),
+        subject, text, scheduledLocal: scheduleAt,
+      };
       if (editingCampaign) {
         await client.updateSiteAssociationCommunication(editingCampaign.id, { ...input, expectedUpdatedAt: editingCampaign.updatedAt });
         setNotice('Scheduled association message updated.');

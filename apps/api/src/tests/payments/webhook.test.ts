@@ -74,7 +74,7 @@ describe('stripe webhook', () => {
       payload: { deliveryIds: [pending.id] },
     });
     expect(retried.statusCode).toBe(200);
-    expect(retried.json()).toMatchObject({ sent: 1, failed: 0 });
+    expect(retried.json()).toMatchObject({ sent: 0, simulated: 1, failed: 0 });
     const after = await prisma.emailLog.findUniqueOrThrow({ where: { id: pending.id } });
     expect(after.status).toBe('SENT');
     expect((after.messagePayload as any).inlineImages[0].cid).toBe('ticket-qr');

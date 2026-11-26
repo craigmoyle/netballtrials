@@ -32,7 +32,7 @@ describe('Admin player history', () => {
       playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace', status: 'PAID',
     }) });
     const plan = await prisma.roundPlan.create({ data: {
-      eventId: earlier.id, revision: 1, seed: 1, status: 'PUBLISHED', rounds: 1, courts: 1,
+      eventId: earlier.id, revision: 1, seed: 1, status: 'PUBLISHED', rounds: 2, courts: 2,
       playMinutes: 8, changeoverMinutes: 2, windowMinutes: 10, rank1Min: 1, rank2Min: 0, rank3Min: 0,
       eventName: earlier.name, eventDate: earlier.eventDate, venue: earlier.venue, gameStartTime: earlier.gameStartTime,
     } });
@@ -40,6 +40,7 @@ describe('Admin player history', () => {
     await prisma.roundSlot.createMany({ data: [
       { planId: plan.id, round: 1, court: 2, position: 'GS', team: 0, registrationId: oldRegistration.id },
       { planId: plan.id, round: 1, court: 2, position: 'GA', team: 1, registrationId: 'opponent-1' },
+      { planId: plan.id, round: 2, court: 1, position: 'GA', team: 1, registrationId: oldRegistration.id },
     ] });
 
     const result = await app.inject({
@@ -51,7 +52,11 @@ describe('Admin player history', () => {
     expect(result.json().truncated).toBe(false);
     expect(result.json().entries[0]).toMatchObject({
       playerName: 'Ada Lovelace', eventName: '15/U Trial', competitionYear: 2027,
-      number: 8, games: 1, courtsSeen: [2], positionsPlayed: { GS: 1 }, uniqueOpponents: 1,
+      number: 8, games: 2, courtsSeen: [1, 2], positionsPlayed: { GS: 1, GA: 1 }, uniqueOpponents: 1,
+      appearances: [
+        { round: 1, court: 2, team: 0, position: 'GS' },
+        { round: 2, court: 1, team: 1, position: 'GA' },
+      ],
       registrationStatus: 'PAID', checkedIn: true,
     });
     expect(result.json().entries[1]).toMatchObject({ eventName: '17/U Trial', games: 0, number: null, checkedIn: false });

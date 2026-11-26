@@ -15,7 +15,10 @@ export type SiteAssociationCommunicationInput = {
   scheduledAt?: Date;
   senderUserId?: string;
   batchId?: string;
+  previewedRecipients?: Array<{ id: string; email: string }>;
 };
+
+export class SiteRecipientsChangedError extends Error {}
 
 type SiteEvent = {
   id: string;
@@ -69,8 +72,10 @@ function eventTemplateFields(events: SiteEvent[]): Record<string, string> {
   };
 }
 
+type SiteDatabase = PrismaClient | Prisma.TransactionClient;
+
 async function getSiteContext(
-  prisma: PrismaClient,
+  prisma: SiteDatabase,
   eventIds: string[],
   associationIds: string[],
   now: Date,
@@ -85,14 +90,20 @@ async function getSiteContext(
   });
   if (events.length !== uniqueEventIds.length || events.some((event) => isPastRetentionCutoff(event.eventDate, now))) return null;
   const orderedEvents = uniqueEventIds.map((id) => events.find((event) => event.id === id)!).filter(Boolean);
-  const anchor = [...events].sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime() || a.id.localeCompare(b.id))[0];
+  const anchor = [...events].sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime() || a.id.localeCompare(b.id))[0];
   const associations = await prisma.memberAssociation.findMany({
     where: { id: { in: uniqueAssociationIds }, active: true, primaryContactEmail: { not: null } },
     select: { id: true, name: true, primaryContactName: true, primaryContactEmail: true },
     orderBy: { name: 'asc' },
   });
-  if (associations.length !== uniqueAssociationIds.length || !uniqueAssociationEmails(associations).length) return null;
+  if (!uniqueAssociationEmails(associations).length) return null;
   return { events: orderedEvents, anchorEventId: anchor.id, associations };
+}
+
+async function lockSiteEvents(prisma: Prisma.TransactionClient, eventIds: string[]): Promise<void> {
+  for (const eventId of [...eventIds].sort()) {
+    await prisma.$queryRaw(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
+  }
 }
 
 function uniqueAssociationEmails(associations: SiteAssociation[]): SiteAssociation[] {
@@ -145,38 +156,51 @@ export async function createSiteAssociationCommunication(
   const associationIds = selectedIds(input.associationIds);
   if (!eventIds.length || !associationIds.length) return null;
 
-  const context = await getSiteContext(prisma, eventIds, associationIds, now);
-  if (!context) return null;
   const batchId = `site-associations:${input.batchId ?? randomUUID()}`;
-  const existing = await prisma.siteAssociationCommunication.findUnique({ where: { batchId } });
-  if (existing) {
-    if (!matchesCampaignInput(existing, eventIds, associationIds, input)) throw new EmailBatchConflictError();
-    return listSiteAssociationCommunications(prisma).then((rows) => rows.find((item) => item.id === existing.id) ?? null);
-  }
-  const status = input.scheduledAt ? 'SCHEDULED' : 'SENDING';
-  const row = await prisma.siteAssociationCommunication.create({
-    data: {
-      anchorEventId: context.anchorEventId,
-      eventIds: eventIds as Prisma.InputJsonArray,
-      recipientIds: associationIds as Prisma.InputJsonArray,
-      senderUserId: input.senderUserId ?? null,
-      batchId,
-      subject: input.subject,
-      body: input.text,
-      scheduledAt: input.scheduledAt ?? null,
-      status,
-      attempts: input.scheduledAt ? 0 : 1,
-      lastAttemptAt: input.scheduledAt ? null : now,
-    },
-  }).catch(async (error: unknown) => {
+  type Creation = { row: Prisma.SiteAssociationCommunicationGetPayload<{}> | null; existingId?: string; events: SiteEvent[] };
+  let creation: Creation | null;
+  try {
+    creation = await prisma.$transaction(async (tx): Promise<Creation | null> => {
+      await lockSiteEvents(tx, eventIds);
+      const context = await getSiteContext(tx, eventIds, associationIds, now);
+      if (!context) return null;
+      const existing = await tx.siteAssociationCommunication.findUnique({ where: { batchId } });
+      if (existing) {
+        if (!matchesCampaignInput(existing, eventIds, associationIds, input)) throw new EmailBatchConflictError();
+        return { row: null, existingId: existing.id, events: context.events };
+      }
+      const status = input.scheduledAt ? 'SCHEDULED' : 'SENDING';
+      const row = await tx.siteAssociationCommunication.create({
+        data: {
+          anchorEventId: context.anchorEventId,
+          eventIds: eventIds as Prisma.InputJsonArray,
+          recipientIds: associationIds as Prisma.InputJsonArray,
+          senderUserId: input.senderUserId ?? null,
+          batchId,
+          subject: input.subject,
+          body: input.text,
+          scheduledAt: input.scheduledAt ?? null,
+          status,
+          attempts: input.scheduledAt ? 0 : 1,
+          lastAttemptAt: input.scheduledAt ? null : now,
+        },
+      });
+      return { row, events: context.events };
+    });
+  } catch (error) {
+    if (error instanceof EmailBatchConflictError) throw error;
     const duplicate = await prisma.siteAssociationCommunication.findUnique({ where: { batchId } });
     if (!duplicate) throw error;
     if (!matchesCampaignInput(duplicate, eventIds, associationIds, input)) throw new EmailBatchConflictError();
-    return null;
-  });
-  if (!row) return listSiteAssociationCommunications(prisma).then((rows) => rows.find((item) => item.batchId === batchId) ?? null);
-  if (input.scheduledAt) return toCampaignDTO(row, [], context.events);
-  return dispatchSiteAssociationCommunication(prisma, { mailer }, row.id, now);
+    return listSiteAssociationCommunications(prisma).then((rows) => rows.find((item) => item.id === duplicate.id) ?? null);
+  }
+  if (!creation) return null;
+  if (creation.existingId) {
+    return listSiteAssociationCommunications(prisma).then((rows) => rows.find((item) => item.id === creation.existingId) ?? null);
+  }
+  if (!creation.row) return null;
+  if (input.scheduledAt) return toCampaignDTO(creation.row, [], creation.events);
+  return dispatchSiteAssociationCommunication(prisma, { mailer }, creation.row.id, now, input.previewedRecipients);
 }
 
 export async function updateSiteAssociationCommunication(
@@ -187,21 +211,24 @@ export async function updateSiteAssociationCommunication(
 ): Promise<SiteAssociationCampaignDTO | null> {
   const eventIds = selectedIds(input.eventIds);
   const associationIds = selectedIds(input.associationIds);
-  const context = await getSiteContext(prisma, eventIds, associationIds, now);
-  if (!context) return null;
-  const updated = await prisma.siteAssociationCommunication.updateMany({
-    where: { id, status: 'SCHEDULED', updatedAt: new Date(input.expectedUpdatedAt) },
-    data: {
-      anchorEventId: context.anchorEventId,
-      eventIds: eventIds as Prisma.InputJsonArray,
-      recipientIds: associationIds as Prisma.InputJsonArray,
-      subject: input.subject,
-      body: input.text,
-      scheduledAt: input.scheduledAt,
-      error: null,
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    await lockSiteEvents(tx, eventIds);
+    const context = await getSiteContext(tx, eventIds, associationIds, now);
+    if (!context) return 0;
+    return tx.siteAssociationCommunication.updateMany({
+      where: { id, status: 'SCHEDULED', updatedAt: new Date(input.expectedUpdatedAt) },
+      data: {
+        anchorEventId: context.anchorEventId,
+        eventIds: eventIds as Prisma.InputJsonArray,
+        recipientIds: associationIds as Prisma.InputJsonArray,
+        subject: input.subject,
+        body: input.text,
+        scheduledAt: input.scheduledAt,
+        error: null,
+      },
+    }).then((result) => result.count);
   });
-  if (updated.count !== 1) return null;
+  if (updated !== 1) return null;
   return listSiteAssociationCommunications(prisma).then((rows) => rows.find((row) => row.id === id) ?? null);
 }
 
@@ -209,6 +236,7 @@ async function createSiteDeliveryRows(
   prisma: PrismaClient,
   campaignId: string,
   now: Date,
+  previewedRecipients?: Array<{ id: string; email: string }>,
 ): Promise<{ anchorEventId: string; rows: Prisma.EmailLogGetPayload<{}>[] } | null> {
   return prisma.$transaction(async (tx) => {
     const campaign = await tx.siteAssociationCommunication.findUnique({ where: { id: campaignId } });
@@ -231,9 +259,13 @@ async function createSiteDeliveryRows(
       select: { id: true, name: true, primaryContactName: true, primaryContactEmail: true },
       orderBy: { name: 'asc' },
     });
-    if (associations.length !== associationIds.length) return null;
     const targets = uniqueAssociationEmails(associations);
     if (!targets.length) return null;
+    if (previewedRecipients) {
+      const expected = previewedRecipients.map((recipient) => `${recipient.id}\0${recipient.email.trim().toLowerCase()}`).sort();
+      const actual = targets.map((association) => `${association.id}\0${association.primaryContactEmail!.trim().toLowerCase()}`).sort();
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new SiteRecipientsChangedError();
+    }
     const fieldsForEvents = eventTemplateFields(orderedEvents);
     const existing = await tx.emailLog.findMany({ where: { batchId: campaign.batchId }, orderBy: { to: 'asc' } });
     const messages = targets.map((association) => {
@@ -322,10 +354,22 @@ export async function dispatchSiteAssociationCommunication(
   deps: { mailer: EmailProvider },
   campaignId: string,
   now: Date,
+  previewedRecipients?: Array<{ id: string; email: string }>,
 ): Promise<SiteAssociationCampaignDTO | null> {
   const campaign = await prisma.siteAssociationCommunication.findUnique({ where: { id: campaignId } });
   if (!campaign) return null;
-  const prepared = await createSiteDeliveryRows(prisma, campaignId, now);
+  let prepared: { anchorEventId: string; rows: Prisma.EmailLogGetPayload<{}>[] } | null;
+  try {
+    prepared = await createSiteDeliveryRows(prisma, campaignId, now, previewedRecipients);
+  } catch (error) {
+    if (error instanceof SiteRecipientsChangedError) {
+      await prisma.siteAssociationCommunication.updateMany({
+        where: { id: campaignId, status: 'SENDING', attempts: campaign.attempts },
+        data: { status: 'FAILED', error: 'recipients_changed', completedAt: now },
+      });
+    }
+    throw error;
+  }
   if (!prepared) {
     await prisma.siteAssociationCommunication.updateMany({
       where: { id: campaignId, status: 'SENDING', attempts: campaign.attempts },

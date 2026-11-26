@@ -85,6 +85,32 @@ describe('CommunicationsPage', () => {
     expect(await screen.findByText('2 sent, 0 simulated, 0 failed.')).toBeInTheDocument();
   });
 
+  it('reviews both siblings but sends the selected IDs to one household email', async () => {
+    const household = [
+      participant('p1', 'Ada Lovelace', 'family@example.test', { number: 7 }),
+      participant('p2', 'Grace Hopper', 'family@example.test', { number: 8 }),
+    ];
+    const client = renderPage({
+      getCommunicationRecipients: vi.fn().mockResolvedValue({ participants: household, associations: [] }),
+      previewCommunication: vi.fn().mockResolvedValue({ count: 1, recipients: household }),
+      sendCommunication: vi.fn().mockResolvedValue({ batchId: 'batch-household', sent: 1, simulated: 0, failed: 0, ambiguous: 0, pending: 0, deliveryIds: ['delivery'] }),
+    });
+    await screen.findByText('Ada Lovelace');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Ada Lovelace' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Grace Hopper' }));
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Household update' } });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Bring both players.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview recipients' }));
+
+    expect(await screen.findByText(/1 distinct email recipient will receive/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ada Lovelace — Number 7/i)).toBeInTheDocument();
+    expect(screen.getByText(/Grace Hopper — Number 8/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send now to 1' }));
+    await waitFor(() => expect(client.sendCommunication).toHaveBeenCalledWith('event-1', expect.objectContaining({
+      recipientIds: ['p1', 'p2'],
+    })));
+  });
+
   it('reuses the same idempotency key when an immediate send response is lost', async () => {
     const client = renderPage({
       sendCommunication: vi.fn().mockRejectedValueOnce(new Error('network response lost'))

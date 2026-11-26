@@ -279,7 +279,7 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
 
   async function removeEvent() {
     if (!id || busy) return;
-    const confirmed = window.confirm(`Delete "${savedEventName}"? This permanently removes the event, its plans, court colors, policy document, check-in sessions and email history. Only events with no registrations can be deleted.`);
+    const confirmed = window.confirm(`Delete "${savedEventName}"? This permanently removes the event, its plans, court colors, policy document, check-in sessions and email history. Events with registrations or association communication history cannot be deleted.`);
     if (!confirmed) return;
     setBusy(true);
     setError(null);
@@ -294,6 +294,8 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
       if (!mounted.current) return;
       if (reason instanceof ApiError && reason.status === 409 && reason.message === 'event_has_registrations') {
         setError('This event cannot be deleted because registration records exist. No event data was changed.');
+      } else if (reason instanceof ApiError && reason.status === 409 && reason.message === 'event_has_communications') {
+        setError('This event cannot be deleted because association communication history refers to it. No event data was changed.');
       } else {
         setError('Could not delete this event. No event data was changed; try again.');
       }

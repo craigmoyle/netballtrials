@@ -10,6 +10,7 @@ import { hashPin, isPinInput, verifyPin } from './pin';
 const PIN_WINDOW_MS = 10 * 60_000;
 const PIN_CLIENT_LIMIT = 10;
 const PIN_EVENT_FAILURE_LIMIT = 30;
+const PIN_LOCK_PROBE_WINDOW_MS = 2_000;
 
 export async function setCheckInPin(
   prisma: PrismaClient,
@@ -61,7 +62,7 @@ export function checkInSessionExpiry(eventDate: Date): Date {
   return new Date(localDateTimeToUtc(midnightAfterExpiryDay, '00:00').getTime() - 1);
 }
 
-function isVolunteerEventDate(eventDate: Date, now: Date): boolean {
+function isEventDate(eventDate: Date, now: Date): boolean {
   return melbourneDateKey(now) === eventDate.toISOString().slice(0, 10);
 }
 
@@ -75,6 +76,7 @@ type SessionWithEvent = Prisma.CheckInSessionGetPayload<{ include: { event: true
 
 function isActiveSession(session: SessionWithEvent | null, now: Date): session is SessionWithEvent {
   if (!session || session.expiresAt.getTime() <= now.getTime() || session.event.checkInClosedAt) return false;
+  if (!isEventDate(session.event.eventDate, now)) return false;
   if (now.getTime() > checkInSessionExpiry(session.event.eventDate).getTime()) return false;
   if (session.expiresAt.getTime() > checkInSessionExpiry(session.event.eventDate).getTime()) return false;
 
@@ -82,8 +84,7 @@ function isActiveSession(session: SessionWithEvent | null, now: Date): session i
     return Boolean(session.adminSession && session.adminSession.expiresAt.getTime() > now.getTime());
   }
 
-  return isVolunteerEventDate(session.event.eventDate, now)
-    && Boolean(session.pinVersion === session.event.checkInPinVersion && session.event.checkInPinHash);
+  return Boolean(session.pinVersion === session.event.checkInPinVersion && session.event.checkInPinHash);
 }
 
 async function findActiveSession(
@@ -105,7 +106,7 @@ export async function openCheckInSession(
   now: Date,
 ): Promise<{ token: string; expiresAt: Date; eventName: string }> {
   const event = await deps.prisma.event.findUnique({ where: { id: input.eventId } });
-  if (!event || !event.checkInPinHash || !isVolunteerEventDate(event.eventDate, now)) {
+  if (!event || !event.checkInPinHash || !isEventDate(event.eventDate, now)) {
     throw new CheckInUnavailableError();
   }
   if (event.checkInClosedAt) throw new CheckInClosedError();
@@ -122,15 +123,23 @@ export async function openCheckInSession(
   // consume no capacity. Keyed by PIN version so rotating the PIN clears a lockout.
   const failureKey = `checkin-fail:${input.eventId}:${event.checkInPinVersion}`;
   const windowStartedAt = await reserveRateLimit(deps.prisma, failureKey, now, PIN_EVENT_FAILURE_LIMIT, PIN_WINDOW_MS);
-  if (!windowStartedAt) throw new PinLockedError();
-  if (!(await verifyPin(input.pin, event.checkInPinHash))) {
-    throw new PinInvalidError();
+  const probeKey = `checkin-probe:${input.eventId}:${event.checkInPinVersion}`;
+  if (!windowStartedAt && !await reserveRateLimit(deps.prisma, probeKey, now, 1, PIN_LOCK_PROBE_WINDOW_MS)) {
+    throw new PinLockedError();
   }
-  // A slow verification must not refund a failure counted in a newer window.
-  await deps.prisma.requestRateLimitBucket.updateMany({
-    where: { key: failureKey, windowStartedAt, hits: { gt: 0 } },
-    data: { hits: { decrement: 1 } },
-  });
+  const valid = await verifyPin(input.pin, event.checkInPinHash);
+  if (!valid) {
+    throw windowStartedAt ? new PinInvalidError() : new PinLockedError();
+  }
+  if (windowStartedAt) {
+    // A slow verification must not refund a failure counted in a newer window.
+    await deps.prisma.requestRateLimitBucket.updateMany({
+      where: { key: failureKey, windowStartedAt, hits: { gt: 0 } },
+      data: { hits: { decrement: 1 } },
+    });
+  } else {
+    await Promise.all([resetRateLimit(deps.prisma, failureKey), resetRateLimit(deps.prisma, probeKey)]);
+  }
   await resetRateLimit(deps.prisma, key);
 
   const token = generateToken();
@@ -145,7 +154,7 @@ export async function openCheckInSession(
       },
     });
     if (!current) return null;
-    if (!isVolunteerEventDate(current.eventDate, now)) throw new CheckInUnavailableError();
+    if (!isEventDate(current.eventDate, now)) throw new CheckInUnavailableError();
     return tx.checkInSession.create({
       data: {
         eventId: event.id,
@@ -166,7 +175,7 @@ export async function openAdminCheckInSession(
   now: Date,
 ): Promise<{ token: string; expiresAt: Date; eventName: string }> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event || now.getTime() > checkInSessionExpiry(event.eventDate).getTime()) throw new CheckInUnavailableError();
+  if (!event || !isEventDate(event.eventDate, now) || now.getTime() > checkInSessionExpiry(event.eventDate).getTime()) throw new CheckInUnavailableError();
   if (event.checkInClosedAt) throw new CheckInClosedError();
   const adminSession = await prisma.session.findFirst({ where: { id: adminSessionId, expiresAt: { gt: now } } });
   if (!adminSession) throw new CheckInSessionRevokedError();
@@ -176,7 +185,7 @@ export async function openAdminCheckInSession(
     await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
     const currentEvent = await tx.event.findFirst({ where: { id: eventId, checkInClosedAt: null } });
     const currentAdmin = await tx.session.findFirst({ where: { id: adminSessionId, expiresAt: { gt: now } } });
-    if (!currentEvent || !currentAdmin || now.getTime() > checkInSessionExpiry(currentEvent.eventDate).getTime()) return null;
+    if (!currentEvent || !currentAdmin || !isEventDate(currentEvent.eventDate, now) || now.getTime() > checkInSessionExpiry(currentEvent.eventDate).getTime()) return null;
     return tx.checkInSession.create({
       data: {
         eventId,

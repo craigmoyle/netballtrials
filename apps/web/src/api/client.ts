@@ -259,6 +259,10 @@ export function apiClient(baseUrl: string) {
     getPlanRevision: (eventId: string, planId: string) => request<RoundPlanDTO>(baseUrl, `/api/admin/events/${eventId}/plan/revisions/${planId}`),
     getGameRoster: (eventId: string) => request<GamePlayerDTO[]>(baseUrl, `/api/admin/events/${eventId}/game-roster`),
     saveManualRound: (eventId: string, round: number, input: ManualRoundInputDTO) => manualRoundAction(baseUrl, eventId, round, input),
+    completePlanRound: (eventId: string, round: number, sourcePlanId: string) =>
+      planAction(baseUrl, `/api/admin/events/${eventId}/plan/rounds/${round}/complete`, {
+        method: 'POST', body: JSON.stringify({ sourcePlanId }),
+      }),
     generatePlan: (eventId: string) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
     publishPlan: (eventId: string, planId: string) =>
@@ -289,7 +293,7 @@ export function apiClient(baseUrl: string) {
       request<{ participants: CommunicationRecipientDTO[]; associations: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/recipients`),
     previewCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[] }) =>
       request<{ count: number; recipients: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/preview`, { method: 'POST', body: JSON.stringify(input) }),
-    sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; batchId: string }) =>
+    sendCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; previewedRecipients?: Array<{ id: string; email: string }>; subject: string; text: string; batchId: string }) =>
       request<{ batchId: string; sent: number; simulated: number; failed: number; ambiguous: number; pending: number; deliveryIds: string[] }>(baseUrl, `/api/admin/events/${eventId}/communications/send`, { method: 'POST', body: JSON.stringify(input) }),
     getIntegrationSettings: () => request<IntegrationStatusDTO>(baseUrl, '/api/admin/settings/integrations'),
     getAutomaticEmailSettings: () => request<AutomaticEmailSettingsDTO>(baseUrl, '/api/admin/settings/automatic-email'),
@@ -300,11 +304,11 @@ export function apiClient(baseUrl: string) {
     listSiteAssociationCampaigns: () => request<SiteAssociationCampaignDTO[]>(baseUrl, '/api/admin/communications/site/campaigns'),
     previewSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; subject: string; text: string }) =>
       request<SiteAssociationCommunicationPreviewDTO & { count: number }>(baseUrl, '/api/admin/communications/site/preview', { method: 'POST', body: JSON.stringify(input) }),
-    sendSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; subject: string; text: string; batchId?: string }) =>
+    sendSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; previewedRecipients?: Array<{ id: string; email: string }>; subject: string; text: string; batchId?: string }) =>
       request<SiteAssociationCampaignDTO>(baseUrl, '/api/admin/communications/site/send', { method: 'POST', body: JSON.stringify(input) }),
-    scheduleSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; subject: string; text: string; scheduledLocal: string; batchId?: string }) =>
+    scheduleSiteAssociationCommunication: (input: { eventIds: string[]; associationIds: string[]; previewedRecipients?: Array<{ id: string; email: string }>; subject: string; text: string; scheduledLocal: string; batchId?: string }) =>
       request<SiteAssociationCampaignDTO>(baseUrl, '/api/admin/communications/site/schedule', { method: 'POST', body: JSON.stringify(input) }),
-    updateSiteAssociationCommunication: (id: string, input: { eventIds: string[]; associationIds: string[]; subject: string; text: string; scheduledLocal: string; expectedUpdatedAt: string }) =>
+    updateSiteAssociationCommunication: (id: string, input: { eventIds: string[]; associationIds: string[]; previewedRecipients?: Array<{ id: string; email: string }>; subject: string; text: string; scheduledLocal: string; expectedUpdatedAt: string }) =>
       request<SiteAssociationCampaignDTO>(baseUrl, `/api/admin/communications/site/campaigns/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     cancelSiteAssociationCommunication: (id: string) => request<{ status: string }>(baseUrl, `/api/admin/communications/site/campaigns/${id}/cancel`, { method: 'POST' }),
     retrySiteAssociationCommunication: (id: string, deliveryIds: string[], includeAmbiguous = false) =>
@@ -316,9 +320,9 @@ export function apiClient(baseUrl: string) {
       request<EmailTemplateDTO>(baseUrl, `/api/admin/communications/templates/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     deleteCommunicationTemplate: (templateId: string) => request<unknown>(baseUrl, `/api/admin/communications/templates/${templateId}`, { method: 'DELETE' }),
     listScheduledCommunications: (eventId: string) => request<ScheduledMessageDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled`),
-    scheduleCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string; batchId: string }) =>
+    scheduleCommunication: (eventId: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; previewedRecipients?: Array<{ id: string; email: string }>; subject: string; text: string; scheduledLocal: string; batchId: string }) =>
       request<ScheduledMessageDTO>(baseUrl, `/api/admin/events/${eventId}/communications/schedule`, { method: 'POST', body: JSON.stringify(input) }),
-    updateScheduledCommunication: (eventId: string, id: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; subject: string; text: string; scheduledLocal: string; expectedUpdatedAt: string }) =>
+    updateScheduledCommunication: (eventId: string, id: string, input: { audience: 'participants' | 'associations'; recipientIds: string[]; previewedRecipients?: Array<{ id: string; email: string }>; subject: string; text: string; scheduledLocal: string; expectedUpdatedAt: string }) =>
       request<ScheduledMessageDTO>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     cancelScheduledCommunication: (eventId: string, id: string) => request<{ status: string }>(baseUrl, `/api/admin/events/${eventId}/communications/scheduled/${id}/cancel`, { method: 'POST' }),
     listCommunicationDeliveries: (eventId: string) => request<EmailLogDTO[]>(baseUrl, `/api/admin/events/${eventId}/communications/deliveries`),

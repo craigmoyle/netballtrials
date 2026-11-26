@@ -9,6 +9,20 @@ import { runDueSiteAssociationCommunications } from './site-association-communic
 
 export type CommunicationAudience = 'participants' | 'associations';
 export type SelectedCommunication = { audience: CommunicationAudience; recipientIds: string[] };
+export class CommunicationRecipientsChangedError extends Error {}
+
+function assertRecipientSnapshot(
+  expected: Array<{ id: string; email: string }> | undefined,
+  current: Array<{ id: string; email: string }>,
+): void {
+  if (!expected) return;
+  const serialize = (rows: Array<{ id: string; email: string }>) => rows
+    .map((row) => `${row.id}\0${row.email.trim().toLowerCase()}`)
+    .sort();
+  if (JSON.stringify(serialize(current)) !== JSON.stringify(serialize(expected))) {
+    throw new CommunicationRecipientsChangedError();
+  }
+}
 
 function communicationEligible(status: string, emailVerifiedAt: Date | null): boolean {
   return status === 'PAID' || (emailVerifiedAt !== null && ['PENDING', 'EXPIRED', 'FAILED'].includes(status));
@@ -80,6 +94,7 @@ async function createSelectedRows(
   now: Date,
   senderUserId?: string,
   policyAttachment?: { fileName: string; contentBase64: string } | null,
+  previewedRecipients?: Array<{ id: string; email: string }>,
 ): Promise<Prisma.EmailLogGetPayload<{}>[]> {
   return prisma.$transaction(async (tx) => {
     const lockedEvent = await lockMailEvent(tx, eventId);
@@ -106,6 +121,7 @@ async function createSelectedRows(
         select: { id: true, parentEmail: true, parentName: true, playerFirstName: true, playerLastName: true, bibNumber: true, memberAssociation: true },
         orderBy: [{ parentEmail: 'asc' }, { id: 'asc' }],
       });
+      assertRecipientSnapshot(previewedRecipients, registrations.map((registration) => ({ id: registration.id, email: registration.parentEmail })));
       const byEmail = new Map<string, typeof registrations>();
       for (const registration of registrations) {
         const email = registration.parentEmail.trim().toLowerCase();
@@ -134,6 +150,7 @@ async function createSelectedRows(
         select: { id: true, name: true, primaryContactName: true, primaryContactEmail: true },
         orderBy: { name: 'asc' },
       });
+      assertRecipientSnapshot(previewedRecipients, associations.map((association) => ({ id: association.id, email: association.primaryContactEmail! })));
       const byEmail = new Map<string, (typeof associations)[number]>();
       for (const association of associations) {
         const email = association.primaryContactEmail?.trim().toLowerCase();
@@ -186,14 +203,7 @@ export async function previewSelectedRecipients(
   if (!available) return null;
   const requested = new Set(selected.recipientIds);
   const candidates = selected.audience === 'participants' ? available.participants : available.associations;
-  const eligible = candidates.filter((recipient) => requested.has(recipient.id) && recipient.eligible && recipient.email.trim());
-  const seen = new Set<string>();
-  return eligible.filter((recipient) => {
-    const email = recipient.email.trim().toLowerCase();
-    if (!email || seen.has(email)) return false;
-    seen.add(email);
-    return true;
-  });
+  return candidates.filter((recipient) => requested.has(recipient.id) && recipient.eligible && recipient.email.trim());
 }
 
 export async function sendSelectedCommunication(
@@ -202,13 +212,13 @@ export async function sendSelectedCommunication(
   selected: SelectedCommunication,
   message: { subject: string; text: string },
   now: Date,
-  options: { batchId?: string; senderUserId?: string; policyAttachment?: { fileName: string; contentBase64: string } | null } = {},
+  options: { batchId?: string; senderUserId?: string; policyAttachment?: { fileName: string; contentBase64: string } | null; previewedRecipients?: Array<{ id: string; email: string }> } = {},
 ): Promise<DeliverySummary> {
   const batchId = options.batchId ?? randomUUID();
   const policyAttachment = options.policyAttachment === undefined
     ? await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId }, select: { fileName: true, bytes: true } }).then((document) => document ? { fileName: document.fileName, contentBase64: Buffer.from(document.bytes).toString('base64') } : null)
     : options.policyAttachment;
-  const rows = await createSelectedRows(deps.prisma, eventId, selected, message.subject, message.text, batchId, now, options.senderUserId, policyAttachment);
+  const rows = await createSelectedRows(deps.prisma, eventId, selected, message.subject, message.text, batchId, now, options.senderUserId, policyAttachment, options.previewedRecipients);
   return dispatchSelectedRows(deps, rows, now);
 }
 

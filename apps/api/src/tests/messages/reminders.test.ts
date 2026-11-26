@@ -42,7 +42,7 @@ describe('Melbourne event start and reminders', () => {
     const now = new Date('2026-09-10T22:30:00Z');
     const mailer = createDevMailer([]);
     const first = await sendDueReminders({ prisma, mailer }, now);
-    expect(first).toMatchObject({ sent: 2, failed: 0, ambiguous: 0, events: 1 });
+    expect(first).toMatchObject({ sent: 0, simulated: 2, failed: 0, ambiguous: 0, events: 1 });
     expect(mailer.sent.map((message) => message.to).sort()).toEqual(['anne@example.com', 'bo@example.com']);
     expect(mailer.sent[0].attachments?.[0]).toMatchObject({ filename: `${event.id}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH' });
     expect(Buffer.from(mailer.sent[0].attachments![0].content).toString()).toContain(`UID:${event.id}@chisholmnetball.com`);
@@ -59,11 +59,11 @@ describe('Melbourne event start and reminders', () => {
     const later = await paid(event.id, 'later@example.com', 'Later', { status: 'PENDING' });
     const mailer = createDevMailer([]);
     const now = new Date('2026-09-10T22:30:00Z');
-    expect((await sendDueReminders({ prisma, mailer }, now)).sent).toBe(1);
+    expect((await sendDueReminders({ prisma, mailer }, now)).simulated).toBe(1);
     await prisma.registration.update({ where: { id: later.id }, data: { status: 'PAID' } });
     await paid(event.id, 'LATER@example.com', 'Sibling');
     const results = await Promise.all([1, 2].map(() => sendDueReminders({ prisma, mailer }, new Date(+now + 60_000))));
-    expect(results.reduce((sum, result) => sum + result.sent, 0)).toBe(1);
+    expect(results.reduce((sum, result) => sum + result.simulated, 0)).toBe(1);
     expect(results.every((result) => result.errors.length === 0)).toBe(true);
     expect(mailer.sent.map((message) => message.to).sort()).toEqual(['first@example.com', 'later@example.com']);
     expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'reminder' } })).toBe(2);
@@ -100,7 +100,7 @@ describe('Melbourne event start and reminders', () => {
     });
     const mailer = createDevMailer([]);
     const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-09T22:30:00Z'));
-    expect(result).toMatchObject({ sent: 1, events: 1 });
+    expect(result).toMatchObject({ sent: 0, simulated: 1, events: 1 });
     expect(mailer.sent[0]).toMatchObject({
       subject: `See you at ${event.name}`,
       text: `${event.name} starts at 08:30 at SNC on 2026-09-12.`,
@@ -113,7 +113,7 @@ describe('Melbourne event start and reminders', () => {
     });
     await paid(event.id, 'anne@example.com', 'Ada');
     const result = await sendDueReminders({ prisma, mailer: createDevMailer([]) }, new Date('2026-09-10T22:45:00Z'));
-    expect(result.sent).toBe(1);
+    expect(result.simulated).toBe(1);
   });
 
   it('does not send before the 24-hour window opens', async () => {
@@ -170,9 +170,15 @@ describe('Melbourne event start and reminders', () => {
       data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30' },
     });
     await paid(event.id, 'anne@example.com', 'Ada');
+    const stale = await prisma.emailLog.create({ data: {
+      eventId: event.id, batchId: 'dry-run-stale', idempotencyKey: 'dry-run-stale:anne',
+      to: 'anne@example.com', subject: 'Old', body: 'Old', kind: 'message', status: 'SENDING', attempts: 1,
+      lastAttemptAt: new Date('2026-09-10T22:10:00Z'),
+    } });
     const mailer = createDevMailer([]);
     const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'), { dryRun: true });
     expect(result).toMatchObject({ sent: 0, failed: 0, ambiguous: 0, events: 1 });
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ status: 'SENDING', attempts: 1 });
     expect(mailer.sent).toHaveLength(0);
     expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'reminder' } })).toBe(0);
   });
@@ -204,7 +210,7 @@ describe('Melbourne event start and reminders', () => {
     const mailer = createDevMailer([]);
     const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
     expect(mailer.sent.map((message) => message.to)).toEqual(['bo@example.com']);
-    expect(result).toMatchObject({ sent: 1, failed: 0, events: 2, errors: [] });
+    expect(result).toMatchObject({ sent: 0, simulated: 1, failed: 0, events: 2, errors: [] });
   });
 
   it('reports an edited reminder batch that still has unsent rows', async () => {
@@ -235,7 +241,7 @@ describe('Melbourne event start and reminders', () => {
     } } } });
     const mailer = createDevMailer([]);
     const result = await sendDueReminders({ prisma: extended as typeof prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
-    expect(result).toMatchObject({ sent: 1, failed: 1, events: 2 });
+    expect(result).toMatchObject({ sent: 0, simulated: 1, failed: 1, events: 2 });
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].message).toBe('database blip');
     expect(mailer.sent).toHaveLength(1);

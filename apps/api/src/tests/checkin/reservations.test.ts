@@ -46,28 +46,24 @@ const attempt = (pin: string, clientKey: string, at = now) => openCheckInSession
 const hits = async () => (await prisma.requestRateLimitBucket.findUniqueOrThrow({ where: { key: failureKey } })).hits;
 
 describe('event-wide PIN reservations', () => {
-  it('does not charge a denied overlapping correct PIN after 29 wrong PINs', async () => {
-    for (let i = 0; i < 29; i++) {
+  it('allows one bounded correct-PIN probe while the event-wide bucket is exhausted', async () => {
+    for (let i = 0; i < 30; i++) {
       await expect(attempt('000000', `wrong-${i}`)).rejects.toBeInstanceOf(PinInvalidError);
     }
-    const pause = pauseReservations(failureKey, 2);
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+    const pause = pauseReservations(`checkin-probe:${eventId}:${event.checkInPinVersion}`, 1);
     const attempts = Promise.allSettled([attempt('482193', 'correct-1'), attempt('482193', 'correct-2')]);
-    let reservedHits: number;
     try {
       await pause.reached;
-      reservedHits = await hits();
     } finally {
       pause.release();
     }
     const results = await attempts;
-    expect(reservedHits).toBe(30);
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((result) => result.status === 'rejected')).toEqual([
       expect.objectContaining({ reason: expect.any(PinLockedError) }),
     ]);
-    expect(await hits()).toBe(29);
-    await expect(attempt('482193', 'correct-3', new Date(now.getTime() + 1000))).resolves.toHaveProperty('token');
-    expect(await hits()).toBe(29);
+    await expect(attempt('482193', 'correct-3', new Date(now.getTime() + 3_000))).resolves.toHaveProperty('token');
   });
 
   it('does not refund an expired reservation into the next window', async () => {

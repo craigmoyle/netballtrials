@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { PlayerHistoryEntryDTO } from '@netball-trials/types';
 import { PlayerHistoryPage } from './PlayerHistoryPage';
@@ -11,13 +11,18 @@ const entries: PlayerHistoryEntryDTO[] = [
     registrationId: 'reg-15u', playerName: 'Ada Lovelace', eventId: 'e15', eventName: '15/U Ladies', eventDate: '2025-09-12',
     competitionYear: 2025, division: '15/U', section: 'Ladies', association: 'MENA', rank1Position: 'GS', rank2Position: 'GA', rank3Position: 'WA',
     registrationStatus: 'PAID', checkedIn: true, number: 12, ageFlagged: false, games: 4, courtsSeen: [1, 2, 3],
-    positionsPlayed: { GS: 2, GA: 1, WA: 1 }, uniqueOpponents: 28, repeatOpponentMeetings: 4,
+    positionsPlayed: { GS: 2, GA: 1, WA: 1 },
+    appearances: [
+      { round: 1, court: 2, team: 0, position: 'GS' },
+      { round: 2, court: 3, team: 1, position: 'WA' },
+    ],
+    uniqueOpponents: 28, repeatOpponentMeetings: 4,
   },
   {
     registrationId: 'reg-17u', playerName: 'Ada Lovelace', eventId: 'e17', eventName: 'National Selection Trial', eventDate: '2026-09-12',
     competitionYear: 2026, division: '17/U', section: 'Ladies', association: 'MENA', rank1Position: 'C', rank2Position: 'WD', rank3Position: null,
     registrationStatus: 'PAID', checkedIn: false, number: null, ageFlagged: false, games: 0, courtsSeen: [],
-    positionsPlayed: {}, uniqueOpponents: 0, repeatOpponentMeetings: 0,
+    positionsPlayed: {}, appearances: [], uniqueOpponents: 0, repeatOpponentMeetings: 0,
   },
 ];
 
@@ -33,11 +38,14 @@ describe('PlayerHistoryPage', () => {
     expect(searchPlayerHistory).toHaveBeenCalledWith('Ada Lovelace', '2011-04-02');
     const under15Row = screen.getByRole('row', { name: /2025-09-12/ });
     expect(under15Row).toHaveTextContent('2025-09-12 · 15/U Ladies');
+    expect(under15Row).toHaveTextContent('Season 2025');
     expect(under15Row).not.toHaveTextContent('15/U Ladies — 15/U Ladies');
     expect(screen.getByRole('row', { name: /2026-09-12.*17\/U Ladies — National Selection Trial/ })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /2025-09-12/ })).toHaveTextContent('Number 12');
     expect(screen.getByText('Scroll horizontally to compare all trial details.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Player trial history' })).toHaveAttribute('tabindex', '0');
+    expect(within(under15Row).getByText('Round 1 · Court 2 · Team A · GS')).toBeInTheDocument();
+    expect(within(under15Row).getByText('Round 2 · Court 3 · Team B · WA')).toBeInTheDocument();
     expect(screen.getByText(/28/)).toBeInTheDocument();
     expect(screen.getByText(/confirm these records are for the same player/i)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/parent@example|paymentIntentId|amountCents/i);

@@ -417,6 +417,13 @@ export interface PlayerHistoryResultDTO {
   truncated: boolean;
 }
 
+export interface PlayerHistoryAppearanceDTO {
+  round: number;
+  court: number;
+  team: 0 | 1;
+  position: Position;
+}
+
 export interface PlayerHistoryEntryDTO {
   registrationId: string;
   playerName: string;
@@ -437,6 +444,7 @@ export interface PlayerHistoryEntryDTO {
   games: number;
   courtsSeen: number[];
   positionsPlayed: Partial<Record<Position, number>>;
+  appearances: PlayerHistoryAppearanceDTO[];
   uniqueOpponents: number;
   repeatOpponentMeetings: number;
 }
@@ -504,6 +512,9 @@ export interface TestEmailOutboxDTO {
   to: string;
   subject: string;
   body: string;
+  htmlPresent: boolean;
+  attachmentMetadata: Array<{ filename: string; contentType: string; sizeBytes: number }> | null;
+  inlineImageMetadata: Array<{ filename: string; contentType: string; cid: string; sizeBytes: number }> | null;
   createdAt: string;
   expiresAt: string;
 }

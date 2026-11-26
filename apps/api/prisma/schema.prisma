@@ -187,6 +187,8 @@ model TestEmailOutbox {
   subject   String
   body      String
   html      String?
+  attachmentMetadata Json?
+  inlineImageMetadata Json?
   createdAt DateTime @default(now())
   expiresAt DateTime
 

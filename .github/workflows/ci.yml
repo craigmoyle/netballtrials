@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -38,5 +38,28 @@ jobs:
       - run: npm test
       - run: npm run benchmark:planner --workspace=@netball-trials/api
       - run: npm run build
+      - name: Validate VPS deployment artifacts
+        run: |
+          env_file=$(mktemp)
+          trap 'rm -f "$env_file"' EXIT
+          cat >"$env_file" <<'EOF'
+          TRIALS_DOMAIN=trials-test.example
+          TRIALS_DB_PASSWORD=migration-test-password
+          TRIALS_RUNTIME_DB_PASSWORD=runtime-test-password
+          PAYMENT_PROVIDER=fake
+          ENABLE_TEST_INTEGRATIONS=false
+          INFISICAL_API_URL=https://us.infisical.com
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=
+          INFISICAL_PROJECT_ID=
+          INFISICAL_ENVIRONMENT=test
+          INFISICAL_SECRET_PATH=/
+          EOF
+          bash -n deploy/vps/deploy.sh deploy/vps/upgrade-trials-runtime-role.sh
+          docker compose --env-file "$env_file" -f deploy/vps/compose.yaml --profile jobs config -q
+          systemd-analyze verify deploy/vps/systemd/*.service deploy/vps/systemd/*.timer
+          docker build --target api-runtime -t netballtrials-api:ci .
+          docker build -f deploy/vps/Dockerfile.web -t netball-trials-web:ci .
+          docker run --rm --entrypoint caddy netball-trials-web:ci validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - run: npm run test:e2e --workspace=@netball-trials/web
       - run: npm audit

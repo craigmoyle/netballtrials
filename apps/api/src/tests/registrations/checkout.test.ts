@@ -86,6 +86,17 @@ describe('createRegistrationCheckout', () => {
     expect(mailer.sent[0].text).toContain('https://checkout.test/fake_');
   });
 
+  it('treats a simulated checkout delivery as sent', async () => {
+    const registration = await createPendingRegistration();
+    const { deps } = makeDeps();
+    const mailer = { send: vi.fn(async () => 'simulated' as const) };
+
+    await expect(sendCheckoutContinuation({ ...deps, mailer }, registration)).resolves.toBe(true);
+
+    expect(mailer.send).toHaveBeenCalledOnce();
+    expect(await prisma.emailLog.findFirstOrThrow()).toMatchObject({ status: 'SENT', simulated: true });
+  });
+
   it('extends a late first Stripe Checkout to the provider minimum and keeps retries idempotent', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
     const now = new Date('2026-10-10T00:00:00.000Z');

@@ -106,6 +106,63 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(await anonymizeExpiredRegistrations(prisma, now)).toBe(0);
   });
 
+  it('removes personal data from retained plan validation warnings', async () => {
+    const old = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
+    const registration = await prisma.registration.create({ data: regFixture(old.id, {
+      playerFirstName: 'Private', playerLastName: 'Player', playerNameNormalized: 'private player', status: 'PAID',
+    }) });
+    const plan = await prisma.roundPlan.create({ data: {
+      eventId: old.id, revision: 1, seed: 1, status: 'PUBLISHED', rounds: 1, courts: 1, playMinutes: 8,
+      changeoverMinutes: 2, windowMinutes: 10, eventName: old.name, eventDate: old.eventDate, venue: old.venue, gameStartTime: old.gameStartTime,
+      validationWarnings: [{ code: 'missing_court_visit', message: 'Private Player does not play on court 1.', detail: { registrationId: registration.id, court: 1 } }],
+    } });
+
+    expect(await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T00:00:00Z'))).toBe(1);
+    expect((await prisma.roundPlan.findUniqueOrThrow({ where: { id: plan.id } })).validationWarnings).toEqual([]);
+  });
+
+  it('retains a legacy multi-event campaign until every referenced event expires', async () => {
+    const old = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
+    const later = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2024-09-12T00:00:00Z') }) });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Legacy campaign association' } });
+    const campaign = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: old.id, eventIds: [old.id, later.id], recipientIds: [association.id],
+      batchId: 'legacy-multi-event', subject: 'Legacy subject', body: 'Legacy body', status: 'COMPLETED',
+    } });
+    const delivery = await prisma.emailLog.create({ data: {
+      eventId: old.id, siteCommunicationId: campaign.id, associationId: association.id,
+      batchId: campaign.batchId, idempotencyKey: 'legacy-multi-event:delivery', to: 'association@example.test',
+      subject: 'Legacy subject', body: 'Legacy body', kind: 'association', status: 'SENT',
+    } });
+
+    await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T00:00:00Z'));
+
+    expect(await prisma.siteAssociationCommunication.findUnique({ where: { id: campaign.id } })).not.toBeNull();
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({
+      status: 'SENT', subject: 'Legacy subject', body: 'Legacy body',
+    });
+  });
+
+  it('expires a legacy campaign when a deleted referenced event cannot retain it', async () => {
+    const old = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2021-09-12T00:00:00Z') }) });
+    const deleted = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2024-09-12T00:00:00Z') }) });
+    const association = await prisma.memberAssociation.create({ data: { name: 'Deleted-event association' } });
+    const campaign = await prisma.siteAssociationCommunication.create({ data: {
+      anchorEventId: old.id, eventIds: [old.id, deleted.id], recipientIds: [association.id],
+      batchId: 'deleted-event-campaign', subject: 'Old campaign', body: 'Old body', status: 'COMPLETED',
+    } });
+    await prisma.emailLog.create({ data: {
+      eventId: old.id, siteCommunicationId: campaign.id, batchId: campaign.batchId, idempotencyKey: 'deleted-event-delivery',
+      to: 'association@example.test', subject: 'Old campaign', body: 'Old body', kind: 'association', status: 'SENT',
+    } });
+    await prisma.event.delete({ where: { id: deleted.id } });
+
+    await anonymizeExpiredRegistrations(prisma, new Date('2025-10-10T00:00:00Z'));
+
+    expect(await prisma.siteAssociationCommunication.findUnique({ where: { id: campaign.id } })).toBeNull();
+    expect(await prisma.emailLog.findFirst({ where: { batchId: campaign.batchId } })).toBeNull();
+  });
+
   it('anonymizes unpaid incomplete registrations after 30 days but preserves paid and recent records', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), eventDate: new Date('2027-09-12T00:00:00Z') } });
     const now = new Date('2026-10-28T00:00:00Z');
@@ -147,6 +204,21 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(0);
   });
 
+  it('scrubs orphan payment review notes when an incomplete registration expires', async () => {
+    const now = new Date('2026-10-28T00:00:00Z');
+    const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2027-09-12T00:00:00Z') }) });
+    const registration = await prisma.registration.create({ data: regFixture(event.id, {
+      status: 'EXPIRED', createdAt: new Date('2026-09-01T00:00:00Z'), parentEmail: 'orphan-private@example.test',
+    }) });
+    const review = await prisma.reviewItem.create({ data: {
+      eventId: event.id, registrationId: registration.id, reason: 'payment_without_registration',
+      note: 'Contact the payer at orphan-private@example.test', resolutionHistory: [{ note: 'Name and email' }],
+    } });
+
+    expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(1);
+    expect(await prisma.reviewItem.findUniqueOrThrow({ where: { id: review.id } })).toMatchObject({ note: null, resolutionHistory: null });
+  });
+
   it('removes shared parent artifacts when two expired events are retained concurrently', async () => {
     const now = new Date('2025-10-10T00:00:00Z');
     const email = 'shared-retention@example.test';
@@ -167,7 +239,7 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(await prisma.parentAccessSession.findUnique({ where: { tokenHash: 'shared-retention-session'.padEnd(64, 'y') } })).toBeNull();
   });
 
-  it('scrubs grouped household messages when any included incomplete registration expires', async () => {
+  it('preserves grouped household deliveries for a retained paid sibling', async () => {
     const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2027-09-12T00:00:00Z') }) });
     const now = new Date('2026-10-28T00:00:00Z');
     const expired = await prisma.registration.create({ data: regFixture(event.id, { playerFirstName: 'Expired', status: 'PENDING', createdAt: new Date('2026-09-01T00:00:00Z'), parentEmail: 'family@example.test' }) });
@@ -179,7 +251,60 @@ describe('anonymizeExpiredRegistrations', () => {
 
     expect(await anonymizeIncompleteRegistrations(prisma, now)).toBe(1);
 
-    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({ status: 'ANONYMIZED', to: '', subject: '', body: '', messagePayload: null, registrationIds: null });
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({
+      status: 'SENT', to: 'family@example.test', subject: '', body: '', messagePayload: null,
+      registrationId: recent.id, registrationIds: [recent.id],
+    });
+  });
+
+  it('does not retry an anonymised failed household message', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2027-09-12T00:00:00Z') }) });
+    const now = new Date('2026-10-28T00:00:00Z');
+    const expired = await prisma.registration.create({ data: regFixture(event.id, {
+      playerFirstName: 'Expired', playerLastName: 'Failed', playerNameNormalized: 'expired failed',
+      status: 'PENDING', createdAt: new Date('2026-09-01T00:00:00Z'), parentEmail: 'failed-family@example.test',
+    }) });
+    const retained = await prisma.registration.create({ data: regFixture(event.id, {
+      playerFirstName: 'Retained', playerLastName: 'Failed', playerNameNormalized: 'retained failed',
+      status: 'PAID', parentEmail: 'failed-family@example.test',
+    }) });
+    const delivery = await prisma.emailLog.create({ data: {
+      eventId: event.id, registrationId: expired.id, registrationIds: [expired.id, retained.id],
+      batchId: 'failed-family-batch', idempotencyKey: 'failed-family-delivery', to: 'failed-family@example.test',
+      subject: 'Update for Expired and Retained', body: 'Personal update', kind: 'message', status: 'FAILED', attempts: 1,
+    } });
+
+    await anonymizeIncompleteRegistrations(prisma, now);
+
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({
+      status: 'ANONYMIZED', registrationId: retained.id, registrationIds: [retained.id], subject: '', body: '',
+    });
+  });
+
+  it('keeps a retained old-address security notice after its incomplete sibling expires', async () => {
+    const event = await prisma.event.create({ data: eventFixture({ eventDate: new Date('2027-09-12T00:00:00Z') }) });
+    const now = new Date('2026-10-28T00:00:00Z');
+    const expired = await prisma.registration.create({ data: regFixture(event.id, {
+      playerFirstName: 'Expired', playerLastName: 'Sibling', playerNameNormalized: 'expired sibling',
+      status: 'PENDING', createdAt: new Date('2026-09-01T00:00:00Z'), parentEmail: 'new@example.test',
+    }) });
+    const retained = await prisma.registration.create({ data: regFixture(event.id, {
+      playerFirstName: 'Retained', playerLastName: 'Sibling', playerNameNormalized: 'retained sibling',
+      status: 'PAID', parentEmail: 'new@example.test',
+    }) });
+    const notice = await prisma.emailLog.create({ data: {
+      eventId: event.id, registrationId: expired.id, registrationIds: [expired.id, retained.id],
+      batchId: 'email-change-shared', idempotencyKey: 'email-change-shared:old',
+      to: 'old@example.test', subject: 'Your Netball Trials email was changed', body: 'Review this change.',
+      kind: 'email-change', status: 'PENDING',
+    } });
+
+    await anonymizeIncompleteRegistrations(prisma, now);
+
+    expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: notice.id } })).toMatchObject({
+      status: 'PENDING', registrationId: retained.id, registrationIds: [retained.id],
+      subject: 'Your Netball Trials email was changed', body: 'Review this change.',
+    });
   });
 
   it('claims each registration once when retention workers overlap', async () => {

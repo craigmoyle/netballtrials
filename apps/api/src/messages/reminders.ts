@@ -50,7 +50,7 @@ export async function sendDueReminders(
   let eventsDue = 0;
   const errors: ReminderRunResult['errors'] = [];
 
-  await reconcileStaleDeliveries(deps.prisma, now);
+  if (!options.dryRun) await reconcileStaleDeliveries(deps.prisma, now);
   const emailChanges = (await deps.prisma.emailLog.findMany({
     where: {
       kind: 'email-change',

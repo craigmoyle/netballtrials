@@ -15,6 +15,7 @@
     "dev:web": "npm run dev --workspace @netball-trials/web",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspace @netball-trials/web",
+    "admin:bootstrap": "npm run admin:bootstrap --workspace=@netball-trials/api",
     "seed:test-dataset": "npm run seed:test-dataset --workspace=@netball-trials/api",
     "send-reminders": "npm run send-reminders --workspace=@netball-trials/api",
     "retention": "npm run retention --workspace=@netball-trials/api",

@@ -169,13 +169,23 @@ export function closeEvent(prisma: PrismaClient, id: string): Promise<EventRespo
   return transitionEvent(prisma, id, 'OPEN', 'CLOSED');
 }
 
-export type DeleteEventResult = 'deleted' | 'not_found' | 'has_registrations';
+export type DeleteEventResult = 'deleted' | 'not_found' | 'has_registrations' | 'has_communications';
 
 export async function deleteEvent(prisma: PrismaClient, id: string): Promise<DeleteEventResult> {
   return prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${id} FOR UPDATE`);
     if (locked.length !== 1) return 'not_found';
     if (await tx.registration.count({ where: { eventId: id } }) > 0) return 'has_registrations';
+    const [scheduled, deliveries, referencedByCampaign] = await Promise.all([
+      tx.scheduledMessage.count({ where: { eventId: id } }),
+      tx.emailLog.count({ where: { eventId: id } }),
+      tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM "SiteAssociationCommunication"
+        WHERE "anchorEventId" = ${id} OR "eventIds" @> ${JSON.stringify([id])}::jsonb
+        LIMIT 1
+      `),
+    ]);
+    if (scheduled > 0 || deliveries > 0 || referencedByCampaign.length > 0) return 'has_communications';
     await tx.event.delete({ where: { id } });
     return 'deleted';
   });
