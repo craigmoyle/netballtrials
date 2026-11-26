@@ -6,5 +6,5 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/netball/netballtrials/deploy/vps
-ExecStart=/usr/bin/docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm --no-deps trials-retention
+ExecStart=/usr/bin/docker compose --env-file /opt/netball/trials.env -f compose.yaml --profile jobs run --rm --no-deps trials-retention
 TimeoutStartSec=15min

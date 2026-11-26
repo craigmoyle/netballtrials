@@ -1,40 +1,49 @@
 # Trials TEST on the VPS
 
-The shared VPS serves Stats only at `https://statsball.net` and hosted Trials TEST at `https://trials-test.statsball.net`. Trials runs with `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, a dedicated `netballtrials_test` database, and restricted Admin access. There is no Trials production deployment.
+Trials TEST runs at `https://trials-test.statsball.net` from this directory. It is deployed separately from Stats: its own Compose project (`netball-trials`), its own images, its own env file and its own systemd timers. The shared PostgreSQL and TLS edge come from the `netball-vps` platform repo, which must be running first.
 
-## Host configuration
+There is no Trials production deployment. The TEST deployment uses `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, the `netballtrials_test` database, and restricted Admin access.
 
-The deployment uses `deploy/vps/compose.yaml` and the root-owned `/opt/netball/.env` file (mode `0600`). PostgreSQL has no published host port; Caddy publishes 80/443 and routes the Trials hostname to the web app and API. The Compose stack is shared with another application on the host, so use the complete environment template at `deploy/vps/.env.example`; this guide covers only Trials. The API runtime uses a restricted database login; set distinct, unquoted random hex values for `TRIALS_DB_PASSWORD` (migrations) and `TRIALS_RUNTIME_DB_PASSWORD` (normal API access). On an existing data volume, run `upgrade-trials-runtime-role.sh` before updating the API; fresh volumes create the role through the database initialization script. The upgrade script is idempotent and does not print the password.
+## Host layout
 
-Trials TEST uses `ENABLE_TEST_INTEGRATIONS=true`, `PAYMENT_PROVIDER=stripe`, and Stripe TEST credentials from the Infisical `test` namespace. Keep provider credentials in Infisical, not the environment file or source. Real test email goes only to current Admins; non-Admin recipients are simulated. Hosted TEST allows up to five Admin accounts. Admin sign-in is by email link, so every Admin mailbox must have MFA enabled. Admin sessions expire after seven days. The TEST database and roster were migrated to the VPS, old sessions and login tokens were cleared, and a current Admin successfully signed in. Stripe TEST was confirmed working. Reset any existing check-in PINs that predate the six-digit minimum before volunteer PIN access; legacy four-digit PINs are rejected.
+- `/opt/netball/netballtrials` – checkout of `main`
+- `/opt/netball/trials.env` – Trials secrets (mode `0600`, root-only); template in `trials.env.example`
+- `/opt/netball/platform.env` – platform secrets, owned by `netball-vps`
 
-## Deploy or update
+Role passwords (`TRIALS_DB_PASSWORD`, `TRIALS_RUNTIME_DB_PASSWORD`) must match between the platform and Trials env files. Use distinct, unquoted random hex values.
 
-From `/opt/netball/netballtrials/deploy/vps`:
+## Deploy
 
-```sh
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml config -q
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d db
-sudo /opt/netball/netballtrials/deploy/vps/upgrade-trials-runtime-role.sh
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-api trials-migrate web
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs run --rm trials-migrate
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml --profile jobs build trials-reminders trials-retention
-sudo docker compose --env-file /opt/netball/.env -f compose.yaml up -d trials-api web
-```
-
-Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. Keep `VITE_API_URL` empty so browser requests use the same-origin `/api` route. Local development remains on fake payments and in-memory email; never enable hosted integrations locally.
-
-## Reminder and retention timers
-
-Install and enable the Trials jobs after deployment:
+Deploy only from merged `main`:
 
 ```sh
-sudo install -m 0644 systemd/netball-trials-reminders.service systemd/netball-trials-reminders.timer systemd/netball-trials-retention.service systemd/netball-trials-retention.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now netball-trials-reminders.timer netball-trials-retention.timer
-systemctl list-timers 'netball-trials-*'
+cd /opt/netball/netballtrials/deploy/vps
+sudo ./deploy.sh
 ```
 
-The reminder job runs every 15 minutes and dispatches reminders, confirmation retries, checkout retries, and scheduled communications. The retention job runs daily at 03:00 local server time and removes expired personal data. Monitor both units' logs and exit codes.
+`deploy.sh` validates the Compose file, builds the API, web and job images, runs migrations, recreates `trials-api` and `trials-web`, and installs the systemd units. On an existing database volume, run `upgrade-trials-runtime-role.sh` once before the first deploy that changes the API role; the script is idempotent and never prints passwords.
 
-The `postgres_data` volume is persistent. Never run `docker compose down -v`. No persistent off-host backup destination or retention policy is configured.
+Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. `VITE_API_URL` stays empty so browser requests use the same-origin `/api` route. Local development stays on fake payments and in-memory email; never enable hosted integrations locally.
+
+## Request path
+
+Client → edge (TLS, `netball-vps`) → `trials-web` (static files, headers, API proxy) → `trials-api`. `trials-web` trusts only the edge subnet (`172.30.50.0/24`); `trials-api` trusts only `trials-web` (`172.30.30.2`).
+
+## Access and operations
+
+- Admin sign-in is by email link, so every Admin mailbox must have MFA enabled. Hosted TEST allows up to five Admin accounts; Admin sessions expire after seven days.
+- Stripe TEST credentials and other provider secrets come from Infisical's `test` namespace, not the env file.
+- Real test email goes only to current Admins; other recipients are simulated.
+- Volunteer PINs need six digits; legacy four-digit PINs are rejected.
+
+## Jobs and timers
+
+- `netball-trials-reminders` runs every 15 minutes: reminders, confirmation and checkout retries, and scheduled communications.
+- `netball-trials-retention` runs daily at 03:00 local server time and removes expired personal data.
+
+Run a job manually with `sudo docker compose --env-file /opt/netball/trials.env -f compose.yaml --profile jobs run --rm --no-deps <service>`.
+
+## Rules
+
+- Never run `docker compose down -v`. The `netball_postgres_data` volume is owned by the platform project and holds all databases.
+- No persistent off-host backup destination or retention policy is configured.

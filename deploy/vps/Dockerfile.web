@@ -1,0 +1,11 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY . .
+RUN npm ci --workspace=@netball-trials/web --workspace=@netball-trials/types --include-workspace-root
+ARG VITE_API_URL=
+ENV VITE_API_URL=${VITE_API_URL}
+RUN npm run build --workspace=@netball-trials/web
+
+FROM caddy:2
+COPY --from=build /app/apps/web/dist /srv/trials
+COPY deploy/vps/Caddyfile.web /etc/caddy/Caddyfile
