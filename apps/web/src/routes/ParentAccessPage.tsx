@@ -28,7 +28,8 @@ function checkoutClosed(registration: ParentRegistrationDTO): boolean {
 
 function registrationStatus(registration: ParentRegistrationDTO): string {
   if (registration.status === 'PAID') return 'Complete — payment confirmed.';
-  if (registration.status === 'WITHDRAWN') return 'Withdrawn. No refund is available.';
+  if (registration.status === 'WITHDRAWN') return 'Withdrawn. No automatic refund was issued; contact the club about the payment.';
+  if (registration.status === 'DUPLICATE') return 'Duplicate registration. The retained registration is the active record.';
   if (registration.status === 'FAILED') return 'Payment failed. This registration is not complete.';
   if (registration.status === 'EXPIRED' || checkoutClosed(registration)) return 'Checkout expired. This registration is not complete.';
   return 'Email confirmed; payment is still pending. This registration is not complete.';
@@ -107,7 +108,12 @@ export function ParentAccessPage({ client }: { client: Client }) {
     setError(null);
     try {
       if (emailChange) await client.confirmParentEmailChange(token);
-      else await client.verifyParentAccessToken(token);
+      else {
+        const verified = await client.verifyParentAccessToken(token);
+        if (verified?.checkout_status === 'failed') {
+          setNotice('You are signed in, but Checkout could not be prepared. Your registration is incomplete and the club has been notified.');
+        }
+      }
       setPendingLink(null);
       navigate('/manage-registration', { replace: true });
     } catch (reason) {
@@ -152,14 +158,14 @@ export function ParentAccessPage({ client }: { client: Client }) {
   }
 
   async function withdraw(registration: ParentRegistrationDTO) {
-    if (!window.confirm(`Withdraw ${registration.playerName} from ${registration.event.name}? No refund will be issued.`)) return;
+    if (!window.confirm(`Withdraw ${registration.playerName} from ${registration.event.name}? No automatic refund will be issued; contact the club about the payment.`)) return;
     setBusyRegistration(registration.id);
     setError(null);
     setNotice(null);
     try {
       const updated = await client.withdrawParentRegistration(registration.id);
       setRegistrations((current) => current.map((item) => item.id === registration.id ? updated : item));
-      setNotice('Registration withdrawn. No refund was issued.');
+      setNotice('Registration withdrawn. No automatic refund was issued; contact the club about the payment.');
     } catch (reason) {
       const code = (reason as { message?: string }).message;
       setError(code === 'checkout_in_progress'

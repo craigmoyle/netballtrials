@@ -18,7 +18,7 @@ export function AdminHelpPage() {
         <p>Set the event date, arrival time, game start, finish, courts and position minimums before opening registration. Arrival time is when players should get there; game start is when rounds begin.</p>
         <p><Link to="/admin/events">Open events</Link> · <Link to="/admin/registrations">View registration totals</Link></p>
         <p>The registration overview compares paid totals with previous events in the same division and section at the same time before each trial. Current paid withdrawals are shown separately; historical totals include payments from players who later withdrew. A low count against that history can help decide whether to promote the event.</p>
-        <p>Use the event roster and review queue to check individual registrations. A registration is complete after the parent email is verified and payment is confirmed. Email verification confirms access to the inbox, not guardianship.</p>
+        <p>Use the event roster and Needs attention queue to check registrations, messages and planner exceptions. A registration is complete after the parent email is verified and payment is confirmed. Email verification confirms access to the inbox, not guardianship.</p>
       </section>
 
       <section id="planning-and-printing" aria-labelledby="planning-help-heading">

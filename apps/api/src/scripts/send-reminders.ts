@@ -19,7 +19,7 @@ async function main(): Promise<void> {
       throw new Error('Non-production reminder runs require --dry-run unless test integrations are explicitly enabled');
     }
     const result = await sendDueReminders(
-      { prisma, mailer: app.testDeps.mailer },
+      app.testDeps,
       new Date(),
       { dryRun },
     );

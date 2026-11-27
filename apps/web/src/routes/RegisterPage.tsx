@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker, useLocation } from 'react-router-dom';
 import { melbourneDateKey, POSITIONS, type EventDTO, type PublicAssociationDTO, type PublicEventDTO } from '@netball-trials/types';
-import type { ApiClient as Client } from '../api/client';
+import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatFee } from '../formatFee';
 import { formatTrialDate } from '../formatTrialDate';
 import { useUnsavedSignOut } from '../useUnsavedSignOut';
@@ -316,13 +316,19 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
       if (adminAssisted && status === 409 && message === 'already_registered') {
         setSubmitError('This player is already registered. Contact the club if you need help.');
       } else if (adminAssisted && status === 409 && message === 'event_unavailable') {
-        setSubmitError('Day-of registration is available only on the event date while check-in is open. Your details are still here.');
+        setSubmitError('Day-of registration is available to Admins only on the Melbourne event date for an active event. Your details are still here.');
       } else if (adminAssisted && status === 503 && message === 'checkout_unavailable') {
         setSubmitError('Could not prepare or send the secure Checkout link. No payment has been taken. Your details are still here; try again.');
+      } else if (status === 422 && message === 'ineligible') {
+        const ineligible = err as ApiError;
+        setSubmitError(`This player is not eligible for this event. The required age at 31 December ${ineligible.competitionYear} is ${ineligible.minAge}–${ineligible.maxAge}. Check the date of birth and contact the club if the details are correct.`);
+        setFieldErrors(['dateOfBirth']);
       } else if (status === 503 && message === 'email_verification_unavailable') {
         setSubmitError('We could not send the email confirmation link. Your details are still here; retry, and do not start a second registration.');
       } else if (!adminAssisted && status === 503 && message === 'registration_follow_up_unavailable') {
         setSubmitError('We could not prepare or send the next-step email. Retry your request; it will not create a second registration or charge a payment. If the problem continues, contact the club.');
+      } else if (!adminAssisted && status === 404) {
+        setSubmitError('Registration is closed. You can still review the trial details and selection policy, but new applications cannot be accepted.');
       } else if (status === 429) {
         setSubmitError('Too many attempts. Wait a little while, then try again. Your details are still here.');
       } else if (status === 400) {
@@ -347,6 +353,8 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
   if (!event) return <p role="status">Loading trial details...</p>;
   const currency = 'currency' in event ? event.currency : 'aud';
   const fee = formatFee(event.registrationFeeCents, currency);
+  const publicRegistrationOpen = adminAssisted || (event.status === 'OPEN' && !event.registrationClosedAt &&
+    (!event.registrationClosesAt || new Date(event.registrationClosesAt).getTime() > Date.now()));
 
   if (submitted) {
     return (
@@ -360,6 +368,22 @@ export function RegisterPage({ client, eventId, adminAssisted = false }: { clien
             <p>If you entered the wrong email or the player may already be registered, <a href="https://chisholmnetball.com/">contact the club</a> so they can help. A correction to an unconfirmed email must be approved by the club and verified by its owner.</p>
             <p><Link to="/manage-registration">Manage registrations</Link></p>
           </>}
+      </section>
+    );
+  }
+
+  if (!publicRegistrationOpen) {
+    return (
+      <section className="public-page registration-page">
+        <h1>{event.name}</h1>
+        <p>{formatTrialDate(event.eventDate)} at {event.venue} · arrival time {event.startTime} · start time {event.gameStartTime}</p>
+        <p>Registration fee: {fee}</p>
+        <div className="registration-closed" role="status">
+          <h2>Registration closed</h2>
+          <p>New registrations are not being accepted. The trial details and selection policy remain available.</p>
+          <p>Age eligibility: {event.minAge}–{event.maxAge} on 31 December {event.competitionYear}.</p>
+          {event.policyUrl ? <p><a href={event.policyUrl} target="_blank" rel="noreferrer">Selection policy (new tab)</a></p> : null}
+        </div>
       </section>
     );
   }

@@ -23,6 +23,13 @@ describe('GET /api/public/events/:id', () => {
     expect(body.registrationFeeCents).toBe(3500);
     expect(body).not.toHaveProperty('policyDocumentName');
   });
+  it('returns closed public details but exposes that registration is closed', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), status: 'CLOSED', registrationClosedAt: new Date() } });
+    const res = await app.inject({ method: 'GET', url: `/api/public/events/${event.id}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'CLOSED' });
+  });
+
   it('hides a draft event', async () => {
     const event = await prisma.event.create({ data: { ...eventFixture(), status: 'DRAFT' } });
     const res = await app.inject({ method: 'GET', url: `/api/public/events/${event.id}` });

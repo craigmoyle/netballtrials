@@ -7,10 +7,11 @@ import type { AppDeps } from '../app';
 import { requireAdmin } from '../auth/guard';
 import { getEventCourtColors } from '../colors/service';
 import { getGameRoster, saveManualRoundRevision, saveManualSuffixRevision } from './games';
-import { completeRound, generateDraftPlan, getPlanPreview, publishPlan, regenerateFromRound } from './service';
+import { completeRound, generateDraftPlan, getPlanPreview, publishPlan, reconcileRosterChanges, regenerateFromRound } from './service';
 import { renderBlankGameSheet } from './blank-sheet';
 import { renderSelectorSheets } from './sheets';
 import type { PlanSlot } from './types';
+import { requestNow } from '../http-time';
 
 const POSITION_ORDER: Record<string, number> = {
   GS: 0,
@@ -196,7 +197,7 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     const parsed = z.object({ sourcePlanId: z.string().min(1) }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id, round } = req.params as { id: string; round: string };
-    const result = await completeRound(deps.prisma, id, parsed.data.sourcePlanId, Number(round), new Date());
+    const result = await completeRound(deps.prisma, id, parsed.data.sourcePlanId, Number(round), new Date(), { actorUserId: req.adminUserId });
     if (!result.ok) {
       return reply.code(result.reason === 'stale_plan' ? 409 : 422).send({ error: result.reason, message: result.message });
     }
@@ -208,7 +209,7 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     const parsed = manualRoundSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id, round: rawRound } = req.params as { id: string; round: string };
-    const result = await saveManualRoundRevision(deps.prisma, id, Number(rawRound), parsed.data as ManualRoundInputDTO, new Date());
+    const result = await saveManualRoundRevision(deps.prisma, id, Number(rawRound), parsed.data as ManualRoundInputDTO, new Date(), { actorUserId: req.adminUserId });
     if (!result.ok) {
       if (result.reason === 'stale_plan') return reply.code(409).send({ error: 'stale_plan' });
       if (result.reason === 'invalid_plan') return reply.code(422).send({ error: 'invalid_plan', errors: result.errors });
@@ -221,7 +222,7 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
     const parsed = manualSuffixSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id } = req.params as { id: string };
-    const result = await saveManualSuffixRevision(deps.prisma, id, parsed.data as ManualSuffixInputDTO, new Date());
+    const result = await saveManualSuffixRevision(deps.prisma, id, parsed.data as ManualSuffixInputDTO, new Date(), { actorUserId: req.adminUserId });
     if (!result.ok) {
       if (result.reason === 'stale_plan') return reply.code(409).send({ error: 'stale_plan' });
       if (result.reason === 'invalid_plan') return reply.code(422).send({ error: 'invalid_plan', errors: result.errors });
@@ -237,10 +238,23 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
       const { id } = req.params as { id: string };
       const parsed = z.object({ planId: z.string().optional() }).safeParse(req.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
-      const result = await publishPlan(deps.prisma, id, parsed.data.planId);
+      const result = await publishPlan(deps.prisma, id, parsed.data.planId, { actorUserId: req.adminUserId, now: requestNow(req) });
       if (!result.ok) return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
       const loaded = await loadPlan(deps, id, result.plan.id);
       return reply.code(200).send(serializePlan(loaded!));
+    },
+  );
+
+  app.post(
+    '/api/admin/events/:id/plan/reconcile',
+    { preHandler: requireAdmin(deps) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const result = await reconcileRosterChanges(deps.prisma, id, requestNow(req), req.adminUserId);
+      if (!result.ok) return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
+      if (!result.plan) return reply.code(409).send({ error: 'no_published_plan' });
+      const loaded = await loadPlan(deps, id, result.plan.id);
+      return serializePlan(loaded!);
     },
   );
 
@@ -257,7 +271,10 @@ export function registerPlannerRoutes(app: FastifyInstance, deps: AppDeps): void
         return reply.code(400).send({ error: 'validation_failed' });
       }
       const { id } = req.params as { id: string };
-      const result = await regenerateFromRound(deps.prisma, id, parsed.data.fromRound, new Date(), parsed.data.sourcePlanId, parsed.data.removedRegistrationIds);
+      const result = await regenerateFromRound(
+        deps.prisma, id, parsed.data.fromRound, requestNow(req), parsed.data.sourcePlanId,
+        parsed.data.removedRegistrationIds, { actorUserId: req.adminUserId },
+      );
       if (!result.ok) {
         return reply.code(422).send({ error: 'infeasible', gaps: result.gaps });
       }

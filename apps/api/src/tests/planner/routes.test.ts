@@ -71,6 +71,8 @@ describe('planner routes', () => {
     });
     expect(published.statusCode).toBe(200);
     expect(published.json().status).toBe('PUBLISHED');
+    expect(await prisma.auditEvent.findFirst({ where: { eventId: event.id, action: 'PLAN_PUBLISHED' } }))
+      .toMatchObject({ actorType: 'ADMIN', reason: 'Published planner revision' });
   });
   it('completes a round through the admin route and rejects stale sources', async () => {
     const cookie = await signInAsNewAdmin(app, 'complete-round-admin@example.com');
@@ -83,12 +85,31 @@ describe('planner routes', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toMatchObject({ status: 'PUBLISHED', sourcePlanId: published.json().id, frozenThroughRound: 1, revision: published.json().revision + 1 });
+    expect(await prisma.auditEvent.findFirst({ where: { eventId: event.id, action: 'PLAN_ROUND_FROZEN' } }))
+      .toMatchObject({ actorType: 'ADMIN', reason: 'Completed and froze round 1' });
 
     const stale = await app.inject({
       method: 'POST', url: `/api/admin/events/${event.id}/plan/rounds/2/complete`, payload: { sourcePlanId: published.json().id }, cookies: { nt_session: cookie },
     });
     expect(stale.statusCode).toBe(409);
     expect(stale.json()).toMatchObject({ error: 'stale_plan' });
+  });
+
+  it('reconciles current roster changes from the first unfrozen round through an Admin route', async () => {
+    const cookie = await signInAsNewAdmin(app, 'reconcile-admin@example.com');
+    const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    const generated = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/generate`, cookies: { nt_session: cookie } });
+    const published = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/publish`, payload: { planId: generated.json().id }, cookies: { nt_session: cookie } });
+    const completed = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/rounds/1/complete`, payload: { sourcePlanId: published.json().id }, cookies: { nt_session: cookie } });
+    const prefix = await prisma.roundSlot.findMany({ where: { planId: completed.json().id, round: 1 } });
+    await withdrawRegistration(prisma, event.id, prefix[0].registrationId, new Date());
+
+    const reconciled = await app.inject({ method: 'POST', url: `/api/admin/events/${event.id}/plan/reconcile`, cookies: { nt_session: cookie } });
+
+    expect(reconciled.statusCode, reconciled.body).toBe(200);
+    expect(reconciled.json()).toMatchObject({ status: 'DRAFT', frozenThroughRound: 1, sourcePlanId: completed.json().id });
+    expect(reconciled.json().slots.filter((slot: { round: number; registrationId: string }) => slot.round === 1)).toHaveLength(prefix.length);
+    expect(await prisma.auditEvent.count({ where: { eventId: event.id, action: 'PLAN_SUFFIX_RECONCILED' } })).toBe(1);
   });
 
   it('does not expose a draft through the final selector-sheet route', async () => {

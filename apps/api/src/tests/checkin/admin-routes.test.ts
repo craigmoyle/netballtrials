@@ -113,7 +113,7 @@ describe('admin-scoped check-in sessions', () => {
     const opened = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`, cookies: { nt_session: cookie }, headers: nowHeader });
     expect(opened.statusCode).toBe(200);
     const checkInCookie = opened.cookies.find((item) => item.name === 'nt_checkin')!;
-    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie } });
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie }, headers: nowHeader });
     const summary = await app.inject({ method: 'GET', url: '/api/check-in/session', cookies: { nt_checkin: checkInCookie.value }, headers: nowHeader });
 
     expect(summary.statusCode).toBe(401);
@@ -128,7 +128,7 @@ describe('admin check-in pin', () => {
     expect(initial.statusCode).toBe(200);
     expect(initial.json()).toEqual({ pinConfigured: false, checkInClosedAt: null });
     await app.inject({ method: 'PUT', url: `/api/admin/events/${eventId}/check-in-pin`, payload: { pin: '482193' }, cookies: { nt_session: cookie } });
-    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie } });
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie }, headers: { 'x-test-now': '2026-09-12T00:00:00.000Z' } });
     const configured = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/check-in-settings`, cookies: { nt_session: cookie } });
     expect(configured.json()).toMatchObject({ pinConfigured: true });
     expect(configured.json().checkInClosedAt).toBeTruthy();
@@ -154,9 +154,34 @@ describe('admin check-in pin', () => {
     expect(res.statusCode).toBe(400);
     expect((await prisma.event.findUnique({ where: { id: eventId } }))?.checkInPinHash).toBeNull();
   });
-  it('closes check-in', async () => {
-    const res = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie } });
-    expect(res.statusCode).toBe(204);
+  it('closes check-in and creates the initial roster snapshot exactly once', async () => {
+    const headers = { 'x-test-now': '2026-09-12T00:00:00.000Z' };
+    const registration = await prisma.registration.create({ data: registrationFixture(eventId, { status: 'PAID', bibNumber: 7, checkedInAt: new Date(headers['x-test-now']) }) });
+    const first = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie }, headers });
+    const second = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie }, headers });
+
+    expect(first.statusCode).toBe(204);
+    expect(second.statusCode).toBe(204);
     expect((await prisma.event.findUnique({ where: { id: eventId } }))?.checkInClosedAt).not.toBeNull();
+    const snapshots = await prisma.rosterSnapshot.findMany({ where: { eventId } });
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].revision).toBe(1);
+    expect(snapshots[0].data).toMatchObject({ registrations: [expect.objectContaining({ id: registration.id, bibNumber: 7 })] });
+    expect(await prisma.auditEvent.count({ where: { eventId, action: 'CHECK_IN_CLOSED' } })).toBe(1);
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/reopen`, cookies: { nt_session: cookie }, payload: { confirmReopen: true }, headers });
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie }, headers });
+    expect(await prisma.rosterSnapshot.count({ where: { eventId } })).toBe(2);
+  });
+
+  it('requires explicit confirmation to reopen Admin/PIN check-in and records the action', async () => {
+    const headers = { 'x-test-now': '2026-09-12T00:00:00.000Z' };
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: cookie }, headers });
+    const unconfirmed = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/reopen`, cookies: { nt_session: cookie }, payload: {} });
+    const reopened = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/reopen`, cookies: { nt_session: cookie }, payload: { confirmReopen: true }, headers });
+
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(reopened.statusCode).toBe(204);
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).checkInClosedAt).toBeNull();
+    expect(await prisma.auditEvent.count({ where: { eventId, action: 'CHECK_IN_REOPENED' } })).toBe(1);
   });
 });

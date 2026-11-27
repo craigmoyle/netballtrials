@@ -6,7 +6,7 @@ import { eventFixture, registrationFixture } from '../helpers/fixtures';
 import { hashPin } from '../../checkin/pin';
 import { closeCheckIn, manualCheckIn, setCheckInPin } from '../../checkin/service';
 import { withdrawRegistration } from '../../registrations/service';
-import { ensureReviewItems, resolveReviewItem, listReviewQueue } from '../../review/service';
+import { ensureReviewItems, listReviewQueue } from '../../review/service';
 
 let app: ReturnType<typeof createApp>;
 let cookie: string;
@@ -89,30 +89,33 @@ describe('check-in', () => {
   });
 
   it('revokes existing sessions when check-in is closed', async () => {
-    await closeCheckIn(prisma, eventId, new Date());
+    await closeCheckIn(prisma, eventId, new Date('2026-09-12T00:00:00.000Z'));
     const response = await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 'x'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header });
     expect(response.statusCode).toBe(401);
   });
 
-  it('refers to committee only while the age review remains unresolved', async () => {
+  it('never checks in a paid legacy age-flagged player, even after review is resolved', async () => {
     const registration = await paid('f'.repeat(43), { ageFlagged: true });
     await ensureReviewItems(prisma, eventId);
-    expect((await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 'f'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header })).json().referToCommittee).toBe(true);
     const item = (await listReviewQueue(prisma, eventId))[0];
-    await resolveReviewItem(prisma, eventId, item.id, { resolvedByUserId: 'admin', note: 'Reviewed' }, new Date());
-    await prisma.registration.update({ where: { id: registration.id }, data: { checkedInAt: null, bibNumber: null, checkedInBy: null } });
+    await prisma.reviewItem.update({ where: { id: item.id }, data: { resolvedAt: new Date(), note: 'Reviewed' } });
+
     const response = await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 'f'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header });
-    expect(response.json().referToCommittee).toBe(false);
+
+    expect(response.json()).toMatchObject({ result: 'refused', reason: 'ineligible', referToCommittee: true });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({ checkedInAt: null, bibNumber: null });
+    const lookup = await app.inject({ method: 'GET', url: '/api/check-in/lookup?q=love', cookies: { nt_checkin: cookie }, headers: header });
+    expect(lookup.json()).toEqual([]);
   });
 
-  it('does not refer a withdrawn flagged registration and removes it from the open queue', async () => {
+  it('does not refer a withdrawn flagged registration but keeps its review item open', async () => {
     const registration = await paid('d'.repeat(43), { ageFlagged: true });
     await ensureReviewItems(prisma, eventId);
     expect(await listReviewQueue(prisma, eventId)).toHaveLength(1);
     await withdrawRegistration(prisma, eventId, registration.id, new Date());
     const result = await manualCheckIn(prisma, eventId, registration.id, 'Volunteer', new Date('2026-09-12T00:00:00Z'), cookie);
     expect(result).toMatchObject({ result: 'refused', reason: 'not_paid', referToCommittee: false });
-    expect(await listReviewQueue(prisma, eventId)).toHaveLength(0);
+    expect(await listReviewQueue(prisma, eventId)).toHaveLength(1);
   });
 
   it('is idempotent for a second scan', async () => {
@@ -131,10 +134,10 @@ describe('check-in', () => {
     const res = await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 'z'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header });
     expect(res.json()).toMatchObject({ result: 'refused', reason: 'unknown' });
   });
-  it('marks a review-flagged registration without leaking detail', async () => {
+  it('refuses a review-flagged registration without leaking detail', async () => {
     await paid('t'.repeat(43), { ageFlagged: true });
     const res = await app.inject({ method: 'POST', url: '/api/check-in/scan', payload: { token: 't'.repeat(43) }, cookies: { nt_checkin: cookie }, headers: header });
-    expect(res.json().referToCommittee).toBe(true);
+    expect(res.json()).toMatchObject({ result: 'refused', reason: 'ineligible', referToCommittee: true });
     expect(JSON.stringify(res.json())).not.toContain('age');
   });
   it('finds a paid registration by partial, differently cased name', async () => {

@@ -5,6 +5,7 @@ import { sendCheckoutContinuation } from '../registrations/checkout';
 import { sendConfirmation } from '../registrations/confirmation';
 import {
   RegistrationConflictError,
+  RegistrationIneligibleError,
   RegistrationValidationError,
   createPendingRegistration,
 } from '../registrations/service';
@@ -19,6 +20,11 @@ const REGISTRATION_LIMIT = 10;
 const REGISTRATION_WINDOW_MS = 15 * 60_000;
 const REGISTRATION_FOLLOW_UP_LIMIT = 3;
 const NEUTRAL_ACKNOWLEDGEMENT = { status: 'received' } as const;
+
+function publicApiOrigin(deps: AppDeps): string {
+  const hostedTestMode = deps.env.APP_ENV === 'testing' && deps.env.NODE_ENV === 'production';
+  return (hostedTestMode ? deps.env.WEB_ORIGIN : deps.env.API_PUBLIC_URL).replace(/\/$/, '');
+}
 
 function registrationRateKey(eventId: string, clientIp: string): string {
   return createHash('sha256')
@@ -91,7 +97,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
         amountCents: registration.amountCents,
         currency: registration.currency,
         paymentStatus: 'paid',
-        paymentIntentId: null,
+        paymentIntentId: `fake_pi_${simulationToken}`,
       };
       const result = await processPaymentEvent(deps, event, now);
       return {
@@ -104,7 +110,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
 
   app.get('/api/public/events/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const event = await getPublicEvent(deps.prisma, id);
+    const event = await getPublicEvent(deps.prisma, id, publicApiOrigin(deps));
     if (!event) {
       return reply.code(404).send({ error: 'not_found' });
     }
@@ -167,6 +173,7 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
         id,
         req.body as RegistrationInput,
         now,
+        publicApiOrigin(deps),
       );
       if (!(await sendRegistrationEmailVerification(deps, registration, now))) {
         return reply.code(503).send({ error: 'email_verification_unavailable' });
@@ -175,6 +182,9 @@ export function registerPublicRoutes(app: FastifyInstance, deps: AppDeps): void 
     } catch (error) {
       if (error instanceof RegistrationValidationError) {
         return reply.code(400).send({ error: 'validation_failed', fields: error.fields });
+      }
+      if (error instanceof RegistrationIneligibleError) {
+        return reply.code(422).send({ error: 'ineligible', competitionYear: error.competitionYear, minAge: error.minAge, maxAge: error.maxAge });
       }
       if (error instanceof RegistrationConflictError) {
         if (error.reason === 'duplicate') {

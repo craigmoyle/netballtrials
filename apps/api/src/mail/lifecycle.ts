@@ -52,7 +52,16 @@ export async function lockMailEvent(tx: Prisma.TransactionClient, eventId: strin
 }
 
 export function mailRegistrationEligibility(kind: string, now: Date): Prisma.RegistrationWhereInput {
-  if (kind === 'checkout') return { anonymizedAt: null, status: 'PENDING', expiresAt: { gt: now } };
+  if (kind === 'checkout') return { anonymizedAt: null, status: 'PENDING', ageFlagged: false, expiresAt: { gt: now }, parentEmailVerifiedAt: { not: null } };
+  if (kind === 'payment-24h' || kind === 'payment-1h') {
+    return { anonymizedAt: null, status: 'PENDING', ageFlagged: false, expiresAt: { gt: now }, parentEmailVerifiedAt: { not: null } };
+  }
+  if (kind === 'payment-1h-warning' || kind === 'payment-1h-admin-warning') {
+    return {
+      anonymizedAt: null, ageFlagged: false, parentEmailVerifiedAt: { not: null },
+      status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
+    };
+  }
   if (kind === 'message') return {
     anonymizedAt: null,
     OR: [

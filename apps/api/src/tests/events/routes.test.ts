@@ -14,7 +14,7 @@ beforeEach(async () => {
   cookie = await signInAsNewAdmin(app, 'admin@example.com');
 });
 
-const payload = { name: '17/U', competitionYear: 2027, division: '17/U', section: 'Ladies', eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00', gameStartTime: '09:00', registrationFeeCents: 3500, courts: 4, rank1Min: 2, rank2Min: 1, rank3Min: 1, minAge: 14, maxAge: 17 };
+const payload = { name: '17/U', competitionYear: 2027, division: '17/U', section: 'Ladies', eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00', gameStartTime: '09:00', registrationClosesAt: '2026-09-11T08:30', registrationFeeCents: 3500, courts: 4, rank1Min: 2, rank2Min: 1, rank3Min: 1, minAge: 14, maxAge: 17 };
 
 describe('event admin routes', () => {
   it('requires an admin session', async () => {
@@ -22,15 +22,26 @@ describe('event admin routes', () => {
     expect(res.statusCode).toBe(401);
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/events/event-1' })).statusCode).toBe(401);
   });
-  it('creates and lists an event with distinct arrival and game start times', async () => {
+  it('creates and lists an event with a Melbourne registration deadline', async () => {
     const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({ startTime: '08:30', gameStartTime: '09:00' });
+    expect(created.json().registrationClosesAt).toBe('2026-09-10T22:30:00.000Z');
     expect(created.json()).not.toHaveProperty('lastWhistle');
     const listed = await app.inject({ method: 'GET', url: '/api/admin/events', cookies: { nt_session: cookie } });
     expect(listed.json()).toHaveLength(1);
     expect(listed.json()[0]).toMatchObject({ startTime: '08:30', gameStartTime: '09:00' });
   });
+  it('requires a registration deadline on create and rejects a deadline after arrival', async () => {
+    const missing = await app.inject({ method: 'POST', url: '/api/admin/events', payload: { ...payload, registrationClosesAt: undefined }, cookies: { nt_session: cookie } });
+    const late = await app.inject({ method: 'POST', url: '/api/admin/events', payload: { ...payload, registrationClosesAt: '2026-09-12T08:31' }, cookies: { nt_session: cookie } });
+
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().fields).toContain('registrationClosesAt');
+    expect(late.statusCode).toBe(400);
+    expect(late.json().fields).toContain('registrationClosesAt');
+  });
+
   it('preserves non-default durations and an omitted policy URL on a venue-only PATCH', async () => {
     const created = await app.inject({
       method: 'POST', url: '/api/admin/events', cookies: { nt_session: cookie },
@@ -68,7 +79,7 @@ describe('event admin routes', () => {
     const created = await app.inject({ method: 'POST', url: '/api/admin/events', payload, cookies: { nt_session: cookie } });
     expect(created.statusCode).toBe(201);
     const eventId = created.json().id as string;
-    const opened = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie } });
+    const opened = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie }, headers: { 'x-test-now': '2026-09-01T00:00:00.000Z' } });
     expect(opened.statusCode).toBe(200);
     const white = await prisma.bibColor.findUniqueOrThrow({ where: { name: 'White' } });
     const black = await prisma.bibColor.findUniqueOrThrow({ where: { name: 'Black' } });
@@ -151,8 +162,8 @@ describe('event admin routes', () => {
       await app.inject({ method: 'GET', url: '/api/admin/events', cookies: { nt_session: cookie } }),
       await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}`, cookies: { nt_session: cookie } }),
       await app.inject({ method: 'PATCH', url: `/api/admin/events/${eventId}`, payload: { courts: 3 }, cookies: { nt_session: cookie } }),
-      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie } }),
-      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie } }),
+      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie }, headers: { 'x-test-now': '2026-09-01T00:00:00.000Z' } }),
+      await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/open`, cookies: { nt_session: cookie }, headers: { 'x-test-now': '2026-09-01T00:00:00.000Z' } }),
       await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/close`, cookies: { nt_session: cookie } }),
     ];
     for (const response of responses) {

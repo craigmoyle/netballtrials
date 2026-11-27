@@ -27,6 +27,7 @@ const savedEvent = {
   gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
   rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
   minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'OPEN',
+  registrationClosesAt: '2027-09-10T22:30:00.000Z', registrationClosedAt: null,
 };
 
 function editEventClient(overrides: Record<string, unknown> = {}) {
@@ -356,6 +357,15 @@ describe('EventFormPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
     await screen.findByRole('heading', { name: 'Events list' });
     expect(createEvent.mock.calls[0][0]).not.toHaveProperty('policyUrl');
+  });
+
+  it('defaults the registration deadline to 24 hours before Melbourne arrival', () => {
+    renderForm({ createEvent: vi.fn() });
+    fireEvent.change(screen.getByLabelText('Event date'), { target: { value: '2027-09-12' } });
+
+    expect(screen.getByLabelText('Registration closes (Melbourne time)')).toHaveValue('2027-09-11T08:30');
+    fireEvent.change(screen.getByLabelText('Arrival time'), { target: { value: '10:15' } });
+    expect(screen.getByLabelText('Registration closes (Melbourne time)')).toHaveValue('2027-09-11T10:15');
   });
 
   it('sets policy age defaults when the division is selected', () => {

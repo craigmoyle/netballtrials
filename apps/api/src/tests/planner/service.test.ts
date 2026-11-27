@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
-import { completeRound, generateDraftPlan, publishPlan, regenerateFromRound } from '../../planner/service';
+import { completeRound, generateDraftPlan, getPlanPreview, publishPlan, reconcileRosterChanges, regenerateFromRound } from '../../planner/service';
 import { verifyPlan } from '../../planner/verify';
 import { seedEventWithPlayers } from '../helpers/planner';
 import { withdrawRegistration } from '../../registrations/service';
@@ -57,11 +57,54 @@ describe('plan service', () => {
     expect(players.some((player) => player.registrationId === noShow.id)).toBe(false);
   });
 
+  it('excludes paid legacy age-flagged players from planner selection', async () => {
+    const event = await seedEventWithPlayers(29, { courts: 2, checkedIn: 29 });
+    await prisma.registration.update({ where: { id: (await prisma.registration.findFirstOrThrow({ where: { eventId: event.id, bibNumber: 1 } })).id }, data: { ageFlagged: true } });
+
+    expect(await getPlanPreview(prisma, event.id)).toMatchObject({ checkedInPlayers: 28 });
+    const result = await generateDraftPlan(prisma, event.id, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(await prisma.roundPlanPlayer.count({ where: { planId: result.plan.id } })).toBe(28);
+  });
+
   it('does not save a plan when a check-in gap exists', async () => {
     const event = await seedEventWithPlayers(20, { courts: 2, checkedIn: 20 });
     const result = await generateDraftPlan(prisma, event.id, 1);
     expect(result.ok).toBe(false);
     expect(await prisma.roundPlan.count()).toBe(0);
+  });
+
+  it('reconciles a paid late arrival only after the frozen prefix and returns exact gaps without changing attendance when infeasible', async () => {
+    const event = await seedEventWithPlayers(30, { courts: 2, checkedIn: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0 });
+    const first = await generateDraftPlan(prisma, event.id, 1);
+    if (!first.ok) throw new Error('setup failed');
+    if (!(await publishPlan(prisma, event.id, first.plan.id)).ok) throw new Error('publish failed');
+    const completed = await completeRound(prisma, event.id, first.plan.id, 1, new Date());
+    if (!completed.ok) throw new Error('complete failed');
+    const prefix = await prisma.roundSlot.findMany({ where: { planId: completed.plan.id, round: 1 } });
+    const late = await prisma.registration.create({ data: {
+      eventId: event.id, playerFirstName: 'Late', playerLastName: 'Arrival', playerNameNormalized: 'late arrival',
+      dateOfBirth: new Date('2012-04-02T00:00:00Z'), parentName: 'Parent', parentEmail: 'late@example.com',
+      parentMobile: '0400000000', memberAssociation: 'MENA', rank1Position: 'GS', eligibilityConfirmedAt: new Date(),
+      amountCents: 3500, policyReference: 'x', expiresAt: new Date(Date.now() + 86400000), status: 'PAID',
+      checkedInAt: new Date(), bibNumber: 31,
+    } });
+
+    const reconciled = await reconcileRosterChanges(prisma, event.id, new Date());
+
+    expect(reconciled.ok).toBe(true);
+    if (!reconciled.ok || !reconciled.plan) return;
+    expect(reconciled.plan).toMatchObject({ status: 'DRAFT', sourcePlanId: completed.plan.id, frozenThroughRound: 1 });
+    expect(orderedSlots(await prisma.roundSlot.findMany({ where: { planId: reconciled.plan.id, round: 1 } }))).toEqual(orderedSlots(prefix));
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: late.id } })).checkedInAt).toBeTruthy();
+
+    await prisma.event.update({ where: { id: event.id }, data: { endTime: '09:10' } });
+    const infeasible = await reconcileRosterChanges(prisma, event.id, new Date());
+    expect(infeasible.ok).toBe(false);
+    if (!infeasible.ok) expect(infeasible.gaps.length).toBeGreaterThan(0);
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: late.id } })).checkedInAt).toBeTruthy();
+    expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).publishedPlanId).toBe(completed.plan.id);
   });
 
   it('creates a new verified draft revision and preserves the played prefix', async () => {

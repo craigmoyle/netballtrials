@@ -6,6 +6,13 @@ import { eventFixture, registrationFixture } from '../helpers/fixtures';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { GmailDeliveryError } from '../../mail/gmail-mailer';
 import { DEFAULT_AUTOMATIC_EMAIL_SETTINGS } from '../../messages/automatic-email-settings';
+import { createFakePaymentProvider } from '../../payments/fake';
+
+const paymentReminderEnv = {
+  PAYMENT_PROVIDER: 'fake' as const,
+  WEB_ORIGIN: 'http://localhost:5173',
+  MAIL_FROM: 'chisholmnetball@gmail.com',
+};
 
 beforeEach(resetDb);
 
@@ -83,7 +90,7 @@ describe('Melbourne event start and reminders', () => {
     expect(await prisma.emailLog.count()).toBe(1);
   });
 
-  it('uses the configured lead time and reminder template', async () => {
+  it('uses a fixed 24-hour lead time and the configured reminder template', async () => {
     const event = await prisma.event.create({
       data: { ...eventFixture(), eventDate: new Date('2026-09-12T00:00:00Z'), startTime: '08:30', gameStartTime: '09:00' },
     });
@@ -99,7 +106,7 @@ describe('Melbourne event start and reminders', () => {
       },
     });
     const mailer = createDevMailer([]);
-    const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-09T22:30:00Z'));
+    const result = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
     expect(result).toMatchObject({ sent: 0, simulated: 1, events: 1 });
     expect(mailer.sent[0]).toMatchObject({
       subject: `See you at ${event.name}`,
@@ -245,6 +252,117 @@ describe('Melbourne event start and reminders', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].message).toBe('database blip');
     expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('sends fixed 24h and 1h payment stages once per household and suppresses paid registrations', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const first = await prisma.registration.create({ data: registrationFixture(event.id, {
+      playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
+      parentEmail: 'family@example.com', parentEmailVerifiedAt: new Date('2026-09-01T00:00:00Z'), status: 'PENDING',
+      expiresAt: new Date('2026-09-12T00:00:00Z'),
+    }) });
+    const sibling = await prisma.registration.create({ data: registrationFixture(event.id, {
+      playerFirstName: 'Grace', playerLastName: 'Lovelace', playerNameNormalized: 'grace lovelace',
+      parentEmail: 'family@example.com', parentEmailVerifiedAt: new Date('2026-09-01T00:00:00Z'), status: 'PENDING',
+      expiresAt: new Date('2026-09-12T00:00:00Z'),
+    }) });
+    const mailer = createDevMailer([]);
+    const payment = createFakePaymentProvider();
+    const deps = { prisma, mailer, payment, env: paymentReminderEnv };
+
+    const firstRun = await sendDueReminders(deps, new Date('2026-09-10T22:30:00Z'));
+    expect(firstRun.simulated).toBe(1);
+    const paymentEmail = mailer.sent.find((message) => message.text.includes('Ada Lovelace'))!;
+    expect(paymentEmail).toBeDefined();
+    expect(paymentEmail.text).toContain('Grace Lovelace');
+    expect(paymentEmail.text.match(/https:\/\/checkout\.test\//g)).toHaveLength(2);
+    expect(await prisma.emailLog.findFirstOrThrow({ where: { eventId: event.id, kind: 'payment-24h' } })).toMatchObject({
+      to: 'family@example.com', registrationIds: [first.id, sibling.id], status: 'SENT',
+    });
+    expect((await sendDueReminders(deps, new Date('2026-09-10T22:45:00Z'))).simulated).toBe(0);
+
+    await prisma.registration.update({ where: { id: first.id }, data: { status: 'PAID' } });
+    mailer.sent.length = 0;
+    const lateRun = await sendDueReminders(deps, new Date('2026-09-11T21:30:00Z'));
+    expect(lateRun.simulated).toBe(2);
+    const latePayment = mailer.sent.find((message) => message.text.includes('Grace Lovelace'))!;
+    expect(latePayment).toBeDefined();
+    expect(latePayment.text).not.toContain('Ada Lovelace');
+    const lateStage = await prisma.emailLog.findFirstOrThrow({ where: { eventId: event.id, kind: 'payment-1h' } });
+    expect(lateStage.registrationIds).toEqual([sibling.id]);
+    expect((await sendDueReminders(deps, new Date('2026-09-11T21:45:00Z'))).simulated).toBe(0);
+  });
+
+  it.each([
+    ['24h', 'EXPIRED', new Date('2026-09-10T22:30:00Z'), 'payment-24h'],
+    ['1h', 'FAILED', new Date('2026-09-11T21:30:00Z'), 'payment-1h'],
+  ] as const)('recovers a verified %s %s registration for its automatic payment reminder', async (_stage, status, now, kind) => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const registration = await prisma.registration.create({ data: registrationFixture(event.id, {
+      parentEmailVerifiedAt: new Date('2026-09-01T00:00:00Z'), status,
+      expiresAt: new Date('2026-09-09T00:00:00Z'), checkoutSessionId: `cs_old_${status}`,
+    }) });
+    const payment = createFakePaymentProvider();
+    const mailer = createDevMailer([]);
+
+    const result = await sendDueReminders({ prisma, mailer, payment, env: paymentReminderEnv }, now);
+
+    expect(result.simulated).toBe(1);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({ status: 'PENDING', checkoutAttempt: 1 });
+    expect(await prisma.emailLog.findFirstOrThrow({ where: { eventId: event.id, kind } })).toMatchObject({ registrationIds: [registration.id] });
+    expect(payment.checkouts).toHaveLength(1);
+  });
+
+  it('warns the parent and club mailbox at 1h when Checkout cannot be recovered without sending a dead link', async () => {
+    const event = await prisma.event.create({ data: { ...eventFixture(), name: '17/U Warning' } });
+    const registration = await prisma.registration.create({ data: registrationFixture(event.id, {
+      parentEmail: 'family@example.com', parentEmailVerifiedAt: new Date('2026-09-01T00:00:00Z'), status: 'PENDING',
+      expiresAt: new Date('2026-09-12T00:00:00Z'),
+    }) });
+    const payment = createFakePaymentProvider();
+    const mailer = createDevMailer([]);
+    const broken = { ...payment, createCheckout: async () => { throw new Error('secret provider detail'); } };
+
+    const result = await sendDueReminders({ prisma, mailer, payment: broken, env: paymentReminderEnv }, new Date('2026-09-11T21:30:00Z'));
+
+    expect(result.simulated).toBe(2);
+    expect(mailer.sent.map((message) => message.to).sort()).toEqual(['chisholmnetball@gmail.com', 'family@example.com']);
+    const parentWarning = mailer.sent.find((message) => message.to === 'family@example.com')!;
+    expect(parentWarning.text).toMatch(/no payment has been received/i);
+    expect(parentWarning.text).toMatch(/registration is incomplete/i);
+    expect(parentWarning.text).not.toContain('https://checkout.test/');
+    expect(parentWarning.text).not.toContain('secret provider detail');
+    const adminWarning = mailer.sent.find((message) => message.to === 'chisholmnetball@gmail.com')!;
+    expect(adminWarning.text).toContain('17/U Warning');
+    expect(adminWarning.text).toContain('Ada Lovelace');
+    expect(adminWarning.text).toContain(registration.id);
+    expect(adminWarning.text).toContain('checkout_unavailable');
+    expect(adminWarning.text).not.toContain('secret provider detail');
+    expect(await prisma.emailLog.count({ where: { eventId: event.id, kind: 'payment-1h-admin-warning' } })).toBe(1);
+  });
+
+  it('retries payment reminder delivery failures only five times and never retries ambiguous outcomes', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    await prisma.registration.create({ data: registrationFixture(event.id, {
+      parentEmailVerifiedAt: new Date('2026-09-01T00:00:00Z'), status: 'PENDING', expiresAt: new Date('2026-09-12T00:00:00Z'),
+    }) });
+    const payment = createFakePaymentProvider();
+    const sentTo: string[] = [];
+    const rejected = { send: async (message: { to: string }) => {
+      sentTo.push(message.to);
+      throw new GmailDeliveryError('rejected', 403);
+    } };
+    const now = new Date('2026-09-10T22:30:00Z');
+    for (let run = 0; run < 7; run += 1) {
+      await sendDueReminders({ prisma, mailer: rejected, payment, env: paymentReminderEnv }, new Date(+now + run * 60_000));
+    }
+    expect(sentTo).toHaveLength(5);
+    const delivery = await prisma.emailLog.findFirstOrThrow({ where: { kind: 'payment-24h' } });
+    expect(delivery).toMatchObject({ status: 'FAILED', attempts: 5 });
+
+    await prisma.emailLog.update({ where: { id: delivery.id }, data: { status: 'AMBIGUOUS', attempts: 1 } });
+    await sendDueReminders({ prisma, mailer: rejected, payment, env: paymentReminderEnv }, new Date(+now + 14 * 60_000));
+    expect(sentTo).toHaveLength(5);
   });
 
   it('stops retrying a failed reminder automatically after five attempts', async () => {

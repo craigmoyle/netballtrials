@@ -18,7 +18,7 @@ const old = new Date(+now - 10 * 60_000);
 describe('retryPendingCheckouts', () => {
   it('recovers an OAuth failure for the verified current address with no new provider session', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
-    const registration = await prisma.registration.create({ data: registrationFixture(event.id) });
+    const registration = await prisma.registration.create({ data: registrationFixture(event.id, { parentEmailVerifiedAt: old }) });
     const send = vi.fn().mockRejectedValueOnce(new GmailDeliveryError('OAuth failed', undefined, { notSent: true })).mockResolvedValue(undefined);
     const payment = createFakePaymentProvider();
     const deps = { prisma, payment, mailer: { send }, env: loadEnv({ NODE_ENV: 'test', PAYMENT_PROVIDER: 'fake' }) } satisfies AppDeps;
@@ -42,6 +42,7 @@ describe('retryPendingCheckouts', () => {
         status: variant === 'paid' ? 'PAID' : variant === 'withdrawn' ? 'WITHDRAWN' : 'PENDING',
         expiresAt: new Date(+now + (variant === 'expired' ? -1 : 86_400_000)),
         anonymizedAt: variant === 'anonymized' ? old : null,
+        parentEmailVerifiedAt: variant === 'anonymized' ? null : old,
       }) });
       await prisma.emailLog.create({ data: {
         eventId: event.id, registrationId: registration.id, batchId: `checkout:${variant}`, idempotencyKey: variant,

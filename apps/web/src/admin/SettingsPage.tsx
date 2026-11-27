@@ -126,6 +126,11 @@ export function SettingsPage({ client }: { client: Client }) {
           </form>
         </section>
       ) : null}
+      <section className="site-settings-section" aria-labelledby="payment-reminder-heading">
+        <h2 id="payment-reminder-heading">Automatic payment reminders</h2>
+        <p>Verified unpaid registrations receive system-controlled reminders 24 hours and 1 hour before event start. The app groups siblings by verified parent email and keeps one reminder per stage and per household.</p>
+        <p>Paid registrations are suppressed. At one hour, Checkout failures warn the parent without a dead link and notify the configured club mailbox with safe error details.</p>
+      </section>
       <section className="site-settings-section automatic-email-settings" aria-labelledby="automatic-email-heading">
         <div className="admin-page-title-row"><h2 id="automatic-email-heading">Automatic email messages</h2><HelpTip label="Confirmation and reminder emails">These messages are sent by the app after payment and before a trial. Ticket links, the QR image and calendar attachment stay in place.</HelpTip></div>
         <p>Edit confirmation and reminder subjects and messages. Use the listed fields to add event and player details.</p>
@@ -158,7 +163,7 @@ export function SettingsPage({ client }: { client: Client }) {
                 <pre>{emailPreview(automaticEmail, 'reminder').body}</pre>
               </details>
               <div className="automatic-email-label-row"><label htmlFor="reminder-lead-hours">Send reminder (hours before event start)</label><HelpTip label="Reminder timing">The reminder job sends once an event enters this lead-time window. Keep the job scheduled at least every 15 minutes; the actual send can be up to 15 minutes after the window opens.</HelpTip></div>
-              <input id="reminder-lead-hours" type="number" min={1} max={168} step={1} value={automaticEmail.reminderLeadHours} onChange={(event) => setAutomaticEmail({ ...automaticEmail, reminderLeadHours: Number(event.target.value) })} />
+              <input id="reminder-lead-hours" type="number" min={24} max={24} step={1} value={24} readOnly />
             </fieldset>
             <button type="submit" disabled={busy || !automaticEmail.confirmationSubject.trim() || !automaticEmail.confirmationBody.trim() || !automaticEmail.reminderSubject.trim() || !automaticEmail.reminderBody.trim() || automaticEmail.reminderLeadHours < 1 || automaticEmail.reminderLeadHours > 168}>{busy ? 'Saving…' : 'Save automatic email settings'}</button>
           </form>

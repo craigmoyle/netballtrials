@@ -15,6 +15,7 @@ const savedEvent = {
   gameStartTime: '09:00', registrationFeeCents: 3500, courts: 1,
   rank1Min: 1, rank2Min: 0, rank3Min: 0, playMinutes: 8, changeoverMinutes: 2,
   minAge: 12, maxAge: 15, policyUrl: null, policyDocumentName: null, status: 'DRAFT',
+  registrationClosesAt: '2027-09-10T22:30:00.000Z', registrationClosedAt: null,
 };
 
 function operationsClient(overrides: Record<string, unknown> = {}) {
@@ -29,6 +30,7 @@ function operationsClient(overrides: Record<string, unknown> = {}) {
     setCheckInPin: vi.fn().mockResolvedValue(undefined),
     clearCheckInPin: vi.fn().mockResolvedValue(undefined),
     closeCheckIn: vi.fn().mockResolvedValue(undefined),
+    reopenCheckIn: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -79,10 +81,28 @@ describe('EventOperationsPage', () => {
     await waitFor(() => expect(client.closeCheckIn).toHaveBeenCalledWith('e1'));
     expect(await within(checkInAction).findByRole('status')).toHaveTextContent('Volunteer check-in is closed.');
     expect(within(checkInAction).queryByRole('button', { name: 'Close check-in' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /close event/i }));
+    fireEvent.click(screen.getByRole('button', { name: /close registration/i }));
     await waitFor(() => expect(client.closeEvent).toHaveBeenCalledWith('e1'));
     expect(await screen.findByText('Registration is closed.')).toBeInTheDocument();
     expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('requires a future deadline and confirmation to reopen CLOSED registration', async () => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
+    const openEvent = vi.fn().mockResolvedValue({
+      ...savedEvent, status: 'OPEN', registrationClosesAt: '2099-09-11T22:30:00.000Z', registrationClosedAt: null,
+    });
+    renderOperations(operationsClient({
+      getEvent: vi.fn().mockResolvedValue({ ...savedEvent, status: 'CLOSED', registrationClosedAt: '2026-09-01T00:00:00.000Z' }),
+      openEvent,
+    }));
+
+    fireEvent.change(await screen.findByLabelText('New registration deadline (Melbourne time)'), { target: { value: '2099-09-11T18:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen registration' }));
+
+    await waitFor(() => expect(openEvent).toHaveBeenCalledWith('e1', { registrationClosesAt: '2099-09-11T18:00', confirmReopen: true }));
+    expect(confirm).toHaveBeenCalledWith('Reopen public registration with this deadline?');
   });
 
   it('shows invalid PIN feedback beside the field and clears it on edit', async () => {
@@ -139,13 +159,13 @@ describe('EventOperationsPage', () => {
     });
     renderOperations(client);
 
-    const closeEvent = await screen.findByRole('button', { name: 'Close event' });
+    const closeEvent = await screen.findByRole('button', { name: 'Close registration' });
     const closeCheckIn = screen.getByRole('button', { name: 'Close check-in' });
     expect(screen.getByRole('heading', { level: 3, name: 'Registration' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Volunteer check-in' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 3, name: 'Team colors' })).toBeInTheDocument();
-    const registrationWarning = screen.getByText(/closing registration prevents new families from registering\. this event cannot be reopened from event operations/i);
-    const checkInWarning = screen.getByText(/closing check-in revokes active volunteer sessions\. this event.s check-in cannot be reopened/i);
+    const registrationWarning = screen.getByText(/closing registration prevents new families from registering\. existing accepted registrations can continue/i);
+    const checkInWarning = screen.getByText(/closing check-in revokes active volunteer sessions and creates the initial final-roster snapshot/i);
     expect(closeEvent).toHaveClass('button-secondary');
     expect(closeCheckIn).toHaveClass('button-secondary');
     expect(closeEvent.compareDocumentPosition(registrationWarning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -245,8 +265,8 @@ describe('EventOperationsPage', () => {
     ['CLOSED', 0, null, true],
     ['DRAFT', 0, null, false],
     ['OPEN', -1, null, false],
-    ['CLOSED', 0, '2026-09-11T14:00:00.000Z', false],
-  ])('shows Add day-of player only for an event today with check-in open (%s, %i)', async (status, dayOffset, checkInClosedAt, visible) => {
+    ['CLOSED', 0, '2026-09-11T14:00:00.000Z', true],
+  ])('shows Add day-of player to Admins for any active event today, including after check-in closure (%s, %i)', async (status, dayOffset, checkInClosedAt, visible) => {
     const date = new Date(`${melbourneDateKey(new Date())}T00:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + dayOffset);
     const event = { ...savedEvent, eventDate: date.toISOString(), status };
@@ -259,6 +279,19 @@ describe('EventOperationsPage', () => {
     await screen.findByText('PIN: Not configured');
     if (visible) expect(screen.getByRole('link', { name: 'Add day-of player' })).toHaveAttribute('href', '/admin/events/e1/day-of-registration');
     else expect(screen.queryByRole('link', { name: 'Add day-of player' })).not.toBeInTheDocument();
+  });
+
+  it('reopens closed check-in only after explicit Admin confirmation', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    const client = operationsClient({
+      checkInSettings: vi.fn().mockResolvedValue({ pinConfigured: true, checkInClosedAt: '2027-09-12T01:00:00.000Z' }),
+    });
+    renderOperations(client);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reopen check-in' }));
+
+    await waitFor(() => expect(client.reopenCheckIn).toHaveBeenCalledWith('e1'));
+    expect(await screen.findByRole('status')).toHaveTextContent('Check-in is open again.');
   });
 
   it('loads saved court colors for each event court', async () => {

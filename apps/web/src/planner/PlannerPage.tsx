@@ -118,6 +118,21 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
     }
   }
 
+  async function onReconcile() {
+    if (!publishedPlan || busy) return;
+    setBusy(true);
+    setActionError(null);
+    setGaps([]);
+    try {
+      const result = await client.reconcilePlan(eventId);
+      if (mounted.current) applyAction(result);
+    } catch {
+      if (mounted.current) setActionError('Could not reconcile roster changes. The saved attendance and published plan are unchanged.');
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   async function onRegenerate() {
     if (!publishedPlan || busy) return;
     setBusy(true);
@@ -184,6 +199,9 @@ function EventPlanner({ client, eventId }: { client: Client; eventId: string }) 
           {publishedPlan.frozenThroughRound < publishedPlan.rounds ? (
             <p><button type="button" onClick={onCompleteRound} disabled={busy}>{busy ? 'Working...' : `Complete round ${publishedPlan.frozenThroughRound + 1}`}</button></p>
           ) : <p>All rounds are complete.</p>}
+          {canRegenerate ? (
+            <p><button type="button" className="button-secondary" onClick={onReconcile} disabled={busy}>{busy ? 'Working...' : 'Reconcile roster changes'}</button></p>
+          ) : null}
           {canRegenerate ? (
             <p>
               <label htmlFor="fromRound">Regenerate from round</label>

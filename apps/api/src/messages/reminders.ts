@@ -1,13 +1,26 @@
+import { createHash } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
+import type { Env } from '../env';
 import type { EmailProvider } from '../mail/provider';
+import type { PaymentProvider } from '../payments/provider';
 import { INTERRUPTED_SEND, mailRegistrationEligibility } from '../mail/lifecycle';
 import { localDateTimeToUtc } from '../time/melbourne';
-import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage, reconcileStaleDeliveries, retryFailedDeliveries } from './service';
+import { AUTOMATIC_RETRY_LIMIT, EmailBatchConflictError, deliverEventMessage, reconcileStaleDeliveries, retryFailedDeliveries, sendEmailToRegistrationGroup } from './service';
 import { isPastRetentionCutoff } from '../retention/service';
 import { buildTrialCalendar } from '../registrations/calendar';
 import { getAutomaticEmailSettings, renderAutomaticEmailSubject, renderAutomaticEmailTemplate } from './automatic-email-settings';
+import { createRegistrationCheckout, recoverRegistrationCheckout } from '../registrations/checkout';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const EVENT_DETAILS_LEAD_HOURS = 24;
+type ReminderDeps = {
+  prisma: PrismaClient;
+  mailer: EmailProvider;
+  payment?: PaymentProvider;
+  env?: Pick<Env, 'PAYMENT_PROVIDER' | 'WEB_ORIGIN' | 'MAIL_FROM'>;
+};
+type PaymentReminderEvent = { id: string; name: string; eventDate: Date; startTime: string };
 
 export function eventStartInstant(eventDate: Date, startTime: string): Date {
   return localDateTimeToUtc(eventDate, startTime);
@@ -31,15 +44,203 @@ export type ReminderRunResult = {
   errors: Array<{ eventId: string; message: string }>;
 };
 
+function registrationName(registration: { playerFirstName: string; playerLastName: string }): string {
+  return `${registration.playerFirstName} ${registration.playerLastName}`.trim();
+}
+
+function paymentStageDue(delta: number, stage: '24h' | '1h'): boolean {
+  const lead = (stage === '24h' ? 24 : 1) * HOUR_MS;
+  return delta > 0 && delta <= lead && (stage === '1h' || delta > HOUR_MS);
+}
+
+function paymentStageKey(stage: '24h' | '1h', eventId: string, email: string, registrationIds: string[]): string {
+  const household = createHash('sha256')
+    .update(`${email.trim().toLowerCase()}\0${[...registrationIds].sort().join(',')}`)
+    .digest('hex').slice(0, 16);
+  return `payment-${stage}:${eventId}:${household}`;
+}
+
+async function retryPaymentReminderRows(deps: ReminderDeps, now: Date, result: ReminderRunResult): Promise<void> {
+  const rows = await deps.prisma.emailLog.findMany({
+    where: {
+      kind: { in: ['payment-24h', 'payment-1h', 'payment-1h-warning', 'payment-1h-admin-warning'] },
+      status: { in: ['PENDING', 'FAILED'] },
+      attempts: { lt: AUTOMATIC_RETRY_LIMIT },
+    },
+    include: { event: { select: { eventDate: true, startTime: true } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+  for (const row of rows) {
+    if (eventStartInstant(row.event.eventDate, row.event.startTime) <= now) {
+      await deps.prisma.emailLog.updateMany({
+        where: { id: row.id, status: { in: ['PENDING', 'FAILED'] } },
+        data: { status: 'FAILED', failedAt: now, error: 'event_started' },
+      });
+      continue;
+    }
+    try {
+      const delivery = await retryFailedDeliveries(deps, row.eventId, row.batchId, [row.id], now, { maxAttempts: AUTOMATIC_RETRY_LIMIT });
+      result.sent += delivery.sentThisRun;
+      result.simulated += delivery.simulatedThisRun;
+      result.failed += delivery.failedThisRun;
+      result.ambiguous += delivery.ambiguousThisRun;
+    } catch {
+      result.failed += 1;
+      result.errors.push({ eventId: row.eventId, message: `payment_reminder_retry_failed:${row.id}` });
+    }
+  }
+}
+
+async function sendPaymentStage(
+  deps: ReminderDeps,
+  event: PaymentReminderEvent,
+  now: Date,
+  stage: '24h' | '1h',
+  result: ReminderRunResult,
+  dueEventIds: Set<string>,
+): Promise<void> {
+  if (!deps.payment || !deps.env) return;
+  const registrations = await deps.prisma.registration.findMany({
+    where: {
+      eventId: event.id, anonymizedAt: null, ageFlagged: false, parentEmailVerifiedAt: { not: null },
+      OR: [
+        { status: 'PENDING', expiresAt: { gt: now } },
+        { status: { in: ['EXPIRED', 'FAILED'] } },
+      ],
+    },
+    orderBy: [{ parentEmail: 'asc' }, { id: 'asc' }],
+  });
+  const households = new Map<string, typeof registrations>();
+  for (const registration of registrations) {
+    const email = registration.parentEmail.trim().toLowerCase();
+    if (email) households.set(email, [...(households.get(email) ?? []), registration]);
+  }
+  if (households.size) dueEventIds.add(event.id);
+
+  for (const [email, household] of households) {
+    const batchId = paymentStageKey(stage, event.id, email, household.map((registration) => registration.id));
+    if (await deps.prisma.emailLog.findFirst({ where: { batchId }, select: { id: true } })) continue;
+    const checkouts: Array<{ registration: (typeof household)[number]; url: string }> = [];
+    const unavailable: typeof household = [];
+    for (const registration of household) {
+      const recovered = await recoverRegistrationCheckout(deps, registration.id, now);
+      const checkout = recovered
+        ? await createRegistrationCheckout({ ...deps, payment: deps.payment, env: deps.env }, recovered, now)
+        : null;
+      if (checkout && recovered) checkouts.push({ registration: recovered, url: checkout.url });
+      else unavailable.push(registration);
+    }
+    if (!checkouts.length && stage === '24h') continue;
+
+    const warning = stage === '1h' && unavailable.length > 0;
+    const kind = warning ? 'payment-1h-warning' : `payment-${stage}`;
+    const registrationList = warning ? household : checkouts.map((item) => item.registration);
+    const validLinks = checkouts.map(({ registration, url }) => `${registrationName(registration)}: ${url}`).join('\n');
+    const unavailableNames = unavailable.map(registrationName).join(', ');
+    const details = warning
+      ? `No payment has been received and the registration is incomplete. We could not prepare secure Checkout for ${unavailableNames}. Please contact the club immediately.${validLinks ? `\n\nCheckout is still available for the other registration(s):\n${validLinks}` : ''}`
+      : `Registration is incomplete until payment is received. Complete the secure Checkout below:\n\n${validLinks}`;
+    const message = {
+      subject: warning ? `Payment warning: ${event.name}` : `Complete payment for ${event.name}`,
+      text: `${details}\n\nEvent: ${event.name}\nStart: ${event.startTime}\n\nIf you have already paid, contact the club to check the payment record.`,
+    };
+    try {
+      const delivery = await sendEmailToRegistrationGroup(deps, {
+        eventId: event.id,
+        registrationIds: registrationList.map((registration) => registration.id),
+        to: email,
+        kind,
+        batchId,
+      }, message, now);
+      result.sent += delivery.sentThisRun;
+      result.simulated += delivery.simulatedThisRun;
+      result.failed += delivery.failedThisRun;
+      result.ambiguous += delivery.ambiguousThisRun;
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push({ eventId: event.id, message: error instanceof Error ? error.message : 'payment_reminder_failed' });
+    }
+
+    if (stage === '1h') {
+      for (const registration of unavailable) {
+        const adminBatchId = `${batchId}:admin:${registration.id}`;
+        try {
+          const delivery = await sendEmailToRegistrationGroup(deps, {
+            eventId: event.id,
+            registrationIds: [registration.id],
+            to: deps.env.MAIL_FROM,
+            kind: 'payment-1h-admin-warning',
+            batchId: adminBatchId,
+          }, {
+            subject: `Admin payment warning: ${event.name}`,
+            text: `Event: ${event.name}\nPlayer: ${registrationName(registration)}\nRegistration ID: ${registration.id}\nError category: checkout_unavailable\nNo payment has been received and the registration is incomplete. Contact the guardian immediately.`,
+          }, now);
+          result.sent += delivery.sentThisRun;
+          result.simulated += delivery.simulatedThisRun;
+          result.failed += delivery.failedThisRun;
+          result.ambiguous += delivery.ambiguousThisRun;
+        } catch (error) {
+          result.failed += 1;
+          result.errors.push({ eventId: event.id, message: error instanceof Error ? error.message : 'admin_payment_warning_failed' });
+        }
+      }
+    }
+  }
+}
+
+async function markDryRunPaymentEvents(
+  deps: ReminderDeps,
+  events: PaymentReminderEvent[],
+  now: Date,
+  dueEventIds: Set<string>,
+): Promise<void> {
+  for (const event of events) {
+    const delta = eventStartInstant(event.eventDate, event.startTime).getTime() - now.getTime();
+    const due = paymentStageDue(delta, '24h') || paymentStageDue(delta, '1h');
+    if (!due) continue;
+    const pending = await deps.prisma.registration.count({
+      where: {
+        eventId: event.id, anonymizedAt: null, ageFlagged: false, parentEmailVerifiedAt: { not: null },
+        OR: [
+          { status: 'PENDING', expiresAt: { gt: now } },
+          { status: { in: ['EXPIRED', 'FAILED'] } },
+        ],
+      },
+    });
+    if (pending) dueEventIds.add(event.id);
+  }
+}
+
+async function sendDuePaymentReminders(
+  deps: ReminderDeps,
+  events: PaymentReminderEvent[],
+  now: Date,
+  result: ReminderRunResult,
+  dueEventIds: Set<string>,
+): Promise<void> {
+  for (const event of events) {
+    try {
+      const delta = eventStartInstant(event.eventDate, event.startTime).getTime() - now.getTime();
+      for (const stage of ['24h', '1h'] as const) {
+        if (!paymentStageDue(delta, stage)) continue;
+        await sendPaymentStage(deps, event, now, stage, result, dueEventIds);
+      }
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push({ eventId: event.id, message: error instanceof Error ? error.message : 'payment_reminder_failed' });
+    }
+  }
+}
+
 export async function sendDueReminders(
-  deps: { prisma: PrismaClient; mailer: EmailProvider },
+  deps: ReminderDeps,
   now: Date,
   options: { dryRun?: boolean } = {},
 ): Promise<ReminderRunResult> {
   const settings = await getAutomaticEmailSettings(deps.prisma);
-  const leadWindowMs = settings.reminderLeadHours * 60 * 60 * 1000;
+  const leadWindowMs = EVENT_DETAILS_LEAD_HOURS * HOUR_MS;
   const events = await deps.prisma.event.findMany({
-    where: { eventDate: eventDateBounds(now, settings.reminderLeadHours) },
+    where: { eventDate: eventDateBounds(now, EVENT_DETAILS_LEAD_HOURS) },
     select: { id: true, name: true, eventDate: true, venue: true, startTime: true, endTime: true, gameStartTime: true, createdAt: true },
     orderBy: [{ eventDate: 'asc' }, { id: 'asc' }],
   });
@@ -47,8 +248,9 @@ export async function sendDueReminders(
   let simulated = 0;
   let failed = 0;
   let ambiguous = 0;
-  let eventsDue = 0;
+  const dueEventIds = new Set<string>();
   const errors: ReminderRunResult['errors'] = [];
+  const paymentResult: ReminderRunResult = { sent: 0, simulated: 0, failed: 0, ambiguous: 0, events: 0, errors: [] };
 
   if (!options.dryRun) await reconcileStaleDeliveries(deps.prisma, now);
   const emailChanges = (await deps.prisma.emailLog.findMany({
@@ -82,6 +284,23 @@ export async function sendDueReminders(
     }
   }
 
+  if (!options.dryRun) {
+    try {
+      await retryPaymentReminderRows(deps, now, paymentResult);
+      await sendDuePaymentReminders(deps, events, now, paymentResult, dueEventIds);
+    } catch (error) {
+      paymentResult.failed += 1;
+      paymentResult.errors.push({ eventId: 'unknown', message: error instanceof Error ? error.message : 'payment_reminder_failed' });
+    }
+  } else {
+    try {
+      await markDryRunPaymentEvents(deps, events, now, dueEventIds);
+    } catch (error) {
+      paymentResult.failed += 1;
+      paymentResult.errors.push({ eventId: 'unknown', message: error instanceof Error ? error.message : 'payment_reminder_failed' });
+    }
+  }
+
   for (const event of events) {
     const start = eventStartInstant(event.eventDate, event.startTime);
     const delta = start.getTime() - now.getTime();
@@ -91,7 +310,7 @@ export async function sendDueReminders(
     try {
       const recipientCount = await deps.prisma.registration.count({ where: { eventId: event.id, status: 'PAID' } });
       if (recipientCount === 0) continue;
-      eventsDue += 1;
+      dueEventIds.add(event.id);
       if (options.dryRun) continue;
 
       const batchId = `reminder:${event.id}:${event.eventDate.toISOString().slice(0, 10)}`;
@@ -150,5 +369,12 @@ export async function sendDueReminders(
     }
   }
 
-  return { sent, simulated, failed, ambiguous, events: eventsDue, errors };
+  return {
+    sent: sent + paymentResult.sent,
+    simulated: simulated + paymentResult.simulated,
+    failed: failed + paymentResult.failed,
+    ambiguous: ambiguous + paymentResult.ambiguous,
+    events: dueEventIds.size,
+    errors: [...errors, ...paymentResult.errors],
+  };
 }

@@ -37,7 +37,7 @@ async function buildInput(prisma: Database, eventId: string): Promise<BuiltInput
   if (!event) return null;
 
   const registrations = await prisma.registration.findMany({
-    where: { eventId, status: 'PAID', checkedInAt: { not: null } },
+    where: { eventId, status: 'PAID', ageFlagged: false, checkedInAt: { not: null } },
     orderBy: { bibNumber: 'asc' },
   });
   const players: PlannerPlayer[] = registrations.map((registration) => ({
@@ -296,6 +296,7 @@ export async function completeRound(
   sourcePlanId: string,
   round: number,
   now = new Date(),
+  audit: { actorUserId?: string; reason?: string } = {},
 ): Promise<CompleteRoundResult> {
   return prisma.$transaction(async (tx): Promise<CompleteRoundResult> => {
     if (!(await lockEvent(tx, eventId))) return { ok: false, reason: 'stale_plan', message: 'The active plan changed. Reload and try again.' };
@@ -304,8 +305,10 @@ export async function completeRound(
       where: { id: sourcePlanId, eventId, status: 'PUBLISHED' },
       include: { slots: true, players: true },
     });
-    if (!event || !source || event.publishedPlanId !== source.id || !settingsMatch(source, event)) {
-      return { ok: false, reason: 'stale_plan', message: 'The active plan changed. Reload and try again.' };
+    const built = await buildInput(tx, eventId);
+    if (!event || !source || !built || event.publishedPlanId !== source.id || !settingsMatch(source, event) ||
+      !rosterMatches(source.players, built.input.players)) {
+      return { ok: false, reason: 'stale_plan', message: 'The active roster or plan changed. Reconcile and publish the future-round draft first.' };
     }
     const nextRound = source.frozenThroughRound + 1;
     if (!Number.isInteger(round) || round !== nextRound || round > source.rounds) {
@@ -342,6 +345,12 @@ export async function completeRound(
       data: source.slots.map(({ id: _id, planId: _planId, ...slot }) => ({ ...slot, planId: created.id })),
     });
     await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: created.id } });
+    await tx.auditEvent.create({ data: {
+      eventId, actorType: 'ADMIN', actorUserId: audit.actorUserId, action: 'PLAN_ROUND_FROZEN',
+      entityType: 'RoundPlan', entityId: created.id, reason: audit.reason ?? `Completed and froze round ${round}`,
+      beforeState: { frozenThroughRound: source.frozenThroughRound }, afterState: { frozenThroughRound: round },
+      metadata: { sourcePlanId: source.id }, createdAt: now,
+    } });
     return { ok: true, plan: created };
   });
 }
@@ -350,6 +359,7 @@ export async function publishPlan(
   prisma: PrismaClient,
   eventId: string,
   planId?: string,
+  audit: { actorUserId?: string; reason?: string; now?: Date } = {},
 ): Promise<GenerateResult> {
   return prisma.$transaction(async (tx): Promise<GenerateResult> => {
     if (!(await lockEvent(tx, eventId))) return failure('Event not found.');
@@ -395,6 +405,11 @@ export async function publishPlan(
       data: { status: 'PUBLISHED', publishedAt: new Date(), validationWarnings: exceptions.warnings as unknown as Prisma.InputJsonValue },
     });
     await tx.event.update({ where: { id: eventId }, data: { publishedPlanId: plan.id } });
+    await tx.auditEvent.create({ data: {
+      eventId, actorType: 'ADMIN', actorUserId: audit.actorUserId, action: 'PLAN_PUBLISHED',
+      entityType: 'RoundPlan', entityId: plan.id, reason: audit.reason ?? 'Published planner revision',
+      beforeState: { publishedPlanId: publishedPlanId ?? null }, afterState: { publishedPlanId: plan.id }, createdAt: audit.now,
+    } });
     return { ok: true, plan };
   });
 }
@@ -406,6 +421,7 @@ export async function regenerateFromRound(
   now: Date,
   sourcePlanId?: string,
   removedRegistrationIds: string[] = [],
+  audit: { actorUserId?: string; reason?: string } = {},
 ): Promise<GenerateResult> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error('event not found');
@@ -502,5 +518,46 @@ export async function regenerateFromRound(
     );
   });
   if (!plan) return { ok: false, gaps: [stalePlanGap()] };
+  if (audit.actorUserId) await prisma.auditEvent.create({ data: {
+    eventId, actorType: 'ADMIN', actorUserId: audit.actorUserId, action: 'PLAN_SUFFIX_REGENERATED',
+    entityType: 'RoundPlan', entityId: plan.id, reason: audit.reason ?? `Regenerated rounds from ${fromRound}`,
+    beforeState: { sourcePlanId: source.id, fromRound }, afterState: { planId: plan.id }, createdAt: now,
+  } });
   return { ok: true, plan };
+}
+
+export type RosterReconcileResult =
+  | { ok: true; plan: RoundPlan | null }
+  | { ok: false; gaps: PlannerGap[] };
+
+export async function reconcileRosterChanges(
+  prisma: PrismaClient,
+  eventId: string,
+  now = new Date(),
+  actorUserId?: string,
+): Promise<RosterReconcileResult> {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { publishedPlanId: true },
+  });
+  if (!event?.publishedPlanId) return { ok: true, plan: null };
+  const source = await prisma.roundPlan.findUnique({
+    where: { id: event.publishedPlanId },
+    select: { id: true, rounds: true, frozenThroughRound: true },
+  });
+  if (!source) return failure('The active published plan no longer exists.');
+  if (source.frozenThroughRound >= source.rounds) {
+    return failure('Every round is already frozen; no future suffix is available to reconcile.');
+  }
+  const result = await regenerateFromRound(prisma, eventId, source.frozenThroughRound + 1, now, source.id);
+  if (result.ok && actorUserId) await prisma.auditEvent.create({
+    data: {
+      eventId, actorType: 'ADMIN', actorUserId,
+      action: 'PLAN_SUFFIX_RECONCILED', entityType: 'RoundPlan', entityId: result.plan.id,
+      reason: `Reconciled roster changes from round ${source.frozenThroughRound + 1}`,
+      metadata: { sourcePlanId: source.id, frozenThroughRound: source.frozenThroughRound },
+      createdAt: now,
+    },
+  });
+  return result;
 }

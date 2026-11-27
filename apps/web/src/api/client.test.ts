@@ -21,10 +21,22 @@ describe('apiClient', () => {
     expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
   });
 
+  it('loads and explicitly resolves Needs attention through the combined API', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('[]', { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'item-1' }), { status: 200 }));
+    const client = apiClient('http://api.test');
+    await client.listNeedsAttention('event-1');
+    await client.resolveNeedsAttention('event-1', 'item-1', 'Provider confirmed the message');
+    expect(fetchMock.mock.calls[0][0]).toBe('http://api.test/api/admin/events/event-1/needs-attention');
+    expect(fetchMock.mock.calls[1][0]).toBe('http://api.test/api/admin/events/event-1/needs-attention/item-1/resolve');
+    expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual({ reason: 'Provider confirmed the message' });
+  });
+
   it('patches an event registration correction with session credentials', async () => {
     const corrected = { id: 'registration-1', playerName: 'Ada Lovelace', dateOfBirth: '2013-04-02', memberAssociation: 'MENA' };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(corrected), { status: 200 }));
-    const patch = { dateOfBirth: '2013-04-02', memberAssociation: 'MENA' };
+    const patch = { dateOfBirth: '2013-04-02', memberAssociation: 'MENA', reason: 'Confirmed by guardian by phone' };
 
     await expect(apiClient('http://api.test').correctRegistration('event-1', 'registration-1', patch)).resolves.toEqual(corrected);
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/registrations/registration-1', expect.objectContaining({
@@ -84,6 +96,32 @@ describe('apiClient', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/day-of-registration', expect.objectContaining({
       method: 'POST', credentials: 'include', body: JSON.stringify(input),
     }));
+  });
+
+  it('uses the Admin-only late-arrival, removal and duplicate endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: 'checked_in', planning: { draftPlanId: 'draft-1', gaps: [] } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'r1', status: 'WITHDRAWN', planning: { draftPlanId: null, gaps: [] } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'r2', status: 'DUPLICATE', planning: { draftPlanId: null, gaps: [] } }), { status: 200 }));
+    const client = apiClient('http://api.test');
+
+    await client.completeLateArrival('e1', 'r1');
+    await client.removeRegistration('e1', 'r1', { reason: 'Other', note: 'Family confirmed' });
+    await client.markRegistrationDuplicate('e1', 'r2', { duplicateOfRegistrationId: 'r1', reason: 'Duplicate', note: '' });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://api.test/api/admin/events/e1/registrations/r1/late-arrival',
+      'http://api.test/api/admin/events/e1/registrations/r1/remove',
+      'http://api.test/api/admin/events/e1/registrations/r2/duplicate',
+    ]);
+    expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual({ reason: 'Other', note: 'Family confirmed' });
+    expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string)).toEqual({ duplicateOfRegistrationId: 'r1', reason: 'Duplicate', note: '' });
+  });
+
+  it('confirms an explicit check-in reopen', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await apiClient('http://api.test').reopenCheckIn('e1');
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({ confirmReopen: true });
   });
 
   it('keeps the public registration acknowledgement separate from Checkout', async () => {
@@ -269,6 +307,17 @@ describe('apiClient', () => {
     ]);
     expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).credentials === 'include')).toBe(true);
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
+  });
+
+  it('sends explicit fresh values when cloning an event', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"id":"event-2","status":"DRAFT"}', { status: 201, headers: { 'content-type': 'application/json' } }));
+    const input = { competitionYear: 2028, eventDate: '2027-09-19', registrationClosesAt: '2027-09-17T18:00' };
+
+    await apiClient('http://api.test').cloneEvent('event-1', input);
+
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/admin/events/event-1/clone', expect.objectContaining({
+      method: 'POST', body: JSON.stringify(input), credentials: 'include',
+    }));
   });
 
   it('does not send an empty JSON body for no-payload admin actions', async () => {

@@ -24,7 +24,7 @@ const messageFields = {
   subject: z.string().trim().min(1).max(200),
   text: z.string().trim().min(1).max(5000),
 };
-const messageSchema = z.object({ ...messageFields, batchId: z.uuid() });
+const messageSchema = z.object({ ...messageFields, previewedRecipients: z.array(previewedRecipientSchema).min(1).max(500), batchId: z.uuid() });
 const scheduleFields = { ...messageFields, scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/) };
 const scheduleSchema = z.object({ ...scheduleFields, batchId: z.uuid() });
 const scheduleEditSchema = z.object({ ...scheduleFields, expectedUpdatedAt: z.string().datetime() });
@@ -137,14 +137,22 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const selectedRecipients = selected(parsed.data);
     const preview = await previewSelectedRecipients(deps.prisma, id, selectedRecipients);
     if (!preview) return reply.code(404).send({ error: 'not_found' });
-    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
+    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     try {
-      return await sendSelectedCommunication(
+      const summary = await sendSelectedCommunication(
         { prisma: deps.prisma, mailer: deps.mailer }, id, selectedRecipients,
         { subject: parsed.data.subject, text: parsed.data.text }, new Date(),
         { batchId: parsed.data.batchId, senderUserId: req.adminUserId, previewedRecipients: parsed.data.previewedRecipients },
       );
+      if (summary.sentThisRun + summary.simulatedThisRun + summary.failedThisRun + summary.ambiguousThisRun > 0) {
+        await deps.prisma.auditEvent.create({ data: {
+          eventId: id, actorType: 'ADMIN', actorUserId: req.adminUserId, action: 'COMMUNICATION_SENT',
+          entityType: 'EmailBatch', entityId: parsed.data.batchId, reason: 'Manual communication sent after recipient review',
+          afterState: { sent: summary.sent, failed: summary.failed, ambiguous: summary.ambiguous, pending: summary.pending },
+        } });
+      }
+      return summary;
     } catch (error) {
       if (error instanceof CommunicationRecipientsChangedError) return reply.code(409).send({ error: 'recipients_changed' });
       if (error instanceof EmailBatchConflictError) return reply.code(409).send({ error: 'idempotency_conflict' });
@@ -177,8 +185,8 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const selectedRecipients = selected(parsed.data);
     const preview = await previewSelectedRecipients(deps.prisma, id, selectedRecipients);
     if (!preview) return reply.code(404).send({ error: 'not_found' });
-    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
+    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     const policyDocument = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, select: { fileName: true, bytes: true } });
     const policyAttachment = policyDocument ? { fileName: policyDocument.fileName, contentBase64: Buffer.from(policyDocument.bytes).toString('base64') } : undefined;
     let row: ScheduledMessage;
@@ -218,8 +226,8 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     if (current.updatedAt.toISOString() !== parsed.data.expectedUpdatedAt) return reply.code(409).send({ error: 'schedule_changed' });
     const preview = await previewSelectedRecipients(deps.prisma, id, selected(parsed.data));
     if (!preview) return reply.code(404).send({ error: 'not_found' });
-    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     if (preview.length === 0) return reply.code(422).send({ error: 'no_eligible_recipients' });
+    if (!previewMatches(preview, parsed.data.previewedRecipients)) return reply.code(409).send({ error: 'recipients_changed' });
     const policyDocument = await deps.prisma.eventPolicyDocument.findUnique({ where: { eventId: id }, select: { fileName: true, bytes: true } });
     const policyAttachment = policyDocument ? { fileName: policyDocument.fileName, contentBase64: Buffer.from(policyDocument.bytes).toString('base64') } : null;
     const updated = await deps.prisma.scheduledMessage.updateMany({
@@ -281,7 +289,23 @@ export function registerCommunicationRoutes(app: FastifyInstance, deps: AppDeps)
     const placeholderIds = new Set(placeholders.map((delivery) => delivery.id));
     const retryIds = parsed.data.deliveryIds.filter((deliveryId) => !placeholderIds.has(deliveryId));
     if (retryIds.length) {
-      await retryFailedDeliveries({ prisma: deps.prisma, mailer: deps.mailer }, id, batchId, retryIds, now, { includeAmbiguous: parsed.data.includeAmbiguous });
+      const before = await deps.prisma.emailLog.findMany({
+        where: { eventId: id, batchId, id: { in: retryIds } }, select: { id: true, status: true, attempts: true },
+      });
+      const retry = await retryFailedDeliveries(
+        { prisma: deps.prisma, mailer: deps.mailer }, id, batchId, retryIds, now,
+        { includeAmbiguous: parsed.data.includeAmbiguous },
+      );
+      if (retry.sentThisRun + retry.simulatedThisRun + retry.failedThisRun + retry.ambiguousThisRun > 0) {
+        await deps.prisma.auditEvent.create({ data: {
+          eventId: id, actorType: 'ADMIN', actorUserId: req.adminUserId,
+          action: parsed.data.includeAmbiguous ? 'AMBIGUOUS_DELIVERY_RETRY' : 'DELIVERY_RETRY',
+          entityType: 'EmailBatch', entityId: batchId,
+          reason: parsed.data.includeAmbiguous ? 'Admin accepted duplicate-send risk for ambiguous outcomes' : 'Failed delivery retry requested',
+          beforeState: before, afterState: { deliveryIds: retry.deliveryIds, sent: retry.sent, failed: retry.failed, ambiguous: retry.ambiguous },
+          createdAt: now,
+        } });
+      }
     }
     const summary = await getDeliverySummary(deps.prisma, batchId);
     if (summary.sent + summary.simulated > 0 && summary.failed === 0 && summary.ambiguous === 0 && summary.pending === 0) {

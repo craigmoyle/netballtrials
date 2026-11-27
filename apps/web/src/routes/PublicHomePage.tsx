@@ -57,10 +57,13 @@ export function PublicHomePage({ client }: { client: Client }) {
                       </dl>
                     </div>
                     <div className="public-trial-action">
-                      {trial.status === 'OPEN' ? (
+                      {trial.status === 'OPEN' && !trial.registrationClosedAt && (!trial.registrationClosesAt || new Date(trial.registrationClosesAt).getTime() > Date.now()) ? (
                         <Link className="public-register-link" to={`/register/${trial.id}`} aria-label={`Register for ${trial.name}`}>Register</Link>
                       ) : (
-                        <span>Registration closed</span>
+                        <>
+                          <span>Registration closed</span>
+                          {trial.status === 'CLOSED' ? <Link className="public-register-link" to={`/register/${trial.id}`} aria-label={`View details for ${trial.name}`}>View details</Link> : null}
+                        </>
                       )}
                     </div>
                   </article>

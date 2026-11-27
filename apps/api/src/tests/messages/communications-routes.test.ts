@@ -50,25 +50,26 @@ describe('event communications routes', () => {
     });
     expect(preview.json()).toMatchObject({ count: 1, recipients: [expect.objectContaining({ id: paid.id })] });
 
+    const reviewed = { id: paid.id, email: 'paid@example.test' };
     const sent = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Trials update', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
+      payload: { audience: 'participants', recipientIds: [paid.id], previewedRecipients: [reviewed], subject: 'Trials update', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
     });
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toMatchObject({ sent: 0, simulated: 1, failed: 0 });
-    expect(outbox.sent.at(-1)).toMatchObject({ to: 'paid@example.test', subject: 'Trials update', text: 'Bring water.' });
+    expect(outbox.sent.at(-1)).toMatchObject({ to: 'paid@example.test', subject: '[TEST] Trials update', text: expect.stringContaining('Bring water.') });
     const log = await prisma.emailLog.findFirstOrThrow({ where: { batchId: sent.json().batchId } });
     expect(log).toMatchObject({ registrationId: paid.id, kind: 'message', status: 'SENT' });
     const sentCount = outbox.sent.length;
     const duplicate = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Trials update', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
+      payload: { audience: 'participants', recipientIds: [paid.id], previewedRecipients: [reviewed], subject: 'Trials update', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
     });
     expect(duplicate.statusCode).toBe(200);
     expect(outbox.sent).toHaveLength(sentCount);
     const conflict = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [paid.id], subject: 'Changed', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
+      payload: { audience: 'participants', recipientIds: [paid.id], previewedRecipients: [reviewed], subject: 'Changed', text: 'Bring water.', batchId: '4b4454b6-b787-44b5-b6db-c2ff5f087eff' },
     });
     expect(conflict.statusCode).toBe(409);
   });
@@ -95,13 +96,13 @@ describe('event communications routes', () => {
     expect(preview.json()).toMatchObject({ count: 1, recipients: [expect.objectContaining({ id: verified.id })] });
     const sent = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [verified.id], subject: 'Finish registration', text: 'Complete payment.', batchId: '00000000-0000-4000-8000-000000000080' },
+      payload: { audience: 'participants', recipientIds: [verified.id], previewedRecipients: [{ id: verified.id, email: 'verified-pending@example.test' }], subject: 'Finish registration', text: 'Complete payment.', batchId: '00000000-0000-4000-8000-000000000080' },
     });
     expect(sent.statusCode).toBe(200);
     expect(outbox.sent.at(-1)?.to).toBe('verified-pending@example.test');
     const rejected = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [unverified.id], subject: 'No', text: 'No', batchId: '00000000-0000-4000-8000-000000000081' },
+      payload: { audience: 'participants', recipientIds: [unverified.id], previewedRecipients: [{ id: unverified.id, email: 'unverified-pending@example.test' }], subject: 'No', text: 'No', batchId: '00000000-0000-4000-8000-000000000081' },
     });
     expect(rejected.statusCode).toBe(422);
   });
@@ -172,14 +173,14 @@ describe('event communications routes', () => {
 
     const personalized = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [single.id], subject: 'Hello {{playerFirstName}}', text: '{{playerName}} — {{eventName}} at {{venue}}', batchId: '00000000-0000-4000-8000-000000000076' },
+      payload: { audience: 'participants', recipientIds: [single.id], previewedRecipients: [{ id: single.id, email: 'single@example.test' }], subject: 'Hello {{playerFirstName}}', text: '{{playerName}} — {{eventName}} at {{venue}}', batchId: '00000000-0000-4000-8000-000000000076' },
     });
     expect(personalized.statusCode).toBe(200);
-    expect(outbox.sent.at(-1)).toMatchObject({ to: 'single@example.test', subject: 'Hello Ada', text: 'Ada Lovelace — Spring Trials at SNC' });
+    expect(outbox.sent.at(-1)).toMatchObject({ to: 'single@example.test', subject: '[TEST] Hello Ada', text: expect.stringContaining('Ada Lovelace — Spring Trials at SNC') });
 
     const household = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'participants', recipientIds: [firstSibling.id, secondSibling.id], subject: 'Your players', text: '{{playerNames}}', batchId: '00000000-0000-4000-8000-000000000077' },
+      payload: { audience: 'participants', recipientIds: [firstSibling.id, secondSibling.id], previewedRecipients: [{ id: firstSibling.id, email: 'family@example.test' }, { id: secondSibling.id, email: 'family@example.test' }], subject: 'Your players', text: '{{playerNames}}', batchId: '00000000-0000-4000-8000-000000000077' },
     });
     expect(household.statusCode).toBe(200);
     expect(household.json()).toMatchObject({ sent: 0, simulated: 1 });
@@ -194,7 +195,7 @@ describe('event communications routes', () => {
     await prisma.eventPolicyDocument.create({ data: { eventId, fileName: 'Selection policy.pdf', bytes: Buffer.from('%PDF-1.4 test') } });
     const sent = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/communications/send`, cookies: { nt_session: cookie },
-      payload: { audience: 'associations', recipientIds: [association.id], subject: 'Association notice', text: 'Please share with your teams.', batchId: '00000000-0000-4000-8000-000000000078' },
+      payload: { audience: 'associations', recipientIds: [association.id], previewedRecipients: [{ id: association.id, email: 'association@example.test' }], subject: 'Association notice', text: 'Please share with your teams.', batchId: '00000000-0000-4000-8000-000000000078' },
     });
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toMatchObject({ sent: 0, simulated: 1 });
@@ -212,7 +213,7 @@ describe('event communications routes', () => {
 
     const sent = await app.inject({
       method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie },
-      payload: { eventIds: [later.id, earlier.id], associationIds: [association.id], subject: 'Trials', text: '{{eventList}}', batchId: '00000000-0000-4000-8000-000000000090' },
+      payload: { eventIds: [later.id, earlier.id], associationIds: [association.id], previewedRecipients: [{ id: association.id, email: 'anchor@example.test' }], subject: 'Trials', text: '{{eventList}}', batchId: '00000000-0000-4000-8000-000000000090' },
     });
 
     expect(sent.statusCode).toBe(200);
@@ -224,7 +225,7 @@ describe('event communications routes', () => {
     const second = await prisma.event.create({ data: { ...eventFixture(), name: 'Open Trials', eventDate: new Date('2027-10-12T00:00:00.000Z'), venue: 'MENA' } });
     const association = await prisma.memberAssociation.create({ data: { name: 'MENA', primaryContactName: 'Morgan Contact', primaryContactEmail: 'morgan@example.test' } });
     const input = {
-      eventIds: [first.id, second.id], associationIds: [association.id], batchId: '00000000-0000-4000-8000-000000000041',
+      eventIds: [first.id, second.id], associationIds: [association.id], previewedRecipients: [{ id: association.id, email: 'morgan@example.test' }], batchId: '00000000-0000-4000-8000-000000000041',
       subject: 'Details for {{associationName}}', text: 'Hello {{contactName}}.\\n{{eventList}}',
     };
     const preview = await app.inject({ method: 'POST', url: '/api/admin/communications/site/preview', cookies: { nt_session: cookie }, payload: input });
@@ -240,7 +241,7 @@ describe('event communications routes', () => {
     const sent = await app.inject({ method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie }, payload: input });
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toMatchObject({ status: 'COMPLETED', eventNames: ['Spring Trials', 'Open Trials'], deliveries: [expect.objectContaining({ to: 'morgan@example.test', status: 'SENT' })] });
-    expect(outbox.sent.at(-1)).toMatchObject({ to: 'morgan@example.test', subject: 'Details for MENA', text: expect.stringContaining('Hello Morgan Contact.') });
+    expect(outbox.sent.at(-1)).toMatchObject({ to: 'morgan@example.test', subject: '[TEST] Details for MENA', text: expect.stringContaining('Hello Morgan Contact.') });
     expect(outbox.sent.at(-1)?.text).toContain('Spring Trials');
     expect(outbox.sent.at(-1)?.text).toContain('Open Trials');
     const log = await prisma.emailLog.findFirstOrThrow({ where: { siteCommunicationId: sent.json().id } });
@@ -265,7 +266,7 @@ describe('event communications routes', () => {
 
     const sent = await app.inject({
       method: 'POST', url: '/api/admin/communications/site/send', cookies: { nt_session: cookie },
-      payload: { eventIds: [event.id], associationIds: [active.id, inactive.id], subject: 'Trials', text: 'Hello', batchId: '00000000-0000-4000-8000-000000000091' },
+      payload: { eventIds: [event.id], associationIds: [active.id, inactive.id], previewedRecipients: [{ id: active.id, email: 'active@example.test' }], subject: 'Trials', text: 'Hello', batchId: '00000000-0000-4000-8000-000000000091' },
     });
 
     expect(sent.statusCode).toBe(200);
@@ -286,7 +287,7 @@ describe('event communications routes', () => {
     const result = await runDueScheduledMessages({ prisma, mailer: app.testDeps.mailer }, new Date('2027-01-15T00:00:00.000Z'));
     expect(result).toEqual({ completed: 1, failed: 0 });
     expect((await prisma.siteAssociationCommunication.findUniqueOrThrow({ where: { id: campaign.id } })).status).toBe('COMPLETED');
-    expect(outbox.sent.at(-1)).toMatchObject({ to: 'morgan@example.test', subject: 'Upcoming Spring Trials' });
+    expect(outbox.sent.at(-1)).toMatchObject({ to: 'morgan@example.test', subject: '[TEST] Upcoming Spring Trials' });
     expect(outbox.sent.at(-1)?.text).toContain('Updated venue');
     expect(outbox.sent.at(-1)?.text).not.toContain('SNC');
   });
@@ -436,7 +437,7 @@ describe('event communications routes', () => {
     expect(result).toEqual({ completed: 1, failed: 0 });
     expect((await prisma.scheduledMessage.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('COMPLETED');
     expect(await prisma.emailLog.findFirstOrThrow({ where: { batchId: schedule.batchId } })).toMatchObject({ to: 'parent@example.test', status: 'SENT' });
-    expect(outbox.sent.at(-1)).toMatchObject({ to: 'parent@example.test', subject: 'Scheduled note' });
+    expect(outbox.sent.at(-1)).toMatchObject({ to: 'parent@example.test', subject: '[TEST] Scheduled note' });
   });
 
   it('does not let a late site sender overwrite a newer campaign attempt', async () => {

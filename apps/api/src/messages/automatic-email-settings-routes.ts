@@ -9,7 +9,7 @@ const settingsSchema = z.object({
   confirmationBody: z.string().trim().min(1).max(3_000),
   reminderSubject: z.string().trim().min(1).max(200).refine((value) => !/[\r\n]/.test(value)),
   reminderBody: z.string().trim().min(1).max(3_000),
-  reminderLeadHours: z.number().int().min(1).max(168),
+  reminderLeadHours: z.literal(24),
 }).strict();
 
 export function registerAutomaticEmailSettingsRoutes(app: FastifyInstance, deps: AppDeps): void {

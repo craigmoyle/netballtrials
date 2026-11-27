@@ -25,6 +25,7 @@ describe('anonymizeExpiredRegistrations', () => {
         checkoutSessionId: 'cs_personal', paymentIntentId: 'pi_personal',
         parentAuthorityConfirmedAt: new Date('2021-08-01T00:00:00Z'),
         checkedInAt: new Date('2021-09-12T23:00:00Z'), checkedInBy: 'Volunteer name', bibNumber: 7,
+        removalNote: 'Contact Ada privately',
       },
     });
     const plan = await prisma.roundPlan.create({
@@ -53,6 +54,16 @@ describe('anonymizeExpiredRegistrations', () => {
     const checkInSession = await prisma.checkInSession.create({
       data: { eventId: old.id, tokenHash: 'a'.repeat(64), expiresAt: new Date('2025-09-13T00:00:00Z') },
     });
+    const rosterSnapshot = await prisma.rosterSnapshot.create({ data: {
+      eventId: old.id, revision: 1, reconstructed: true,
+      data: { registrations: [{ id: reg.id, playerName: 'Ada Lovelace', parentEmail: reg.parentEmail }] },
+    } });
+    const audit = await prisma.auditEvent.create({ data: {
+      eventId: old.id, action: 'registration.check_in', entityType: 'Registration', entityId: reg.id,
+      reason: 'Volunteer: Ada', metadata: { parentEmail: reg.parentEmail },
+      beforeState: { status: 'PAID', playerName: 'Ada Lovelace' },
+      afterState: { status: 'CHECKED_IN', playerName: 'Ada Lovelace' },
+    } });
     const review = await prisma.reviewItem.create({ data: { eventId: old.id, registrationId: reg.id, reason: 'age_out_of_range', note: 'Birth certificate seen' } });
     const orphanPaymentReview = await prisma.reviewItem.create({ data: { eventId: old.id, registrationId: reg.id, reason: 'payment_without_registration', note: 'Refund or reinstate manually.' } });
     const changeLog = await prisma.registrationChangeLog.create({
@@ -66,7 +77,7 @@ describe('anonymizeExpiredRegistrations', () => {
     const anonymised = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } });
     expect(anonymised).toMatchObject({
       playerFirstName: '', playerLastName: '', playerNameNormalized: '', parentName: '', parentEmail: '', parentMobile: '',
-      checkedInBy: null, qrToken: null, checkoutSessionId: null, paymentIntentId: null, parentAuthorityConfirmedAt: null,
+      checkedInBy: null, removalNote: null, qrToken: null, checkoutSessionId: null, paymentIntentId: null, parentAuthorityConfirmedAt: null,
       status: 'WITHDRAWN', statusBeforeAnonymization: 'PAID', anonymizedAt: now,
     });
     expect(anonymised.dateOfBirth.toISOString()).toContain('1900-01-01');
@@ -88,6 +99,12 @@ describe('anonymizeExpiredRegistrations', () => {
     expect(anonymisedLog).toMatchObject({ to: '', subject: '', body: '', registrationId: null, error: null, messagePayload: null, status: 'ANONYMIZED', kind: 'retention' });
     expect(await prisma.emailLog.findUniqueOrThrow({ where: { id: eventMessage.id } })).toMatchObject({ to: '', subject: '', body: '', status: 'ANONYMIZED', kind: 'retention' });
     expect(await prisma.checkInSession.findUnique({ where: { id: checkInSession.id } })).toBeNull();
+    expect(await prisma.rosterSnapshot.findUniqueOrThrow({ where: { id: rosterSnapshot.id } })).toMatchObject({
+      data: { scrubbed: true },
+    });
+    expect(await prisma.auditEvent.findUniqueOrThrow({ where: { id: audit.id } })).toMatchObject({
+      reason: null, beforeState: null, afterState: null, metadata: null,
+    });
     expect(await prisma.scheduledMessage.findUnique({ where: { id: scheduled.id } })).toBeNull();
     const player = await prisma.roundPlanPlayer.findUniqueOrThrow({ where: { planId_registrationId: { planId: plan.id, registrationId: anonymised.anonymizedRef! } } });
     expect(player).toMatchObject({ playerName: 'Former participant', bibNumber: null });

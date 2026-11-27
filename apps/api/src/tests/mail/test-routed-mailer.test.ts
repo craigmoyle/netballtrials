@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailMessage } from '../../mail/provider';
 import { createTestRoutedMailer } from '../../mail/test-routed-mailer';
+import { createTestingMailer } from '../../mail/testing-mailer';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 
@@ -10,7 +11,7 @@ describe('test email routing', () => {
   it('sends current Admins through Gmail and simulates every other recipient', async () => {
     const sent: EmailMessage[] = [];
     const liveMailer = { provider: 'gmail-api' as const, send: vi.fn(async (message: EmailMessage) => { sent.push(message); }) };
-    const mailer = createTestRoutedMailer(prisma, liveMailer);
+    const mailer = createTestingMailer(createTestRoutedMailer(prisma, liveMailer));
     await prisma.staffUser.createMany({ data: [{ email: 'cmoyle@gmail.com' }, { email: 'nicole@example.test' }] });
 
     expect(await mailer.send({ to: 'cmoyle@gmail.com', subject: 'Real test', text: 'Delivered' })).toBeUndefined();
@@ -26,13 +27,14 @@ describe('test email routing', () => {
 
     expect(liveMailer.send).toHaveBeenCalledTimes(2);
     expect(sent.map((message) => message.to)).toEqual(['cmoyle@gmail.com', 'nicole@example.test']);
+    expect(sent.every((message) => message.subject.startsWith('[TEST] ') && message.text.startsWith('[TEST] '))).toBe(true);
     const simulated = await prisma.testEmailOutbox.findMany();
     expect(simulated).toHaveLength(2);
     expect(simulated).toEqual(expect.arrayContaining([
-      expect.objectContaining({ to: 'nicole@example.test', subject: 'Revoked Admin', body: 'No longer delivered' }),
+      expect.objectContaining({ to: 'nicole@example.test', subject: '[TEST] Revoked Admin', body: expect.stringContaining('No longer delivered') }),
       expect.objectContaining({
-        to: 'family@example.test', subject: 'Simulated test', body: 'Open this test link: https://test.example/admin/verify#token=sample',
-        html: '<p>Open this test link</p>',
+        to: 'family@example.test', subject: '[TEST] Simulated test', body: expect.stringContaining('Open this test link: https://test.example/admin/verify#token=sample'),
+        html: expect.stringContaining('<p>Open this test link</p>'),
         attachmentMetadata: [{ filename: 'policy.pdf', contentType: 'application/pdf', sizeBytes: 3 }],
         inlineImageMetadata: [{ filename: 'logo.png', contentType: 'image/png', cid: 'logo', sizeBytes: 3 }],
       }),

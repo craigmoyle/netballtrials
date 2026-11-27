@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { prisma } from '../db';
-import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, INCOMPLETE_REGISTRATION_RETENTION_DAYS, pruneParentAccessArtifacts, pruneRateLimitBuckets, pruneStaffAuthArtifacts } from '../retention/service';
+import { anonymizeExpiredRegistrations, anonymizeIncompleteRegistrations, INCOMPLETE_REGISTRATION_RETENTION_DAYS, pruneEventlessAuditEvents, pruneParentAccessArtifacts, pruneRateLimitBuckets, pruneStaffAuthArtifacts } from '../retention/service';
 
 async function main(): Promise<void> {
   const now = new Date();
@@ -23,6 +23,8 @@ async function main(): Promise<void> {
   console.log(`retention: pruned ${parentArtifacts.tokens} expired parent links and ${parentArtifacts.sessions} expired parent sessions`);
   const staffArtifacts = await pruneStaffAuthArtifacts(prisma, now);
   console.log(`retention: pruned ${staffArtifacts.tokens} expired Admin login links and ${staffArtifacts.sessions} expired Admin sessions`);
+  const eventlessAudits = await pruneEventlessAuditEvents(prisma, now);
+  console.log(`retention: deleted ${eventlessAudits} expired eventless audit records`);
   const buckets = await pruneRateLimitBuckets(prisma, now);
   console.log(`retention: deleted ${buckets} idle rate-limit buckets`);
   const testOutbox = await prisma.testEmailOutbox.deleteMany({ where: { expiresAt: { lte: now } } });

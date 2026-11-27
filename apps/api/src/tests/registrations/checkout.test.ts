@@ -4,7 +4,7 @@ import { prisma } from '../../db';
 import { loadEnv } from '../../env';
 import { createDevMailer } from '../../mail/dev-mailer';
 import { createFakePaymentProvider } from '../../payments/fake';
-import { assertNoUnverifiedPendingCheckouts, createRegistrationCheckout, expireUnverifiedPendingCheckouts, sendCheckoutContinuation } from '../../registrations/checkout';
+import { assertNoUnverifiedPendingCheckouts, createRegistrationCheckout, expireUnverifiedPendingCheckouts, sendCheckoutContinuation, sendRecoveredCheckoutContinuation } from '../../registrations/checkout';
 import { resetDb } from '../helpers/db';
 import { eventFixture, registrationFixture } from '../helpers/fixtures';
 
@@ -27,14 +27,16 @@ function makeDeps(provider: 'fake' | 'stripe' = 'fake') {
   return { deps, payment, mailer };
 }
 
-async function createPendingRegistration() {
+async function createPendingRegistration(overrides: Record<string, unknown> = {}) {
   const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
-  return prisma.registration.create({ data: registrationFixture(event.id) });
+  return prisma.registration.create({ data: registrationFixture(event.id, {
+    parentEmailVerifiedAt: new Date('2026-09-01T00:00:00Z'), ...overrides,
+  }) });
 }
 
 describe('expireUnverifiedPendingCheckouts', () => {
   it('expires legacy unverified sessions and reports sessions that cannot be expired', async () => {
-    const expiredRegistration = await createPendingRegistration();
+    const expiredRegistration = await createPendingRegistration({ parentEmailVerifiedAt: null });
     const unresolvedRegistration = await prisma.registration.create({
       data: registrationFixture(expiredRegistration.eventId, {
         playerFirstName: 'Grace', playerNameNormalized: 'grace hopper', checkoutSessionId: 'cs_unresolved',
@@ -62,6 +64,37 @@ describe('expireUnverifiedPendingCheckouts', () => {
 });
 
 describe('createRegistrationCheckout', () => {
+  it.each(['EXPIRED', 'FAILED'] as const)('recovers a verified %s registration with a fresh expiry and idempotency key', async (status) => {
+    const now = new Date('2026-10-10T00:00:00.000Z');
+    const registration = await createPendingRegistration({ status, expiresAt: new Date('2026-10-09T00:00:00.000Z'), checkoutSessionId: `cs_old_${status}` });
+    const { deps, mailer } = makeDeps('stripe');
+    const createCheckout = vi.fn(async (_request: unknown, key: string) => ({
+      sessionId: `cs_${key}`, url: `https://checkout.test/${key}`,
+    }));
+
+    await expect(sendRecoveredCheckoutContinuation({ ...deps, payment: { ...deps.payment, createCheckout } }, registration.id, now)).resolves.toBe(true);
+
+    expect(createCheckout.mock.calls[0]?.[1]).toBe(`${registration.id}:1`);
+    const recovered = await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(recovered).toMatchObject({ status: 'PENDING', checkoutAttempt: 1, checkoutSessionId: `cs_${registration.id}:1` });
+    expect(recovered.expiresAt.getTime()).toBe(now.getTime() + 24 * 60 * 60_000);
+    expect(mailer.sent).toHaveLength(1);
+  });
+
+  it.each([
+    ['withdrawn', { status: 'WITHDRAWN' }],
+    ['anonymized', { status: 'EXPIRED', anonymizedAt: new Date('2026-10-01T00:00:00.000Z') }],
+    ['unverified', { status: 'FAILED', parentEmailVerifiedAt: null }],
+  ] as const)('does not recover a %s registration', async (_label, overrides) => {
+    const registration = await createPendingRegistration(overrides);
+    const { deps, payment } = makeDeps();
+
+    await expect(sendRecoveredCheckoutContinuation(deps, registration.id)).resolves.toBe(false);
+
+    expect(payment.checkouts).toHaveLength(0);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject(overrides);
+  });
+
   it('persists a fake session without sending a checkout email', async () => {
     const registration = await createPendingRegistration();
     const { deps, payment, mailer } = makeDeps();

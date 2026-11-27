@@ -2,8 +2,18 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient, Registration } from '@prisma/client';
 import type { AppDeps } from '../app';
 import { sendEmailToRecipient } from '../messages/service';
+import type { EmailProvider } from '../mail/provider';
 import type { CheckoutSession, PaymentProvider } from '../payments/provider';
+import type { Env } from '../env';
 import { PENDING_TTL_MS } from './service';
+
+type CheckoutDeps = {
+  prisma: PrismaClient;
+  mailer: EmailProvider;
+  payment: PaymentProvider;
+  env: Pick<Env, 'PAYMENT_PROVIDER' | 'WEB_ORIGIN'>;
+  log?: AppDeps['log'];
+};
 
 const STRIPE_CHECKOUT_MIN_LIFETIME_MS = 30 * 60_000;
 const STRIPE_CHECKOUT_SAFETY_MS = 5 * 60_000;
@@ -39,11 +49,21 @@ async function checkoutExpiry(
 }
 
 export async function createRegistrationCheckout(
-  deps: AppDeps,
-  registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
+  deps: CheckoutDeps,
+  registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId' | 'checkoutAttempt'>,
   now = new Date(),
 ): Promise<CheckoutSession | null> {
   try {
+    const blocked = await deps.prisma.reviewItem.findFirst({
+      where: { registrationId: registration.id, reason: 'payment_without_registration' },
+      select: { id: true },
+    });
+    if (blocked) return null;
+    const active = await deps.prisma.registration.findUnique({
+      where: { id: registration.id },
+      select: { status: true, expiresAt: true, checkoutAttempt: true, ageFlagged: true },
+    });
+    if (!active || active.status !== 'PENDING' || active.ageFlagged || active.expiresAt <= now) return null;
     if (deps.env.PAYMENT_PROVIDER === 'fake' && registration.checkoutSessionId?.startsWith('fake_sim_')) {
       const current = await deps.prisma.registration.findUnique({
         where: { id: registration.id },
@@ -68,7 +88,7 @@ export async function createRegistrationCheckout(
       successUrl: `${deps.env.WEB_ORIGIN}/register/${registration.eventId}/pending?session={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${deps.env.WEB_ORIGIN}/register/${registration.eventId}`,
       expiresAt,
-    }, registration.id);
+    }, active.checkoutAttempt === 0 ? registration.id : `${registration.id}:${active.checkoutAttempt}`);
     if (!checkout.url || !checkout.sessionId) return null;
 
     const saved = await deps.prisma.registration.updateMany({
@@ -156,8 +176,8 @@ export async function expireUnverifiedPendingCheckouts(
 }
 
 export async function sendCheckoutContinuation(
-  deps: AppDeps,
-  registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId'>,
+  deps: CheckoutDeps,
+  registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail' | 'amountCents' | 'currency' | 'expiresAt' | 'checkoutSessionId' | 'checkoutAttempt'>,
   now = new Date(),
   options: { batchId?: string; senderUserId?: string } = {},
 ): Promise<boolean> {
@@ -186,4 +206,79 @@ export async function sendCheckoutContinuation(
     // Durable delivery diagnostics/retries are recorded by the email log.
     return false;
   }
+}
+
+export async function recoverRegistrationCheckout(
+  deps: Pick<CheckoutDeps, 'prisma'> & { payment?: PaymentProvider },
+  registrationId: string,
+  now = new Date(),
+): Promise<Registration | null> {
+  const current = await deps.prisma.registration.findUnique({
+    where: { id: registrationId },
+    select: { status: true, checkoutSessionId: true, expiresAt: true },
+  });
+  if (!current) return null;
+  if (!['PENDING', 'EXPIRED', 'FAILED'].includes(current.status)) return null;
+  if (current.status === 'PENDING' && current.expiresAt > now) {
+    return deps.prisma.registration.findFirst({
+      where: { id: registrationId, status: 'PENDING', parentEmailVerifiedAt: { not: null }, anonymizedAt: null },
+    });
+  }
+  if (current.status === 'PENDING' && current.expiresAt <= now && current.checkoutSessionId) {
+    if (!deps.payment) return null;
+    try {
+      if (!(await deps.payment.expireCheckout(current.checkoutSessionId))) {
+        const row = await deps.prisma.registration.findUnique({ where: { id: registrationId }, select: { eventId: true, checkoutAttempt: true } });
+        if (row) await deps.prisma.reviewItem.createMany({ data: [{
+          eventId: row.eventId, registrationId, reason: 'payment_without_registration',
+          note: 'Checkout provider reports the prior session is complete or not expirable. Confirm the payment outcome before another charge.',
+          dedupeKey: `registration:${registrationId}:checkout_complete:${row.checkoutAttempt}`,
+        }], skipDuplicates: true });
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  }
+  const blocked = await deps.prisma.reviewItem.findFirst({
+    where: { registrationId, reason: 'payment_without_registration' },
+    select: { id: true },
+  });
+  if (blocked) return null;
+  const expiresAt = new Date(now.getTime() + PENDING_TTL_MS);
+  await deps.prisma.registration.updateMany({
+    where: {
+      id: registrationId,
+      status: current.status,
+      checkoutSessionId: current.checkoutSessionId,
+      ageFlagged: false,
+      parentEmailVerifiedAt: { not: null },
+      anonymizedAt: null,
+    },
+    data: {
+      status: 'PENDING',
+      expiresAt,
+      checkoutSessionId: null,
+      checkoutAttempt: { increment: 1 },
+    },
+  });
+  return deps.prisma.registration.findFirst({
+    where: {
+      id: registrationId,
+      status: 'PENDING',
+      expiresAt: { gt: now },
+      parentEmailVerifiedAt: { not: null },
+      anonymizedAt: null,
+    },
+  });
+}
+
+export async function sendRecoveredCheckoutContinuation(
+  deps: CheckoutDeps,
+  registrationId: string,
+  now = new Date(),
+  options: { batchId?: string; senderUserId?: string } = {},
+): Promise<boolean> {
+  const registration = await recoverRegistrationCheckout(deps, registrationId, now);
+  return registration ? sendCheckoutContinuation(deps, registration, now, options) : false;
 }

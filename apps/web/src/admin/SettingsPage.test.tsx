@@ -48,6 +48,17 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('button', { name: 'Remove current@example.com' })).not.toBeInTheDocument();
   });
 
+  it('shows the fixed automatic payment reminder schedule as read-only copy', async () => {
+    renderSettings({
+      getIntegrationSettings: vi.fn().mockResolvedValue(status),
+      getAutomaticEmailSettings: vi.fn().mockResolvedValue(automaticEmail),
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Automatic payment reminders' })).toBeInTheDocument();
+    expect(screen.getByText(/24 hours and 1 hour before event start/i)).toBeInTheDocument();
+    expect(screen.getByText(/one reminder per stage and per household/i)).toBeInTheDocument();
+  });
+
   it('edits automatic message copy and reminder lead time with a sample preview', async () => {
     const saved = vi.fn().mockImplementation(async (input) => ({ ...input, updatedAt: '2026-11-03T00:00:00.000Z' }));
     const client = {
@@ -58,7 +69,7 @@ describe('SettingsPage', () => {
     renderSettings(client);
 
     fireEvent.change(await screen.findByLabelText('Confirmation subject'), { target: { value: 'Welcome {{playerName}} — {{eventName}}' } });
-    fireEvent.change(screen.getByLabelText('Send reminder (hours before event start)'), { target: { value: '48' } });
+    expect(screen.getByLabelText('Send reminder (hours before event start)')).toHaveValue(24);
     fireEvent.click(screen.getAllByText('Preview with sample details')[0]!.closest('summary')!);
     expect(screen.getByText(/Sample Player is registered for Sample Trials/i)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Save automatic email settings' }));
@@ -68,7 +79,7 @@ describe('SettingsPage', () => {
       confirmationBody: automaticEmail.confirmationBody,
       reminderSubject: automaticEmail.reminderSubject,
       reminderBody: automaticEmail.reminderBody,
-      reminderLeadHours: 48,
+      reminderLeadHours: 24,
     }));
     expect(await screen.findByRole('status')).toHaveTextContent(/Automatic email settings saved/i);
   });

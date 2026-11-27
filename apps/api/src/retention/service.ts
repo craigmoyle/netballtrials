@@ -151,7 +151,7 @@ export async function anonymizeExpiredRegistrations(
             dateOfBirth: ANONYMIZED_DOB, parentAuthorityConfirmedAt: null,
             parentName: '', parentEmail: '', parentMobile: '', memberAssociation: '',
             qrToken: null, checkoutSessionId: null, paymentIntentId: null, legacyPaymentRef: null,
-            checkedInBy: null, bibNumber: null, ageFlagged: false,
+            checkedInBy: null, bibNumber: null, ageFlagged: false, removalNote: null, duplicateOfRegistrationId: null,
             statusBeforeAnonymization: registration.status,
             status: 'WITHDRAWN', anonymizedAt: now, anonymizedRef,
           },
@@ -214,6 +214,11 @@ export async function anonymizeExpiredRegistrations(
         data: { note: null, resolutionHistory: Prisma.DbNull },
       });
       await tx.roundPlan.updateMany({ where: { eventId }, data: { validationWarnings: [] } });
+      await tx.rosterSnapshot.updateMany({ where: { eventId }, data: { data: { scrubbed: true } } });
+      await tx.auditEvent.updateMany({
+        where: { eventId },
+        data: { actorEmailSnapshot: null, reason: null, beforeState: Prisma.DbNull, afterState: Prisma.DbNull, metadata: Prisma.DbNull },
+      });
       await tx.scheduledMessage.deleteMany({ where: { eventId } });
       await tx.siteAssociationCommunication.deleteMany({ where: { id: { in: deletableCampaigns.map((campaign) => campaign.id) } } });
       await tx.checkInSession.deleteMany({ where: { eventId } });
@@ -282,7 +287,7 @@ export async function anonymizeIncompleteRegistrations(
             parentAuthorityConfirmedAt: null, parentEmailVerifiedAt: null, parentFollowUpSentAt: null,
             parentName: '', parentEmail: '', parentMobile: '', memberAssociation: '',
             qrToken: null, checkoutSessionId: null, paymentIntentId: null, legacyPaymentRef: null,
-            checkedInBy: null, bibNumber: null, ageFlagged: false,
+            checkedInBy: null, bibNumber: null, ageFlagged: false, removalNote: null, duplicateOfRegistrationId: null,
             statusBeforeAnonymization: registration.status, status: 'WITHDRAWN', anonymizedAt: now, anonymizedRef,
           },
         });
@@ -292,6 +297,10 @@ export async function anonymizeIncompleteRegistrations(
       if (registrationIds.length) {
         await tx.parentAccessToken.deleteMany({ where: { registrationId: { in: registrationIds } } });
         await tx.registrationChangeLog.deleteMany({ where: { registrationId: { in: registrationIds } } });
+        await tx.auditEvent.updateMany({
+          where: { eventId, registrationId: { in: registrationIds } },
+          data: { actorEmailSnapshot: null, reason: null, beforeState: Prisma.DbNull, afterState: Prisma.DbNull, metadata: Prisma.DbNull },
+        });
         await tx.reviewItem.deleteMany({
           where: { registrationId: { in: registrationIds }, OR: [{ reason: { not: ORPHANED_PAYMENT_REVIEW_REASON } }, { resolvedAt: { not: null } }] },
         });
@@ -369,6 +378,12 @@ export async function pruneStaffAuthArtifacts(prisma: PrismaClient, now: Date): 
 }
 
 const RATE_LIMIT_BUCKET_TTL_MS = 24 * 60 * 60 * 1000;
+
+export async function pruneEventlessAuditEvents(prisma: PrismaClient, now: Date): Promise<number> {
+  const cutoff = new Date(now.getTime());
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - APPLICATION_RETENTION_YEARS);
+  return prisma.auditEvent.deleteMany({ where: { eventId: null, createdAt: { lt: cutoff } } }).then((result) => result.count);
+}
 
 export async function pruneRateLimitBuckets(prisma: PrismaClient, now: Date): Promise<number> {
   const result = await prisma.requestRateLimitBucket.deleteMany({

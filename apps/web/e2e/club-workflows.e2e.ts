@@ -72,7 +72,7 @@ async function submitPublicRegistration(page: Page, request: APIRequestContext):
   await expect(page.getByRole('heading', { name: 'Confirm your email' })).toBeVisible();
 
   const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=${encodeURIComponent(email)}`).then((result) => result.json());
-  const verification = outbox.messages.find((message: { subject: string }) => message.subject === 'Confirm your Netball Trials email');
+  const verification = outbox.messages.find((message: { subject: string }) => message.subject.endsWith('Confirm your Netball Trials email'));
   const verificationLink = verification?.text.match(/https?:\/\/[^\s]+/)?.[0];
   expect(verificationLink).toBeTruthy();
   await page.goto(verificationLink!);
@@ -116,6 +116,13 @@ async function adminPatch(page: Page, request: APIRequestContext, url: string, d
   const session = (await page.context().cookies(API_ORIGIN)).find((cookie) => cookie.name === 'nt_session');
   expect(session, 'verified browser session cookie').toBeTruthy();
   return request.patch(url, { headers: { cookie: `nt_session=${session!.value}` }, data });
+}
+
+function eventDayPatch() {
+  return {
+    eventDate: melbourneDateKey(new Date()),
+    registrationClosesAt: new Date(Date.now() - 24 * 60 * 60_000).toISOString(),
+  };
 }
 
 async function expectAccessible(page: Page): Promise<void> {
@@ -319,10 +326,12 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByRole('link', { name: 'Trials home' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('navigation', { name: 'Staff and volunteer access' })).toHaveCount(0);
   await expectAccessible(page);
+  const dayOf = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, eventDayPatch());
+  expect(dayOf.status()).toBe(200);
 
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Event operations');
-  await expect(page.getByText('Status: open', { exact: true })).toBeVisible();
+  await expect(page.getByText('Event status: open', { exact: true })).toBeVisible();
   await expectAccessible(page);
   page.on('dialog', (dialog) => dialog.accept());
   await page.getByLabel('Set or rotate check-in PIN').fill('482193');
@@ -330,8 +339,7 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await expect(page.getByText('PIN: Configured')).toBeVisible();
   await page.getByRole('button', { name: /close check-in/i }).click();
   await expect(page.getByText('Status: Closed')).toBeVisible();
-  await page.getByRole('button', { name: /close event/i }).click();
-  await expect(page.getByText('Status: closed', { exact: true })).toBeVisible();
+  await expect(page.getByText('Registration: Closed', { exact: true })).toBeVisible();
   await openAdminSetup(page, 'Member associations');
   await expect(page.getByRole('heading', { name: 'Member associations' })).toBeVisible();
   const associationInputs = await page.locator('input').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
@@ -394,15 +402,10 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   expect(csv.suggestedFilename()).toBe(`roster-${fixtures.mainEventId}.csv`);
   await page.setViewportSize({ width: 1280, height: 900 });
 
-  await openEventTool(page, 'Review queue');
-  await expect(page.getByRole('heading', { name: 'Review queue' })).toBeVisible();
-  await expect(page.getByLabel('Note')).toHaveCount(2);
+  await openEventTool(page, 'Needs attention');
+  await expect(page.getByRole('heading', { name: 'Needs attention' })).toBeVisible();
+  await expect(page.getByText('Nothing needs attention.')).toBeVisible();
   await expectAccessible(page);
-  await page.getByLabel('Note').first().fill('Checked against association records');
-  await page.getByRole('button', { name: 'Mark reviewed' }).first().click();
-  await expect(page.getByLabel('Note')).toHaveCount(1);
-  await page.getByRole('button', { name: /withdraw/i }).click();
-  await expect(page.getByText('Nothing to review.')).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await openEventTool(page, 'Event communications');
@@ -412,10 +415,10 @@ test('admin logs in, controls events, exports roster, reviews and messages', asy
   await page.getByLabel('Subject').fill('Trial day update');
   await page.getByLabel('Message', { exact: true }).fill('Please arrive at the usual time.');
   await page.getByRole('button', { name: 'Review recipients' }).click();
-  await expect(page.getByText(/68 distinct email recipients will receive this message/i)).toBeVisible();
+  await expect(page.getByText(/69 distinct email recipients will receive this message/i)).toBeVisible();
   await expectAccessible(page);
-  await page.getByRole('button', { name: 'Send now to 68' }).click();
-  await expect(page.getByText('0 sent, 68 simulated, 0 failed.')).toBeVisible();
+  await page.getByRole('button', { name: 'Send now to 69' }).click();
+  await expect(page.getByText('0 sent, 69 simulated, 0 failed.')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
@@ -476,7 +479,7 @@ test('Parent magic link manages every registration linked to the guardian email'
   await page.getByRole('button', { name: 'Send confirmation link' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Your current email remains active until you confirm' })).toBeVisible();
   const changeOutbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=family%40example.test`).then((response) => response.json());
-  const changeEmail = changeOutbox.messages.find((message: { subject: string }) => message.subject === 'Confirm your new Netball Trials email');
+  const changeEmail = changeOutbox.messages.find((message: { subject: string }) => message.subject.endsWith('Confirm your new Netball Trials email'));
   const changeLink = changeEmail?.text.match(/https?:\/\/[^\s]+/)?.[0];
   expect(changeLink).toBeTruthy();
   await page.goto(changeLink!);
@@ -488,7 +491,7 @@ test('Parent magic link manages every registration linked to the guardian email'
 
 test('Admin opens event-scoped check-in without a PIN', async ({ page, request }) => {
   await signIn(page, request);
-  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, { eventDate: melbourneDateKey(new Date()) });
+  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, eventDayPatch());
   expect(eventDate.status()).toBe(200);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await expect(page.getByRole('heading', { name: 'Edit event' })).toBeVisible();
@@ -499,7 +502,7 @@ test('Admin opens event-scoped check-in without a PIN', async ({ page, request }
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Arielle Ashford');
   await page.getByRole('button', { name: 'Check in' }).first().click();
-  await expect(page.getByRole('status')).toHaveText(/Arielle Ashford, Number 70 — Refer to committee/);
+  await expect(page.getByRole('status')).toHaveText(/Arielle Ashford, Number 70/);
 });
 
 test('Admin assists a family on a closed event day and parent verifies email before Checkout', async ({ page, request }) => {
@@ -510,7 +513,7 @@ test('Admin assists a family on a closed event day and parent verifies email bef
   });
   await signIn(page, request);
   const eventUrl = `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`;
-  const eventDate = await adminPatch(page, request, eventUrl, { eventDate: melbourneDateKey(new Date()) });
+  const eventDate = await adminPatch(page, request, eventUrl, eventDayPatch());
   expect(eventDate.status()).toBe(200);
   const closedEvent = await adminPost(page, request, `${eventUrl}/close`, {});
   expect(closedEvent.status()).toBe(200);
@@ -535,7 +538,7 @@ test('Admin assists a family on a closed event day and parent verifies email bef
   await expectAccessible(page);
 
   const outbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=dayofparent%40example.test`).then((response) => response.json());
-  const verificationEmail = outbox.messages.find((message: { subject: string }) => message.subject === 'Confirm your Netball Trials email');
+  const verificationEmail = outbox.messages.find((message: { subject: string }) => message.subject.endsWith('Confirm your Netball Trials email'));
   const verificationLink = verificationEmail?.text.match(/https?:\/\/[^\s]+/)?.[0];
   expect(verificationLink).toBeTruthy();
   const parentPage = await page.context().newPage();
@@ -573,12 +576,12 @@ test('Admin assists a family on a closed event day and parent verifies email bef
   expect(externalRequests).toEqual([]);
 });
 
-test('volunteer uses manual fallback, sees referral/name/number, live count and undo without parent contacts', async ({ page, request }) => {
+test('volunteer uses manual fallback, sees name/number, live count and undo without parent contacts', async ({ page, request }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, request);
-  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, { eventDate: melbourneDateKey(new Date()) });
+  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, eventDayPatch());
   expect(eventDate.status()).toBe(200);
   await page.goto(`/check-in?eventId=${encodeURIComponent(fixtures.mainEventId)}`);
   await expect(page.getByLabel('Event ID')).toHaveValue(fixtures.mainEventId);
@@ -593,7 +596,7 @@ test('volunteer uses manual fallback, sees referral/name/number, live count and 
   await page.getByRole('link', { name: 'Look up by name instead' }).click();
   await page.getByLabel('Player name').fill('Arielle Ashford');
   await page.getByRole('button', { name: 'Check in' }).click();
-  await expect(page.getByRole('status')).toHaveText(/Arielle Ashford, Number 70 — Refer to committee/);
+  await expect(page.getByRole('status')).toHaveText(/Arielle Ashford, Number 70/);
   await expect(page.getByText('70 of 70 arrived')).toBeVisible();
   await expect(page.getByText(/parent1@example\.test/)).toHaveCount(0);
   await expectAccessible(page);
@@ -626,7 +629,7 @@ test('registration overview compares open events and links to Admin help', async
   await expectAccessible(page);
 });
 
-test('Admin can edit automatic email copy and reminder lead time from Settings', async ({ page, request }, testInfo) => {
+test('Admin can edit automatic email copy while the fixed reminder lead time stays at 24 hours', async ({ page, request }, testInfo) => {
   await signIn(page, request);
   await openAdminSetup(page, 'Settings');
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
@@ -639,13 +642,14 @@ test('Admin can edit automatic email copy and reminder lead time from Settings',
   await page.screenshot({ path: testInfo.outputPath('automatic-email-settings-mobile.png'), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByLabel('Reminder subject').fill('Reminder: {{eventName}} is coming up');
-  await page.getByLabel('Send reminder (hours before event start)').fill('48');
+  await expect(page.getByLabel('Send reminder (hours before event start)')).toHaveValue('24');
+  await expect(page.getByLabel('Send reminder (hours before event start)')).toHaveAttribute('readonly');
   await page.getByText('Preview with sample details').last().click();
   await expect(page.getByText('Reminder: Sample Trials is coming up')).toBeVisible();
   await page.getByRole('button', { name: 'Save automatic email settings' }).click();
   await expect(page.getByRole('status')).toContainText('Automatic email settings saved');
   const saved = await adminGet(page, request, `${API_ORIGIN}/api/admin/settings/automatic-email`).then((response) => response.json());
-  expect(saved).toMatchObject({ reminderSubject: 'Reminder: {{eventName}} is coming up', reminderLeadHours: 48 });
+  expect(saved).toMatchObject({ reminderSubject: 'Reminder: {{eventName}} is coming up', reminderLeadHours: 24 });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: testInfo.outputPath('automatic-email-settings-mobile.png'), fullPage: true });
@@ -771,7 +775,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
     if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && !['localhost', '127.0.0.1'].includes(url.hostname)) externalRequests.push(requestEvent.url());
   });
   await signIn(page, request);
-  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, { eventDate: melbourneDateKey(new Date()) });
+  const eventDate = await adminPatch(page, request, `${API_ORIGIN}/api/admin/events/${fixtures.mainEventId}`, eventDayPatch());
   expect(eventDate.status()).toBe(200);
   await page.getByRole('link', { name: 'E2E 15/U Ladies' }).click();
   await openEventTool(page, 'Plan rounds');
@@ -862,7 +866,7 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await expect(page.getByText('Active revision 2')).toBeVisible();
 
   const parentEmail = 'late-parent@example.test';
-  await page.goto(`/register/${fixtures.mainEventId}`);
+  await page.goto(`/admin/events/${fixtures.mainEventId}/day-of-registration`);
   await page.getByLabel('Player first name').fill('Late Arrival');
   await page.getByLabel('Player last name').fill('Trial');
   await page.getByLabel('Player date of birth').fill('2012-05-04');
@@ -873,7 +877,19 @@ test('Admin manages a live plan safely after a late arrival and early leaver', a
   await page.getByLabel('First position').selectOption('GS');
   await page.locator('#parentAuthorityConfirmed').check();
   await page.getByLabel(/I confirm the player meets these eligibility requirements/).check();
-  const sessionId = await submitPublicRegistration(page, request);
+  await page.getByRole('button', { name: 'Send next-step link' }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm your email' })).toBeVisible();
+  const verificationOutbox = await request.get(`${CONTROL_ORIGIN}/__test/outbox?to=${encodeURIComponent(parentEmail)}`).then((response) => response.json());
+  const verification = verificationOutbox.messages.find((message: { subject: string }) => message.subject.endsWith('Confirm your Netball Trials email'));
+  const verificationLink = verification?.text.match(/https?:\/\/[^\s]+/)?.[0];
+  expect(verificationLink).toBeTruthy();
+  await page.goto(verificationLink!);
+  await page.getByRole('button', { name: 'Confirm email and continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Manage registrations' })).toBeVisible();
+  const checkoutResponse = page.waitForResponse((candidate) => candidate.request().method() === 'POST' && /\/api\/parent\/registrations\/[^/]+\/checkout$/.test(new URL(candidate.url()).pathname));
+  await page.getByRole('button', { name: 'Continue to Checkout' }).click();
+  const sessionId = (await (await checkoutResponse).json()).simulationToken as string;
+  expect(sessionId).toBeTruthy();
   const pendingRoster = await adminGet(page, request, `${eventUrl}/roster`).then((response) => response.json());
   const lateRegistration = pendingRoster.registrations.find((registration: { playerName: string }) => registration.playerName === 'Late Arrival Trial');
   expect(lateRegistration).toMatchObject({ status: 'PENDING', bibNumber: null, checkedInAt: null });

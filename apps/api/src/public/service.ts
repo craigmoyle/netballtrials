@@ -22,6 +22,8 @@ export type PublicEvent = {
   maxAge: number;
   courts: number;
   status: string;
+  registrationClosesAt: string;
+  registrationClosedAt: string | null;
 };
 
 export type PublicTicket = {
@@ -39,6 +41,7 @@ export async function listPublicEvents(prisma: PrismaClient): Promise<PublicTria
     select: {
       id: true, name: true, division: true, section: true, eventDate: true, venue: true,
       startTime: true, gameStartTime: true, registrationFeeCents: true, status: true,
+      registrationClosesAt: true, registrationClosedAt: true,
     },
   });
   return events.map((event) => ({
@@ -46,6 +49,8 @@ export async function listPublicEvents(prisma: PrismaClient): Promise<PublicTria
     eventDate: event.eventDate.toISOString(),
     currency: 'aud',
     status: event.status as PublicTrialDTO['status'],
+    registrationClosesAt: event.registrationClosesAt.toISOString(),
+    registrationClosedAt: event.registrationClosedAt?.toISOString() ?? null,
   }));
 }
 
@@ -96,11 +101,20 @@ export async function getTicketCalendar(
 export async function getPublicEvent(
   prisma: PrismaClient,
   id: string,
+  policySnapshotBaseUrl = '',
 ): Promise<PublicEvent | null> {
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event || event.status !== 'OPEN') {
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: { policySnapshots: { orderBy: { version: 'desc' }, take: 1 } },
+  });
+  if (!event || event.status === 'DRAFT') {
     return null;
   }
+
+  const latestSnapshot = event.policySnapshots[0];
+  const snapshotPolicyUrl = latestSnapshot
+    ? `${policySnapshotBaseUrl.replace(/\/$/, '')}/api/public/events/${event.id}/policy-snapshots/${latestSnapshot.version}`
+    : event.policyUrl ?? DEFAULT_POLICY_URL;
 
   return {
     id: event.id,
@@ -114,10 +128,12 @@ export async function getPublicEvent(
     competitionYear: event.competitionYear,
     registrationFeeCents: event.registrationFeeCents,
     currency: 'aud',
-    policyUrl: event.policyUrl ?? DEFAULT_POLICY_URL,
+    policyUrl: snapshotPolicyUrl,
     minAge: event.minAge,
     maxAge: event.maxAge,
     courts: event.courts,
     status: event.status,
+    registrationClosesAt: event.registrationClosesAt.toISOString(),
+    registrationClosedAt: event.registrationClosedAt?.toISOString() ?? null,
   };
 }

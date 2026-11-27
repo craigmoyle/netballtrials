@@ -65,7 +65,9 @@ export class AdminLimitReachedError extends Error {
 
 export type AdminRemovalResult = 'removed' | 'not_found' | 'self' | 'actor_revoked';
 
-export async function removeAdmin(prisma: PrismaClient, staffId: string, actorUserId: string): Promise<AdminRemovalResult> {
+export async function removeAdmin(
+  prisma: PrismaClient, staffId: string, actorUserId: string, reason = 'Admin access removed', now = new Date(),
+): Promise<AdminRemovalResult> {
   return prisma.$transaction(async (tx) => {
     await lockAdminRoster(tx);
     const actor = await tx.staffUser.findUnique({ where: { id: actorUserId }, select: { id: true } });
@@ -73,6 +75,10 @@ export async function removeAdmin(prisma: PrismaClient, staffId: string, actorUs
     if (staffId === actorUserId) return 'self';
     const target = await tx.staffUser.findUnique({ where: { id: staffId }, select: { id: true } });
     if (!target) return 'not_found';
+    await tx.auditEvent.create({ data: {
+      actorType: 'ADMIN', actorUserId, action: 'ADMIN_REMOVED', entityType: 'StaffUser', entityId: staffId,
+      reason, beforeState: { active: true }, afterState: { active: false }, createdAt: now,
+    } });
     await tx.staffUser.delete({ where: { id: staffId } });
     return 'removed';
   });
@@ -83,6 +89,7 @@ export async function inviteAdmin(
   rawEmail: string,
   invitedByUserId: string,
   now: Date,
+  reason = 'Committee Admin invited',
 ): Promise<StaffUser> {
   const email = normalizeEmail(rawEmail);
   const user = await deps.prisma.$transaction(async (tx) => {
@@ -92,7 +99,12 @@ export async function inviteAdmin(
     if (deps.maxAdmins !== undefined && await tx.staffUser.count() >= deps.maxAdmins) {
       throw new AdminLimitReachedError();
     }
-    return tx.staffUser.create({ data: { email, invitedByUserId } });
+    const created = await tx.staffUser.create({ data: { email, invitedByUserId } });
+    await tx.auditEvent.create({ data: {
+      actorType: 'ADMIN', actorUserId: invitedByUserId, action: 'ADMIN_INVITED',
+      entityType: 'StaffUser', entityId: created.id, reason, afterState: { email, active: true }, createdAt: now,
+    } });
+    return created;
   });
   await requestLoginLink(deps, email, now);
   return user;

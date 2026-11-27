@@ -63,17 +63,17 @@ describe('review queue', () => {
       { id: item.id, resolvedByUserId: 'u1', note: 'Checked with association' },
     ]);
   });
-  it('removes withdrawn flagged players from the open queue', async () => {
+  it('keeps a flagged player visible after withdrawal until an Admin resolves it', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     const registration = await seedPaidFlagged(event.id);
     await ensureReviewItems(prisma, event.id);
     expect(await listReviewQueue(prisma, event.id)).toHaveLength(1);
     await prisma.registration.update({ where: { id: registration.id }, data: { status: 'WITHDRAWN' } });
-    expect(await listReviewQueue(prisma, event.id)).toHaveLength(0);
+    expect(await listReviewQueue(prisma, event.id)).toHaveLength(1);
     expect(await listReviewQueue(prisma, event.id, true)).toHaveLength(1);
   });
 
-  it('hides stale age reviews after a range update without hiding payment items or losing history', async () => {
+  it('keeps age reviews after a range update until explicit resolution without losing history', async () => {
     const event = await prisma.event.create({ data: eventFixture() });
     const registration = await seedPaidFlagged(event.id);
     const resolvedRegistration = await prisma.registration.create({
@@ -98,7 +98,7 @@ describe('review queue', () => {
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).ageFlagged).toBe(false);
     expect(await ensureReviewItems(prisma, event.id)).toBe(0);
     const queue = await listReviewQueue(prisma, event.id);
-    expect(queue.map((item) => item.id).sort()).toEqual([...paymentItems.map((item) => item.id), otherItem.id].sort());
+    expect(queue.map((item) => item.id).sort()).toEqual([...paymentItems.map((item) => item.id), otherItem.id, ageItem.id].sort());
     const history = await listReviewQueue(prisma, event.id, true);
     expect(history).toHaveLength(5);
     expect(history).toEqual(expect.arrayContaining([
@@ -124,6 +124,52 @@ describe('review queue', () => {
       data: { eventId: event.id, registrationId: registration.id, reason: 'other', note: 'Original' },
     });
     expect((await resolveReviewItem(prisma, event.id, unchanged.id, { resolvedByUserId: 'u1' }, new Date()))?.note).toBe('Original');
+  });
+
+  it('projects operational exceptions into one persistent Needs attention queue', async () => {
+    const event = await prisma.event.create({ data: eventFixture() });
+    const incomplete = await prisma.registration.create({ data: registrationFixture(event.id, { status: 'PENDING', parentEmailVerifiedAt: null }) });
+    await prisma.registration.create({ data: registrationFixture(event.id, {
+      status: 'FAILED', playerFirstName: 'Grace', playerNameNormalized: 'grace hopper',
+      adminAssistedAt: new Date('2026-09-12T00:00:00Z'),
+    }) });
+    const failed = await prisma.emailLog.create({ data: {
+      eventId: event.id, registrationId: incomplete.id, batchId: 'failed-batch', idempotencyKey: 'failed-delivery',
+      to: incomplete.parentEmail, subject: 'Update', body: 'Update', kind: 'message', status: 'FAILED', error: 'provider_rejected_400',
+    } });
+    await prisma.emailLog.create({ data: {
+      eventId: event.id, batchId: 'ambiguous-batch', idempotencyKey: 'ambiguous-delivery',
+      to: 'association@example.com', subject: 'Association update', body: 'Update', kind: 'association',
+      status: 'AMBIGUOUS', error: 'delivery_outcome_unknown',
+    } });
+    await prisma.scheduledMessage.create({ data: {
+      eventId: event.id, audience: 'participants', recipientIds: [], batchId: 'scheduled-failure',
+      subject: 'Reminder', body: 'Reminder', scheduledAt: new Date('2026-09-01T00:00:00Z'),
+      status: 'FAILED', error: 'scheduled_send_failed',
+    } });
+    await prisma.roundPlan.create({ data: {
+      eventId: event.id, revision: 1, seed: 1, status: 'DRAFT', rounds: 1, courts: 1,
+      playMinutes: 8, changeoverMinutes: 2, windowMinutes: 30, rank1Min: 1, rank2Min: 0, rank3Min: 0,
+      eventName: event.name, eventDate: event.eventDate, venue: event.venue, gameStartTime: event.gameStartTime,
+      validationWarnings: [{ code: 'missing_court', message: 'Court 2 is missing a player.' }],
+    } });
+
+    await ensureReviewItems(prisma, event.id);
+    const first = await listReviewQueue(prisma, event.id);
+    expect(first.map((item) => item.reason).sort()).toEqual([
+      'delivery_ambiguous', 'delivery_failed', 'late_addition_incomplete',
+      'planner_reconciliation', 'scheduled_message_failed',
+    ].sort());
+    expect(first.find((item) => item.emailLogId === failed.id)?.registration?.id).toBe(incomplete.id);
+    expect(first.find((item) => item.reason === 'delivery_ambiguous')?.registration).toBeNull();
+
+    await ensureReviewItems(prisma, event.id);
+    await prisma.registration.update({ where: { id: incomplete.id }, data: { parentEmailVerifiedAt: new Date(), status: 'PAID' } });
+    await prisma.emailLog.update({ where: { id: failed.id }, data: { status: 'SENT' } });
+    expect((await listReviewQueue(prisma, event.id)).filter((item) => item.resolvedAt === null).map((item) => item.reason))
+      .toContain('delivery_failed');
+    expect((await listReviewQueue(prisma, event.id)).map((item) => item.registration?.id)).toContain(incomplete.id);
+    expect(await prisma.reviewItem.count({ where: { eventId: event.id } })).toBe(5);
   });
 
   it('does not overwrite an existing resolution', async () => {

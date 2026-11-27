@@ -15,16 +15,20 @@ import {
   updateSiteAssociationCommunication,
 } from './site-association-communications';
 
+const previewedRecipientsSchema = z.array(z.object({ id: z.string().min(1), email: z.email() }).strict()).min(1).max(500);
 const selectionFields = {
-  previewedRecipients: z.array(z.object({ id: z.string().min(1), email: z.email() }).strict()).min(1).max(500).optional(),
   eventIds: z.array(z.string().min(1)).min(1).max(100),
   associationIds: z.array(z.string().min(1)).min(1).max(500),
   subject: z.string().trim().min(1).max(200),
   text: z.string().trim().min(1).max(5000),
 };
 const previewSchema = z.object(selectionFields);
-const sendSchema = z.object({ ...selectionFields, batchId: z.uuid().optional() });
-const scheduleFields = { ...selectionFields, scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/) };
+const sendSchema = z.object({ ...selectionFields, previewedRecipients: previewedRecipientsSchema, batchId: z.uuid().optional() });
+const scheduleFields = {
+  ...selectionFields,
+  previewedRecipients: previewedRecipientsSchema.optional(),
+  scheduledLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+};
 const scheduleSchema = z.object({ ...scheduleFields, batchId: z.uuid().optional() });
 const scheduleEditSchema = z.object({ ...scheduleFields, expectedUpdatedAt: z.string().datetime() });
 const retrySchema = z.object({ deliveryIds: z.array(z.string().min(1)).min(1).max(500), includeAmbiguous: z.boolean().default(false) });
@@ -141,8 +145,19 @@ export function registerSiteAssociationRoutes(app: FastifyInstance, deps: AppDep
     const parsed = retrySchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
     const { id } = req.params as { id: string };
-    const result = await retrySiteAssociationCommunication(deps.prisma, { mailer: deps.mailer }, id, parsed.data.deliveryIds, new Date(), parsed.data.includeAmbiguous);
+    const now = new Date();
+    const campaign = await deps.prisma.siteAssociationCommunication.findUnique({ where: { id }, select: { anchorEventId: true, batchId: true } });
+    const result = await retrySiteAssociationCommunication(deps.prisma, { mailer: deps.mailer }, id, parsed.data.deliveryIds, now, parsed.data.includeAmbiguous);
     if (!result) return reply.code(404).send({ error: 'not_found' });
+    if (campaign && result.sentThisRun + result.simulatedThisRun + result.failedThisRun + result.ambiguousThisRun > 0) {
+      await deps.prisma.auditEvent.create({ data: {
+        eventId: campaign.anchorEventId, actorType: 'ADMIN', actorUserId: req.adminUserId,
+        action: parsed.data.includeAmbiguous ? 'AMBIGUOUS_DELIVERY_RETRY' : 'DELIVERY_RETRY',
+        entityType: 'SiteAssociationCommunication', entityId: id,
+        reason: parsed.data.includeAmbiguous ? 'Admin accepted duplicate-send risk for ambiguous outcomes' : 'Failed association delivery retry requested',
+        afterState: { batchId: campaign.batchId, sent: result.sent, failed: result.failed, ambiguous: result.ambiguous }, createdAt: now,
+      } });
+    }
     return result;
   });
 }

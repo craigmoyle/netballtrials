@@ -8,6 +8,7 @@ import { createDevMailer } from './mail/dev-mailer';
 import { createGmailMailer } from './mail/gmail-mailer';
 import type { EmailProvider } from './mail/provider';
 import { createTestRoutedMailer } from './mail/test-routed-mailer';
+import { createTestingMailer } from './mail/testing-mailer';
 import type { PaymentProvider } from './payments/provider';
 import { createFakePaymentProvider } from './payments/fake';
 import { createStripePaymentProvider } from './payments/stripe';
@@ -149,6 +150,7 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
     }
     mailer = createTestRoutedMailer(database, overrides.mailer as EmailProvider & { provider: 'gmail-api' });
   }
+  if (appEnv === 'testing') mailer = createTestingMailer(mailer);
   if ((appEnv === 'production' || testIntegrationMode) && !readsInfisical && (!('provider' in mailer) || mailer.provider !== 'gmail-api')) {
     throw new Error(`${testIntegrationMode ? 'Test integration' : 'Production'} mode requires the Gmail API mail provider`);
   }
@@ -161,7 +163,8 @@ export function createApp(overrides: Partial<AppDeps> = {}, options: AppOptions 
       throw new Error('Test integration mode requires an sk_test_ Stripe key');
     }
     const nextPayment = credentials.stripe ? createStripePaymentProvider(credentials.stripe) : null;
-    const nextMailer = credentials.gmail ? createGmailProvider(credentials.gmail) : null;
+    const gmailMailer = credentials.gmail ? createGmailProvider(credentials.gmail) : null;
+    const nextMailer = gmailMailer && appEnv === 'testing' ? createTestingMailer(gmailMailer) : gmailMailer;
     return () => {
       if (nextPayment) deps.payment = nextPayment;
       if (nextMailer) deps.mailer = nextMailer;

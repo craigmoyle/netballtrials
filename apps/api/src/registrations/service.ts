@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient, type Registration } from '@prisma/client';
 import { melbourneDateKey } from '@netball-trials/types';
 import { ageAtDecember31, isAgeInRange, normalizePlayerName } from './eligibility';
@@ -15,6 +16,17 @@ export class RegistrationValidationError extends Error {
     this.name = 'RegistrationValidationError';
     this.fields = fields;
   }
+}
+
+export class RegistrationIneligibleError extends Error {
+  constructor(readonly competitionYear: number, readonly minAge: number, readonly maxAge: number) {
+    super('Player is not eligible for this event');
+    this.name = 'RegistrationIneligibleError';
+  }
+}
+
+function policySnapshotUrl(baseUrl: string, eventId: string, version: number): string {
+  return `${baseUrl.replace(/\/$/, '')}/api/public/events/${eventId}/policy-snapshots/${version}`;
 }
 
 export class RegistrationConflictError extends Error {
@@ -35,6 +47,8 @@ async function createPendingRegistrationWithPolicy(
   input: RegistrationInput,
   now: Date,
   adminAssisted: boolean,
+  actorUserId?: string,
+  policySnapshotBaseUrl = '',
 ): Promise<Registration> {
   const parsed = registrationInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -48,11 +62,31 @@ async function createPendingRegistrationWithPolicy(
   try {
     return await prisma.$transaction(async (tx) => {
       await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`);
-      const event = await tx.event.findUnique({ where: { id: eventId } });
+      const event = await tx.event.findUnique({ where: { id: eventId }, include: { policyDocument: true } });
       const allowed = adminAssisted
-        ? event && (event.status === 'OPEN' || event.status === 'CLOSED') && !event.checkInClosedAt && melbourneDateKey(now) === event.eventDate.toISOString().slice(0, 10)
-        : event?.status === 'OPEN';
+        ? event && (event.status === 'OPEN' || event.status === 'CLOSED') && melbourneDateKey(now) === event.eventDate.toISOString().slice(0, 10)
+        : event?.status === 'OPEN' && !event.registrationClosedAt && event.registrationClosesAt.getTime() > now.getTime();
       if (!event || !allowed) throw new RegistrationConflictError('closed');
+      if (values.dateOfBirth > melbourneDateKey(now)) throw new RegistrationValidationError(['dateOfBirth']);
+      const policySnapshot = await tx.eventPolicySnapshot.findFirst({ where: { eventId }, orderBy: { version: 'desc' } }) ??
+        await tx.eventPolicySnapshot.create({ data: {
+          eventId,
+          version: 1,
+          policyReference: policySnapshotUrl(policySnapshotBaseUrl, eventId, 1),
+          competitionYear: event.competitionYear,
+          minAge: event.minAge,
+          maxAge: event.maxAge,
+          policyUrl: event.policyUrl ?? DEFAULT_POLICY_URL,
+          policyDocumentName: event.policyDocument?.fileName ?? null,
+          policyDocumentBytes: event.policyDocument?.bytes ?? null,
+          policyDocumentHash: event.policyDocument
+            ? createHash('sha256').update(Buffer.from(event.policyDocument.bytes)).digest('hex')
+            : null,
+        } });
+      const age = ageAtDecember31(dateOfBirth, policySnapshot.competitionYear);
+      if (!isAgeInRange(age, policySnapshot.minAge, policySnapshot.maxAge)) {
+        throw new RegistrationIneligibleError(policySnapshot.competitionYear, policySnapshot.minAge, policySnapshot.maxAge);
+      }
 
       const association = await tx.memberAssociation.findFirst({
         where: { name: values.memberAssociation, active: true },
@@ -64,18 +98,18 @@ async function createPendingRegistrationWithPolicy(
         where: { eventId, status: 'PENDING', expiresAt: { lt: now } },
         data: { status: 'EXPIRED' },
       });
-      if (values.dateOfBirth > melbourneDateKey(now)) throw new RegistrationValidationError(['dateOfBirth']);
       duplicateWhere = {
         eventId,
         playerNameNormalized,
         dateOfBirth,
-        status: { in: ['PENDING', 'PAID'] },
+        status: { in: adminAssisted
+          ? ['PENDING', 'PAID', 'WITHDRAWN', 'DUPLICATE', 'EXPIRED', 'FAILED']
+          : ['PENDING', 'PAID', 'WITHDRAWN', 'DUPLICATE', 'EXPIRED', 'FAILED'] },
       };
       const existing = await tx.registration.findFirst({ where: duplicateWhere });
       if (existing) throw new RegistrationConflictError('duplicate', existing);
 
-      const age = ageAtDecember31(dateOfBirth, event.competitionYear);
-      return tx.registration.create({
+      const registration = await tx.registration.create({
         data: {
           eventId,
           playerFirstName: values.playerFirstName,
@@ -92,16 +126,32 @@ async function createPendingRegistrationWithPolicy(
           optInExtraPositions: values.optInExtraPositions,
           eligibilityConfirmedAt: now,
           parentAuthorityConfirmedAt: now,
-          policyReference: event.policyUrl ?? DEFAULT_POLICY_URL,
+          policyReference: policySnapshotUrl(policySnapshotBaseUrl, eventId, policySnapshot.version),
+          policySnapshotId: policySnapshot.id,
+          adminAssistedAt: adminAssisted ? now : null,
           status: 'PENDING',
-          ageFlagged: !isAgeInRange(age, event.minAge, event.maxAge),
+          ageFlagged: false,
           amountCents: event.registrationFeeCents,
           expiresAt: new Date(now.getTime() + PENDING_TTL_MS),
         },
       });
+      if (adminAssisted) await tx.auditEvent.create({
+        data: {
+          eventId,
+          registrationId: registration.id,
+          actorType: 'ADMIN',
+          actorUserId,
+          action: 'LATE_ADDITION_CREATED', reason: 'Admin-assisted late addition started',
+          entityType: 'Registration',
+          entityId: registration.id,
+          afterState: { status: registration.status, adminAssistedAt: now.toISOString() },
+          createdAt: now,
+        },
+      });
+      return registration;
     });
   } catch (error) {
-    if (error instanceof RegistrationConflictError || error instanceof RegistrationValidationError) throw error;
+    if (error instanceof RegistrationConflictError || error instanceof RegistrationValidationError || error instanceof RegistrationIneligibleError) throw error;
     if (isUniqueViolation(error)) {
       const existing = await prisma.registration.findFirst({ where: duplicateWhere! });
       throw new RegistrationConflictError('duplicate', existing);
@@ -115,8 +165,9 @@ export function createPendingRegistration(
   eventId: string,
   input: RegistrationInput,
   now: Date,
+  policySnapshotBaseUrl = '',
 ): Promise<Registration> {
-  return createPendingRegistrationWithPolicy(prisma, eventId, input, now, false);
+  return createPendingRegistrationWithPolicy(prisma, eventId, input, now, false, undefined, policySnapshotBaseUrl);
 }
 
 export function createAdminPendingRegistration(
@@ -124,8 +175,10 @@ export function createAdminPendingRegistration(
   eventId: string,
   input: RegistrationInput,
   now: Date,
+  actorUserId?: string,
+  policySnapshotBaseUrl = '',
 ): Promise<Registration> {
-  return createPendingRegistrationWithPolicy(prisma, eventId, input, now, true);
+  return createPendingRegistrationWithPolicy(prisma, eventId, input, now, true, actorUserId, policySnapshotBaseUrl);
 }
 
 export class RegistrationWithdrawalError extends Error {
@@ -139,8 +192,9 @@ export async function withdrawRegistration(
   prisma: PrismaClient,
   eventId: string,
   registrationId: string,
-  _now: Date,
+  now: Date,
   expireCheckout?: (sessionId: string) => Promise<boolean>,
+  audit: { actorUserId?: string; actorType?: string; reason?: string } = {},
 ): Promise<Registration | null> {
   const snapshot = await prisma.registration.findFirst({
     where: { id: registrationId, eventId },
@@ -173,6 +227,13 @@ export async function withdrawRegistration(
       }
       return null;
     }
-    return tx.registration.findUnique({ where: { id: registrationId } });
+    const withdrawn = await tx.registration.findUniqueOrThrow({ where: { id: registrationId } });
+    await tx.auditEvent.create({ data: {
+      eventId, registrationId, actorType: audit.actorType ?? (audit.actorUserId ? 'ADMIN' : 'SYSTEM'), actorUserId: audit.actorUserId,
+      action: 'REGISTRATION_WITHDRAWN', entityType: 'Registration', entityId: registrationId,
+      reason: audit.reason ?? 'Registration withdrawn', beforeState: { status: snapshot.status },
+      afterState: { status: 'WITHDRAWN' }, createdAt: now,
+    } });
+    return withdrawn;
   });
 }

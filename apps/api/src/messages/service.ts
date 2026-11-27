@@ -114,15 +114,18 @@ async function prepareBatch(
     if (!event || isPastRetentionCutoff(event.eventDate, now)) return [];
 
     if (onlyRecipient) {
-      const registration = onlyRecipient.registrationId && await tx.registration.findFirst({
+      const registrationIds = onlyRecipient.registrationIds.length
+        ? onlyRecipient.registrationIds
+        : onlyRecipient.registrationId ? [onlyRecipient.registrationId] : [];
+      const registration = registrationIds.length ? await tx.registration.findFirst({
         where: {
-          id: onlyRecipient.registrationId,
+          id: { in: registrationIds },
           eventId,
-          parentEmail: { equals: onlyRecipient.email, mode: 'insensitive' },
+          ...(kind === 'payment-1h-admin-warning' ? {} : { parentEmail: { equals: onlyRecipient.email, mode: 'insensitive' } }),
           ...mailRegistrationEligibility(kind, now),
         },
-      });
-      if (!registration || !registration.parentEmail.trim()) return [];
+      }) : null;
+      if (!registration) return [];
     }
     const existing = await tx.emailLog.findMany({ where: { batchId }, orderBy: { to: 'asc' } });
     if (existing.length > 0) {
@@ -146,7 +149,7 @@ async function prepareBatch(
 
     let recipients: Recipient[];
     if (onlyRecipient) {
-      recipients = [{ email: onlyRecipient.email.trim().toLowerCase(), registrationId: onlyRecipient.registrationId, registrationIds: onlyRecipient.registrationId ? [onlyRecipient.registrationId] : [] }];
+      recipients = [{ email: onlyRecipient.email.trim().toLowerCase(), registrationId: onlyRecipient.registrationId, registrationIds: onlyRecipient.registrationIds }];
     } else {
       const registrations = await tx.registration.findMany({
         where: { eventId, ...mailRegistrationEligibility(kind, now) },
@@ -218,6 +221,25 @@ async function dispatchOne(
     const eligibleRegistrationIds = referencedRegistrationIds.length
       ? referencedRegistrationIds
       : current.registrationId ? [current.registrationId] : [];
+    const paymentKind = ['payment-24h', 'payment-1h', 'payment-1h-warning', 'payment-1h-admin-warning'].includes(current.kind);
+    if (paymentKind && eligibleRegistrationIds.length > 0) {
+      const warningKind = current.kind === 'payment-1h-warning' || current.kind === 'payment-1h-admin-warning';
+      const eligibleCount = await tx.registration.count({
+        where: {
+          id: { in: eligibleRegistrationIds }, eventId: current.eventId, anonymizedAt: null,
+          status: warningKind ? { in: ['PENDING', 'EXPIRED', 'FAILED'] } : 'PENDING',
+          ageFlagged: false, parentEmailVerifiedAt: { not: null },
+          ...(warningKind ? {} : { expiresAt: { gt: now } }),
+        },
+      });
+      if (eligibleCount !== eligibleRegistrationIds.length) {
+        await tx.emailLog.updateMany({
+          where: { id: current.id, status: { in: retryable } },
+          data: { status: 'FAILED', failedAt: now, error: 'payment_audience_changed' },
+        });
+        return null;
+      }
+    }
     const eligible = current.kind === 'association'
       ? current.associationId ? await tx.memberAssociation.findFirst({
           where: { id: current.associationId, active: true, primaryContactEmail: { equals: current.to, mode: 'insensitive' } },
@@ -232,7 +254,7 @@ async function dispatchOne(
             where: {
               id: { in: eligibleRegistrationIds },
               eventId: current.eventId,
-              parentEmail: { equals: current.to, mode: 'insensitive' },
+              ...(current.kind === 'payment-1h-admin-warning' ? {} : { parentEmail: { equals: current.to, mode: 'insensitive' } }),
               ...mailRegistrationEligibility(current.kind, now),
             },
             select: { id: true },
@@ -408,6 +430,25 @@ export async function sendEmailToRecipient(
     now,
     delivery.kind,
     { batchId: delivery.batchId, senderUserId: delivery.senderUserId },
+  );
+}
+
+export async function sendEmailToRegistrationGroup(
+  deps: DeliveryDeps,
+  delivery: { eventId: string; registrationIds: string[]; to: string; kind: string; batchId: string },
+  message: OutboundContent,
+  now: Date,
+): Promise<DeliverySummary> {
+  const registrationId = delivery.registrationIds[0];
+  if (!registrationId) return getDeliverySummary(deps.prisma, delivery.batchId);
+  return sendBatch(
+    deps,
+    delivery.eventId,
+    { email: delivery.to, registrationId, registrationIds: delivery.registrationIds },
+    message,
+    now,
+    delivery.kind,
+    { batchId: delivery.batchId, maxAttempts: AUTOMATIC_RETRY_LIMIT },
   );
 }
 

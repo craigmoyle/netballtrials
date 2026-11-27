@@ -23,6 +23,7 @@ model StaffUser {
   emailDeliveries   EmailLog[]    @relation("EmailLogSender")
   scheduledMessages ScheduledMessage[] @relation("ScheduledMessageSender")
   siteAssociationCommunications SiteAssociationCommunication[] @relation("SiteAssociationCommunicationSender")
+  auditEvents                   AuditEvent[]                   @relation("AuditActor")
 }
 
 model LoginToken {
@@ -66,6 +67,8 @@ model Event {
   startTime            String
   endTime              String
   gameStartTime        String
+  registrationClosesAt DateTime
+  registrationClosedAt DateTime?
   registrationFeeCents Int
   courts               Int
   rank1Min             Int
@@ -94,6 +97,9 @@ model Event {
   siteAssociationCommunications SiteAssociationCommunication[] @relation("SiteAssociationCommunicationAnchor")
   courtColors          EventCourtColor[]
   policyDocument       EventPolicyDocument?
+  policySnapshots               EventPolicySnapshot[]
+  rosterSnapshots               RosterSnapshot[]
+  auditEvents                   AuditEvent[]
   publishedPlanId      String?
   publishedPlan        RoundPlan?    @relation("PublishedPlan", fields: [publishedPlanId], references: [id], onDelete: SetNull)
 }
@@ -104,6 +110,39 @@ model EventPolicyDocument {
   fileName   String
   bytes      Bytes
   uploadedAt DateTime @default(now())
+}
+
+model EventPolicySnapshot {
+  id                  String         @id @default(cuid())
+  eventId             String
+  event               Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  version             Int
+  policyReference     String
+  competitionYear     Int
+  minAge              Int
+  maxAge              Int
+  policyUrl           String?
+  policyDocumentName  String?
+  policyDocumentBytes Bytes?
+  policyDocumentHash  String?
+  capturedAt          DateTime       @default(now())
+  registrations       Registration[]
+
+  @@unique([eventId, version])
+  @@index([eventId])
+}
+
+model RosterSnapshot {
+  id            String   @id @default(cuid())
+  eventId       String
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  revision      Int
+  reconstructed Boolean  @default(false)
+  data          Json
+  createdAt     DateTime @default(now())
+
+  @@unique([eventId, revision])
+  @@index([eventId])
 }
 
 model MemberAssociation {
@@ -262,6 +301,7 @@ enum RegistrationStatus {
   EXPIRED
   FAILED
   WITHDRAWN
+  DUPLICATE
 }
 
 enum ParentAccessTokenPurpose {
@@ -292,6 +332,15 @@ model Registration {
   parentEmailVerifiedAt   DateTime?
   parentFollowUpSentAt    DateTime?
   policyReference        String
+  policySnapshotId           String?
+  policySnapshot             EventPolicySnapshot? @relation(fields: [policySnapshotId], references: [id], onDelete: Restrict)
+  adminAssistedAt            DateTime?
+  duplicateOfRegistrationId  String?
+  duplicateOfRegistration    Registration?        @relation("RegistrationDuplicates", fields: [duplicateOfRegistrationId], references: [id], onDelete: Restrict)
+  duplicates                 Registration[]       @relation("RegistrationDuplicates")
+  removedAt                  DateTime?
+  removalReason              String?
+  removalNote                String?
   status                 RegistrationStatus @default(PENDING)
   statusBeforeAnonymization RegistrationStatus?
   anonymizedAt           DateTime?
@@ -300,6 +349,7 @@ model Registration {
   amountCents            Int
   currency               String             @default("aud")
   checkoutSessionId      String?            @unique
+  checkoutAttempt            Int                  @default(0)
   paymentIntentId        String?            @unique
   legacyPaymentRef       String?
   paidAt                 DateTime?
@@ -315,8 +365,11 @@ model Registration {
   emailLogs              EmailLog[]
   parentAccessTokens     ParentAccessToken[]
   changeLog              RegistrationChangeLog[]
+  auditEvents        AuditEvent[]
 
   @@index([eventId, status])
+  @@index([policySnapshotId])
+  @@index([duplicateOfRegistrationId])
   @@index([parentEmail, parentEmailVerifiedAt])
 }
 
@@ -459,12 +512,39 @@ model RoundSlot {
   @@index([planId, round])
 }
 
+model AuditEvent {
+  id                 String        @id @default(cuid())
+  eventId            String?
+  event              Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationId     String?
+  registration       Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  actorType          String        @default("SYSTEM")
+  actorUserId        String?
+  actorEmailSnapshot String?
+  actor              StaffUser?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action             String
+  entityType         String
+  entityId           String
+  reason             String?
+  beforeState        Json?
+  afterState         Json?
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+
+  @@index([eventId, createdAt])
+  @@index([registrationId])
+  @@index([actorUserId])
+}
+
 model ReviewItem {
   id               String       @id @default(cuid())
   eventId          String
   event            Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  registrationId   String
-  registration     Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registrationId    String?
+  registration      Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  emailLogId        String?
+  emailLog          EmailLog?     @relation(fields: [emailLogId], references: [id], onDelete: SetNull)
+  dedupeKey         String?       @unique
   reason           String
   note             String?
   resolvedAt       DateTime?
@@ -472,9 +552,9 @@ model ReviewItem {
   resolutionHistory Json?
   createdAt        DateTime     @default(now())
 
-  @@unique([registrationId, reason])
   @@index([eventId])
   @@index([registrationId])
+  @@index([emailLogId])
 }
 
 enum EmailDeliveryState {
@@ -515,6 +595,7 @@ model EmailLog {
   failedAt       DateTime?
   error          String?
   simulated      Boolean             @default(false)
+  reviewItems         ReviewItem[]
 
   @@index([eventId, sentAt])
   @@index([batchId, status])

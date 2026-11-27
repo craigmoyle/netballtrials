@@ -87,6 +87,24 @@ describe('PlannerPage', () => {
     expect(client.publishPlan).toHaveBeenCalledWith('e1', 'plan-1');
   });
 
+  it('reconciles roster changes into a suffix draft and keeps exact gaps visible', async () => {
+    const published = { ...plan('PUBLISHED'), frozenThroughRound: 1 };
+    const draft = { ...plan(), id: 'draft-3', sourcePlanId: published.id, frozenThroughRound: 1, revision: 3 };
+    const gap = { code: 'unfilled_position', message: 'Need one more GA assignment in round 2.' };
+    const reconcilePlan = vi.fn().mockResolvedValueOnce({ ok: true, plan: draft }).mockResolvedValueOnce({ ok: false, gaps: [gap] });
+    renderPlanner({
+      getEvent: vi.fn().mockResolvedValue(event), getPlanPreview: vi.fn().mockResolvedValue(preview()),
+      getPlan: vi.fn().mockResolvedValue(published), reconcilePlan,
+    });
+    const reconcile = await screen.findByRole('button', { name: 'Reconcile roster changes' });
+    fireEvent.click(reconcile);
+    expect(await screen.findByText('Draft revision 3 · 2 rounds')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconcile roster changes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(gap.message);
+    expect(screen.getByText('Draft revision 3 · 2 rounds')).toBeInTheDocument();
+    expect(reconcilePlan).toHaveBeenCalledTimes(2);
+  });
+
   it('completes the next round against the active published revision', async () => {
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
     const published = plan('PUBLISHED');

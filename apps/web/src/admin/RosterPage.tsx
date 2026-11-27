@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { POSITIONS, melbourneDateKey, type MemberAssociationDTO, type Position, type RosterDTO, type RosterRegistrationDTO } from '@netball-trials/types';
+import { POSITIONS, melbourneDateKey, type MemberAssociationDTO, type PlannerGapDTO, type PlanningChangeDTO, type Position, type RosterDTO, type RosterRegistrationDTO } from '@netball-trials/types';
 import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatFee } from '../formatFee';
 
@@ -43,7 +43,17 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
   const [associationError, setAssociationError] = useState<string | null>(null);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
+  const [correctionReason, setCorrectionReason] = useState('');
   const [savingCorrection, setSavingCorrection] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [actionMode, setActionMode] = useState<'remove' | 'duplicate' | null>(null);
+  const [removalReason, setRemovalReason] = useState('');
+  const [removalNote, setRemovalNote] = useState('');
+  const [retainedId, setRetainedId] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
+  const [planningGaps, setPlanningGaps] = useState<PlannerGapDTO[]>([]);
+  const [savingAction, setSavingAction] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -71,6 +81,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
   function startCorrection(registration: RosterRegistrationDTO) {
     setEditingId(registration.id);
     setCorrection({ dateOfBirth: registration.dateOfBirth, memberAssociation: registration.memberAssociation });
+    setCorrectionReason('');
     setCorrectionError(null);
     setCorrectionStatus(null);
     if (associations === null) void loadAssociations();
@@ -79,7 +90,11 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
   async function saveCorrection(event: FormEvent<HTMLFormElement>, original: RosterRegistrationDTO) {
     event.preventDefault();
     if (!correction) return;
-    const patch: { dateOfBirth?: string; memberAssociation?: string } = {};
+    if (correctionReason.trim().length < 3) {
+      setCorrectionError('Record who confirmed this correction and how.');
+      return;
+    }
+    const patch: { dateOfBirth?: string; memberAssociation?: string; reason: string } = { reason: correctionReason.trim() };
     if (correction.dateOfBirth !== original.dateOfBirth) patch.dateOfBirth = correction.dateOfBirth;
     if (correction.memberAssociation !== original.memberAssociation) patch.memberAssociation = correction.memberAssociation;
     if (Object.keys(patch).length === 0) {
@@ -101,6 +116,8 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setCorrectionError('There is already an active registration for this exact player name and date of birth in this event.');
+      } else if (err instanceof ApiError && err.status === 422) {
+        setCorrectionError('That date of birth is outside the age range recorded in this registration’s policy snapshot.');
       } else if (err instanceof ApiError && err.status === 400) {
         if (err.fields?.includes('dateOfBirth')) setCorrectionError('Enter a valid date of birth.');
         else if (err.fields?.includes('memberAssociation')) setCorrectionError('Choose an active member association.');
@@ -112,6 +129,84 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
       }
     } finally {
       setSavingCorrection(false);
+    }
+  }
+
+  function beginAction(registration: RosterRegistrationDTO, mode: 'remove' | 'duplicate') {
+    setActionId(registration.id);
+    setActionMode(mode);
+    setRemovalReason('');
+    setRemovalNote('');
+    setRetainedId('');
+    setActionError(null);
+    setActionStatus(null);
+    setPlanningGaps([]);
+  }
+
+  function showPlanning(planning: PlanningChangeDTO, savedMessage: string) {
+    setPlanningGaps(planning.gaps);
+    setActionStatus(planning.draftPlanId ? `${savedMessage} A new future-round draft is ready for review.` : savedMessage);
+  }
+
+  async function completeArrival(registration: RosterRegistrationDTO) {
+    setSavingAction(true);
+    setActionError(null);
+    setActionStatus(null);
+    setPlanningGaps([]);
+    try {
+      const result = await client.completeLateArrival(eventId, registration.id);
+      setRoster((current) => current ? {
+        ...current,
+        registrations: current.registrations.map((row) => row.id === registration.id
+          ? { ...row, bibNumber: result.bibNumber ?? row.bibNumber, checkedInAt: new Date().toISOString() }
+          : row),
+      } : current);
+      showPlanning(result.planning, `${registration.playerName} is checked in. Attendance was saved.`);
+    } catch {
+      setActionError('Could not complete this late arrival. Confirm payment and email verification, then try again.');
+    } finally {
+      setSavingAction(false);
+    }
+  }
+
+  async function saveRosterAction(event: FormEvent<HTMLFormElement>, registration: RosterRegistrationDTO) {
+    event.preventDefault();
+    if (actionMode === 'remove' && removalReason === '') return;
+    if (actionMode === 'remove' && removalReason === 'Other' && !removalNote.trim()) {
+      setActionError('A note is required when the removal reason is Other.');
+      return;
+    }
+    if (actionMode === 'duplicate' && !retainedId) {
+      setActionError('Choose the retained registration.');
+      return;
+    }
+    setSavingAction(true);
+    setActionError(null);
+    setPlanningGaps([]);
+    try {
+      const result = actionMode === 'remove'
+        ? await client.removeRegistration(eventId, registration.id, { reason: removalReason, note: removalNote })
+        : await client.markRegistrationDuplicate(eventId, registration.id, {
+            duplicateOfRegistrationId: retainedId, reason: 'Duplicate', note: removalNote,
+          });
+      setRoster((current) => current ? {
+        ...current,
+        registrations: current.registrations.map((row) => row.id === registration.id ? {
+          ...row,
+          status: result.status,
+          removedAt: new Date().toISOString(),
+          removalReason: actionMode === 'remove' ? removalReason : 'Duplicate',
+          removalNote,
+          duplicateOfRegistrationId: actionMode === 'duplicate' ? retainedId : row.duplicateOfRegistrationId,
+        } : row),
+      } : current);
+      setActionId(null);
+      setActionMode(null);
+      showPlanning(result.planning, `${registration.playerName} was removed from future planning. Registration and payment history were preserved.`);
+    } catch {
+      setActionError('Could not save this roster change. Confirm the reason and retained registration, then try again.');
+    } finally {
+      setSavingAction(false);
     }
   }
 
@@ -159,6 +254,9 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
       <p><button type="button" disabled={downloading} onClick={download}>{downloading ? 'Preparing CSV...' : 'Download roster CSV'}</button></p>
       {exportError ? <p role="alert">{exportError}</p> : null}
       {correctionStatus ? <p className="message-confirmation" role="status">{correctionStatus}</p> : null}
+      {actionStatus ? <p className="message-confirmation" role="status">{actionStatus}</p> : null}
+      {!actionId && actionError ? <p role="alert">{actionError}</p> : null}
+      {planningGaps.length > 0 ? <div role="alert"><h2>Future plan needs attention</h2><ul>{planningGaps.map((gap, index) => <li key={`${gap.code}-${index}`}>{gap.message}</li>)}</ul><p>Completed rounds and saved attendance were not changed.</p></div> : null}
       {roster.registrations.length === 0 ? <p>No registrations for this event.</p> : (
         <>
           <p className="scroll-region-note">Scroll horizontally to view all roster details.</p>
@@ -183,6 +281,11 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
                           {registration.playerName}{registration.ageFlagged ? <span> · review flagged</span> : null}
                           <br /><span>Date of birth: {registration.dateOfBirth}</span>
                           <br /><button type="button" aria-label={`Correct details for ${registration.playerName}`} onClick={() => startCorrection(registration)}>Correct details</button>
+                          {registration.status === 'PAID' && !registration.checkedInAt ? <><br /><button type="button" disabled={savingAction} aria-label={`Complete late arrival for ${registration.playerName}`} onClick={() => void completeArrival(registration)}>Complete late arrival</button></> : null}
+                          {registration.status !== 'WITHDRAWN' && registration.status !== 'DUPLICATE' ? <>
+                            <br /><button type="button" className="button-secondary" aria-label={`Remove player ${registration.playerName}`} onClick={() => beginAction(registration, 'remove')}>Remove player</button>
+                            <br /><button type="button" className="button-secondary" aria-label={`Mark duplicate for ${registration.playerName} (${registration.parentEmail})`} onClick={() => beginAction(registration, 'duplicate')}>Mark duplicate</button>
+                          </> : null}
                         </th>
                         <td>{registration.bibNumber ?? 'Not assigned'}</td>
                         <td>{registration.parentName}<br /><a href={`mailto:${registration.parentEmail}`}>{registration.parentEmail}</a><br />{registration.parentMobile}</td>
@@ -192,6 +295,34 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
                         <td>{attendance}</td>
                         <td><Link to={`/admin/events/${eventId}/roster/${registration.id}/changes`}>View changes</Link></td>
                       </tr>
+                      {actionId === registration.id && actionMode ? (
+                        <tr className="roster-correction-row">
+                          <td colSpan={8}>
+                            <form onSubmit={(event) => void saveRosterAction(event, registration)}>
+                              <h3>{actionMode === 'remove' ? `Remove ${registration.playerName}` : `Mark ${registration.playerName} as a duplicate`}</h3>
+                              <p><strong>No automatic refund:</strong> removing a paid player does not refund the payment. The club must handle any refund separately.</p>
+                              {actionError ? <p role="alert">{actionError}</p> : null}
+                              {actionMode === 'remove' ? <>
+                                <p><label htmlFor={`removal-reason-${registration.id}`}>Removal reason</label><select id={`removal-reason-${registration.id}`} required value={removalReason} onChange={(event) => setRemovalReason(event.target.value)}>
+                                  <option value="">Choose a reason</option>
+                                  <option>Duplicate</option><option>Unable to attend</option><option>Late withdrawal</option><option>Ineligible correction</option><option>Did not arrive</option><option>Other</option>
+                                </select></p>
+                                <p><label htmlFor={`removal-note-${registration.id}`}>Reason note</label><textarea id={`removal-note-${registration.id}`} maxLength={2000} aria-required={removalReason === 'Other'} value={removalNote} onChange={(event) => setRemovalNote(event.target.value)} /></p>
+                              </> : <>
+                                <p><label htmlFor={`retained-${registration.id}`}>Retained registration</label><select id={`retained-${registration.id}`} required value={retainedId} onChange={(event) => setRetainedId(event.target.value)}>
+                                  <option value="">Choose the registration to retain</option>
+                                  {roster.registrations.filter((candidate) => candidate.id !== registration.id &&
+                                    (candidate.status === 'PENDING' || candidate.status === 'PAID') && !candidate.ageFlagged && !candidate.removedAt &&
+                                    candidate.playerName.toLocaleLowerCase() === registration.playerName.toLocaleLowerCase() && candidate.dateOfBirth === registration.dateOfBirth
+                                  ).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.playerName} ({candidate.parentEmail})</option>)}
+                                </select></p>
+                                <p><label htmlFor={`duplicate-note-${registration.id}`}>Duplicate note (optional)</label><textarea id={`duplicate-note-${registration.id}`} maxLength={2000} value={removalNote} onChange={(event) => setRemovalNote(event.target.value)} /></p>
+                              </>}
+                              <p><button type="submit" disabled={savingAction}>{actionMode === 'remove' ? 'Confirm removal' : 'Confirm duplicate'}</button> <button type="button" className="button-secondary" disabled={savingAction} onClick={() => { setActionId(null); setActionMode(null); }}>Cancel</button></p>
+                            </form>
+                          </td>
+                        </tr>
+                      ) : null}
                       {editingId === registration.id && correction ? (
                         <tr className="roster-correction-row">
                           <td colSpan={8}>
@@ -216,6 +347,7 @@ export function RosterPage({ client, eventId }: { client: Client; eventId: strin
                                   {loadingAssociations ? <span>Loading active member associations...</span> : null}
                                 </p>
                               </div>
+                              <p><label htmlFor={`correction-reason-${registration.id}`}>Who confirmed the correction and how?</label><input id={`correction-reason-${registration.id}`} required minLength={3} maxLength={500} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="For example: confirmed by guardian on 12 September by phone" /></p>
                               <p className="roster-correction-actions">
                                 <button type="submit" disabled={savingCorrection || loadingAssociations}>{savingCorrection ? 'Saving...' : 'Save correction'}</button>
                                 <button className="button-secondary" type="button" disabled={savingCorrection} onClick={() => { setEditingId(null); setCorrection(null); setCorrectionError(null); }}>Cancel</button>
