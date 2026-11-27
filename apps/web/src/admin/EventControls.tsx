@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { melbourneDateKey, type EventStatus } from '@netball-trials/types';
 import type { ApiClient as Client } from '../api/client';
 import { EventCourtColors } from './EventCourtColors';
+import { melbourneDateTimeInput } from '../eventDeadline';
 import { HelpTip } from './HelpTip';
 
 export function EventControls({
@@ -11,14 +12,20 @@ export function EventControls({
   eventDate,
   courts,
   status,
+  registrationClosesAt,
+  registrationClosedAt,
   onStatusChange,
+  onRegistrationChange,
 }: {
   client: Client;
   eventId: string;
   eventDate: string;
   courts: number;
   status: EventStatus;
+  registrationClosesAt: string;
+  registrationClosedAt: string | null;
   onStatusChange: (status: EventStatus) => void;
+  onRegistrationChange: (registrationClosesAt: string, registrationClosedAt: string | null) => void;
 }) {
   const [pinConfigured, setPinConfigured] = useState<boolean | null>(null);
   const [checkInClosedAt, setCheckInClosedAt] = useState<string | null>(null);
@@ -26,6 +33,7 @@ export function EventControls({
   const [busy, setBusy] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
   const [eventMessage, setEventMessage] = useState<string | null>(null);
+  const [reopenDeadline, setReopenDeadline] = useState(() => melbourneDateTimeInput(registrationClosesAt));
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinMessage, setPinMessage] = useState<string | null>(null);
   const [checkInSettingsError, setCheckInSettingsError] = useState<string | null>(null);
@@ -46,15 +54,25 @@ export function EventControls({
     return () => { active = false; };
   }, [client, eventId]);
 
-  async function changeLifecycle() {
-    if (status === 'OPEN' && !window.confirm('Close registration for this event? Families will no longer be able to register.')) return;
+  const registrationOpen = status === 'OPEN' && !registrationClosedAt && new Date(registrationClosesAt).getTime() > Date.now();
+  const canReopen = status === 'CLOSED' || (status === 'OPEN' && !registrationOpen);
+
+  async function changeLifecycle(reopen = false) {
+    if (status === 'OPEN' && !reopen && !window.confirm('Close registration for this event? Families will no longer be able to register.')) return;
+    if (reopen && (!reopenDeadline || !window.confirm('Reopen public registration with this deadline?'))) return;
     setBusy(true);
     setEventError(null);
     setEventMessage(null);
     try {
-      const updated = status === 'DRAFT' ? await client.openEvent(eventId) : await client.closeEvent(eventId);
+      const updated = status === 'DRAFT'
+        ? await client.openEvent(eventId)
+        : reopen
+          ? await client.openEvent(eventId, { registrationClosesAt: reopenDeadline, confirmReopen: true })
+          : await client.closeEvent(eventId);
       onStatusChange(updated.status);
-      setEventMessage(status === 'DRAFT' ? 'Registration is open.' : 'Registration is closed.');
+      onRegistrationChange(updated.registrationClosesAt, updated.registrationClosedAt);
+      setEventMessage(reopen ? 'Registration is open again.' : status === 'DRAFT' ? 'Registration is open.' : 'Registration is closed.');
+      if (reopen) setReopenDeadline(melbourneDateTimeInput(updated.registrationClosesAt));
     } catch {
       setEventError('Could not change the event status. Refresh this page and try again.');
     } finally {
@@ -103,6 +121,22 @@ export function EventControls({
     }
   }
 
+  async function reopenCheckIn() {
+    if (!window.confirm('Reopen check-in for this event? Approved volunteers will be able to use the configured PIN again.')) return;
+    setBusy(true);
+    setCheckInCloseError(null);
+    setCheckInCloseMessage(null);
+    try {
+      await client.reopenCheckIn(eventId);
+      setCheckInClosedAt(null);
+      setCheckInCloseMessage('Check-in is open again.');
+    } catch {
+      setCheckInCloseError('Could not reopen check-in. Refresh this page and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function closeCheckIn() {
     if (!window.confirm('Close volunteer check-in and revoke current sessions?')) return;
     setBusy(true);
@@ -120,7 +154,7 @@ export function EventControls({
   }
 
   const canRegisterDayOf = status !== 'DRAFT' && eventDate.slice(0, 10) === melbourneDateKey(new Date()) &&
-    pinConfigured !== null && !checkInClosedAt;
+    pinConfigured !== null;
 
   return (
     <section className="event-controls" aria-labelledby="event-controls-heading">
@@ -132,13 +166,22 @@ export function EventControls({
         </nav>
       ) : null}
       <h3>Registration</h3>
-      <p>Status: {status.toLowerCase()}</p>
+      <p>Event status: {status.toLowerCase()}</p>
+      <p>Registration: {status === 'DRAFT' ? 'Not open' : registrationOpen ? 'Open' : 'Closed'}</p>
+      <p>Deadline: {new Date(registrationClosesAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })} Melbourne time</p>
       {status === 'DRAFT' ? (
-        <button type="button" disabled={busy} onClick={changeLifecycle}>Open registration</button>
-      ) : status === 'OPEN' ? (
+        <button type="button" disabled={busy} onClick={() => void changeLifecycle()}>Open registration</button>
+      ) : registrationOpen ? (
         <div className="event-action-group">
-          <button type="button" className="button-secondary" disabled={busy} onClick={changeLifecycle}>Close event</button>
-          <p className="event-consequence-note">Closing registration prevents new families from registering. This event cannot be reopened from Event operations.</p>
+          <button type="button" className="button-secondary" disabled={busy} onClick={() => void changeLifecycle()}>Close registration</button>
+          <p className="event-consequence-note">Closing registration prevents new families from registering. Existing accepted registrations can continue.</p>
+        </div>
+      ) : canReopen ? (
+        <div className="event-action-group">
+          <label htmlFor="reopenDeadline">New registration deadline (Melbourne time)</label>
+          <input id="reopenDeadline" type="datetime-local" value={reopenDeadline} onChange={(event) => setReopenDeadline(event.target.value)} />
+          <button type="button" disabled={busy || !reopenDeadline} onClick={() => void changeLifecycle(true)}>Reopen registration</button>
+          <p className="event-consequence-note">Choose a future deadline no later than arrival. Reopening requires explicit confirmation.</p>
         </div>
       ) : null}
       {eventError ? <p role="alert">{eventError}</p> : null}
@@ -181,14 +224,13 @@ export function EventControls({
           {pinRemovalMessage ? <p role="status">{pinRemovalMessage}</p> : null}
         </div>
       ) : null}
-      {!checkInClosedAt || checkInCloseError || checkInCloseMessage ? (
-        <div className="event-action-group">
-          {!checkInClosedAt ? <button type="button" className="button-secondary" disabled={busy} onClick={closeCheckIn}>Close check-in</button> : null}
-          {!checkInClosedAt ? <p className="event-consequence-note">Closing check-in revokes active volunteer sessions. This event’s check-in cannot be reopened.</p> : null}
-          {checkInCloseError ? <p role="alert">{checkInCloseError}</p> : null}
-          {checkInCloseMessage ? <p role="status">{checkInCloseMessage}</p> : null}
-        </div>
-      ) : null}
+      <div className="event-action-group">
+        {checkInClosedAt
+          ? <><button type="button" className="button-secondary" disabled={busy} onClick={reopenCheckIn}>Reopen check-in</button><p className="event-consequence-note">Reopening requires explicit Admin confirmation and makes the configured PIN usable again on the Melbourne event date.</p></>
+          : <><button type="button" className="button-secondary" disabled={busy} onClick={closeCheckIn}>Close check-in</button><p className="event-consequence-note">Closing check-in revokes active volunteer sessions and creates the initial final-roster snapshot.</p></>}
+        {checkInCloseError ? <p role="alert">{checkInCloseError}</p> : null}
+        {checkInCloseMessage ? <p role="status">{checkInCloseMessage}</p> : null}
+      </div>
       <EventCourtColors client={client} eventId={eventId} courts={courts} />
     </section>
   );

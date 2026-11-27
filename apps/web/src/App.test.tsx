@@ -100,6 +100,15 @@ beforeEach(() => {
 });
 
 describe('Deployment environment banner', () => {
+  it('fails closed without claiming production when the environment cannot be loaded', async () => {
+    apiMocks.getRuntimeEnvironment.mockRejectedValue(new Error('offline'));
+    renderApp('/');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/unable to verify application environment/i);
+    expect(screen.queryByText(/production/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Upcoming trials' })).not.toBeInTheDocument();
+  });
+
   it('clearly labels test deployments that use simulated integrations', async () => {
     apiMocks.getRuntimeEnvironment.mockResolvedValue({ appEnv: 'testing', testAccessRequired: false });
     renderApp('/');
@@ -153,6 +162,7 @@ describe('Public home page', () => {
     expect(within(openTrial).getByText('09:00')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Register for 15/U State Titles Trial' })).toHaveAttribute('href', '/register/open-trial');
     expect(screen.getByText('Registration closed')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View details for 17/U State Titles Trial' })).toHaveAttribute('href', '/register/closed-trial');
     expect(screen.queryByRole('link', { name: 'Register for 17/U State Titles Trial' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'After you register' })).toBeInTheDocument();
     expect(screen.getByText(/confirm the parent or guardian email, then complete secure checkout/i)).toBeInTheDocument();
@@ -411,7 +421,7 @@ describe('App route boundaries', () => {
     expect(within(eventNav).getByRole('link', { name: 'Full Game List' })).toHaveAttribute('aria-current', 'page');
     expect(within(eventNav).getByRole('link', { name: 'Volunteer check-in' })).toHaveAttribute('href', '/check-in?eventId=event-1');
     expect(within(eventNav).getByRole('link', { name: 'Event settings' })).toHaveAttribute('href', '/admin/events/event-1');
-    expect(within(eventNav).getAllByRole('link')).toHaveLength(14);
+    expect(within(eventNav).getAllByRole('link')).toHaveLength(13);
     expect(screen.getByRole('link', { name: 'Open Plan Rounds' })).toHaveAttribute('href', '/admin/events/event-1/plan');
     expect(apiMocks.me).toHaveBeenCalledTimes(1);
     expect(apiMocks.getPublishedPlan).toHaveBeenCalledWith('event-1');

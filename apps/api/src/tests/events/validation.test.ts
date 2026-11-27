@@ -4,7 +4,7 @@ import { eventInputSchema, eventPatchSchema, validateWindow } from '../../events
 const event = {
   name: '15/U', competitionYear: 2027, division: '15/U', section: 'Ladies',
   eventDate: '2026-09-12', venue: 'SNC', startTime: '08:30', endTime: '12:00',
-  gameStartTime: '09:00', registrationFeeCents: 3500, courts: 4,
+  gameStartTime: '09:00', registrationClosesAt: '2026-09-11T08:30', registrationFeeCents: 3500, courts: 4,
   rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2,
 };
 

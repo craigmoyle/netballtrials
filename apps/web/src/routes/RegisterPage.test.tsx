@@ -3,6 +3,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { act, cleanup, fireEvent, render as renderWithTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom';
 import { RegisterPage } from './RegisterPage';
+import { ApiError } from '../api/client';
 
 const testRouters: ReturnType<typeof createMemoryRouter>[] = [];
 
@@ -36,6 +37,7 @@ function publicEvent() {
     venue: 'SNC', startTime: '08:30', gameStartTime: '09:00', registrationFeeCents: 3500, currency: 'aud',
     policyUrl: 'https://chisholmnetball.com/selection-policy/', minAge: 12, maxAge: 15,
     division: '15/U', section: 'Ladies', courts: 5, status: 'OPEN',
+    registrationClosesAt: '2099-09-11T22:30:00.000Z', registrationClosedAt: null,
   };
 }
 
@@ -74,6 +76,27 @@ async function fillRegistrationForm() {
 }
 
 describe('RegisterPage', () => {
+  it('shows CLOSED event details and policy without rendering a registration form', async () => {
+    const api = client(vi.fn(), { getPublicEvent: vi.fn().mockResolvedValue({ ...publicEvent(), status: 'CLOSED', registrationClosedAt: '2026-09-10T00:00:00.000Z' }) });
+    render(<RegisterPage client={api} eventId="e1" />);
+
+    expect(await screen.findByRole('heading', { name: 'Registration closed' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Selection policy (new tab)' })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/player first name/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit registration' })).not.toBeInTheDocument();
+  });
+
+  it('shows a parent-friendly strict age rejection and retains entered details', async () => {
+    const register = vi.fn().mockRejectedValue(new ApiError(422, 'ineligible', undefined, { competitionYear: 2027, minAge: 12, maxAge: 15 }));
+    render(<RegisterPage client={client(register)} eventId="e1" />);
+    await fillRegistrationForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit registration' }));
+
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.some((alert) => /required age at 31 December 2027 is 12–15/i.test(alert.textContent ?? ''))).toBe(true);
+    expect(screen.getByLabelText(/player first name/i)).toHaveValue('Ada');
+  });
+
   it('shows neutral next steps after a registration request', async () => {
     const register = vi.fn().mockResolvedValue({ status: 'received' });
     const api = client(register);

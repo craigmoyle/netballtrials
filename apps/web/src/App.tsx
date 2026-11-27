@@ -71,7 +71,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/admin\/events\/[^/]+\/round-sheets$/, 'Round handouts'],
   [/^\/admin\/events\/[^/]+\/sheets\/blank$/, 'Blank game sheet'],
   [/^\/admin\/events\/[^/]+\/sheets$/, 'Selector sheets'],
-  [/^\/admin\/events\/[^/]+\/review$/, 'Review queue'],
+  [/^\/admin\/events\/[^/]+\/review$/, 'Needs attention'],
   [/^\/admin\/events\/[^/]+\/(?:communications|messages)$/, 'Communications'],
   [/^\/admin\/events\/[^/]+$/, 'Event settings'],
   [/^\/admin\/events$/, 'Events'],
@@ -219,6 +219,7 @@ export function App() {
   const [appEnv, setAppEnv] = useState<'testing' | 'production' | null>(null);
   const [testAccessRequired, setTestAccessRequired] = useState(false);
   const [runtimeLoaded, setRuntimeLoaded] = useState(false);
+  const [runtimeLoadFailed, setRuntimeLoadFailed] = useState(false);
   const [testAdminAccess, setTestAdminAccess] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -229,7 +230,7 @@ export function App() {
         setAppEnv(loaded);
         setTestAccessRequired(testAccess);
       })
-      .catch(() => { if (active) { setAppEnv('production'); setTestAccessRequired(true); } })
+      .catch(() => { if (active) setRuntimeLoadFailed(true); })
       .finally(() => { if (active) setRuntimeLoaded(true); });
     return () => { active = false; };
   }, []);
@@ -253,6 +254,7 @@ export function App() {
   }, [location.pathname, location.search]);
 
   if (!runtimeLoaded) return <p role="status">Checking application environment…</p>;
+  if (runtimeLoadFailed) return <p role="alert">Unable to verify application environment. Refresh the page or contact an operator before continuing.</p>;
   if (testAccessRequired && !['/admin/login', '/admin/verify'].includes(location.pathname)) {
     if (testAdminAccess === null) return <p role="status">Checking test access…</p>;
     if (!testAdminAccess) return <Navigate to="/admin/login" replace />;

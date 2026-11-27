@@ -47,8 +47,8 @@ describe('EventWorkflowNav', () => {
     expect(within(eventGroup).getByRole('link', { name: 'Event settings' })).toHaveAttribute('href', '/admin/events/e1');
     expect(within(eventGroup).getByRole('link', { name: 'Event operations' })).toHaveAttribute('aria-current', 'page');
     expect(within(registrationGroup).getByRole('link', { name: 'Roster and export' })).toBeInTheDocument();
-    expect(within(registrationGroup).getByRole('link', { name: 'Review queue' })).toBeInTheDocument();
-    expect(within(registrationGroup).getByRole('link', { name: 'Incomplete registrations' })).toHaveAttribute('href', '/admin/events/e1/incomplete');
+    expect(within(registrationGroup).getByRole('link', { name: 'Needs attention' })).toHaveAttribute('href', '/admin/events/e1/review');
+    expect(within(registrationGroup).queryByRole('link', { name: 'Incomplete registrations' })).not.toBeInTheDocument();
     expect(within(planningGroup).getByRole('link', { name: 'Plan rounds' })).toBeInTheDocument();
     expect(within(planningGroup).getByRole('link', { name: 'Full Game List' })).toHaveAttribute('href', '/admin/events/e1/games');
     expect(within(planningGroup).getByRole('link', { name: 'Position View' })).toHaveAttribute('href', '/admin/events/e1/games?view=position');
@@ -66,7 +66,7 @@ describe('EventWorkflowNav', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(links).toHaveClass('is-open');
-    for (const label of ['Event settings', 'Roster and export', 'Review queue', 'Incomplete registrations', 'Plan rounds', 'Full Game List', 'Position View', 'Player Statistics', 'Player Reference', 'Round handouts', 'Print selector sheets', 'Event communications', 'Volunteer check-in']) {
+    for (const label of ['Event settings', 'Roster and export', 'Needs attention', 'Plan rounds', 'Full Game List', 'Position View', 'Player Statistics', 'Player Reference', 'Round handouts', 'Print selector sheets', 'Event communications', 'Volunteer check-in']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });

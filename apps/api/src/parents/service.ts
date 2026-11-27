@@ -6,7 +6,7 @@ import { normalizeEmail } from '../auth/service';
 import { generateToken, hashToken, LOGIN_TOKEN_TTL_MINUTES } from '../auth/tokens';
 import { normalizePlayerName } from '../registrations/eligibility';
 import { positionsAreDistinct } from '../registrations/schemas';
-import { createRegistrationCheckout, sendCheckoutContinuation } from '../registrations/checkout';
+import { createRegistrationCheckout, recoverRegistrationCheckout, sendRecoveredCheckoutContinuation } from '../registrations/checkout';
 import { INTERRUPTED_SEND, lockMailEvent } from '../mail/lifecycle';
 import { deliveryIdempotencyKey } from '../messages/service';
 import { isPastRetentionCutoff } from '../retention/service';
@@ -75,13 +75,23 @@ async function sendParentToken(
 
 export async function sendRegistrationEmailVerification(
   deps: AppDeps,
-  registration: Pick<Registration, 'id' | 'parentEmail'>,
+  registration: Pick<Registration, 'id' | 'eventId' | 'parentEmail'>,
   now = new Date(),
 ): Promise<boolean> {
   try {
     await sendParentToken(deps, registration.parentEmail, 'REGISTRATION_VERIFY', now, registration.id);
     return true;
   } catch {
+    await deps.prisma.reviewItem.createMany({
+      data: [{
+        eventId: registration.eventId,
+        registrationId: registration.id,
+        reason: 'email_verification_failed',
+        note: 'The email-verification link could not be delivered.',
+        dedupeKey: `registration:${registration.id}:email_verification_failed`,
+      }],
+      skipDuplicates: true,
+    }).catch(() => undefined);
     return false;
   }
 }
@@ -121,7 +131,7 @@ export async function requestParentAccessLink(
   });
 }
 
-type ParentSessionResult = { email: string; sessionToken: string; sessionId: string; expiresAt: Date };
+type ParentSessionResult = { email: string; sessionToken: string; sessionId: string; expiresAt: Date; checkoutRegistrationIds: string[] };
 
 async function consumeRegistrationEmailCorrection(
   prisma: PrismaClient,
@@ -146,7 +156,7 @@ async function consumeRegistrationEmailCorrection(
           anonymizedAt: null,
           status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
         },
-        select: { id: true },
+        select: { id: true, eventId: true },
       });
       if (!registration) throw new ParentAccessError('not_found');
       const claimed = await tx.parentAccessToken.updateMany({
@@ -174,13 +184,19 @@ async function consumeRegistrationEmailCorrection(
           changeData: { parentEmail: { from: token.email, to: newEmail } },
         },
       });
+      await tx.auditEvent.create({ data: {
+        eventId: registration.eventId, registrationId: registration.id, actorType: 'PARENT',
+        action: 'REGISTRATION_EMAIL_CORRECTED', entityType: 'Registration', entityId: registration.id,
+        reason: 'New inbox owner confirmed the Admin-requested email correction',
+        beforeState: { parentEmail: token.email }, afterState: { parentEmail: newEmail }, createdAt: now,
+      } });
       const sessionToken = generateToken();
       const expiresAt = new Date(now.getTime() + PARENT_SESSION_TTL_HOURS * 60 * 60_000);
       const session = await tx.parentAccessSession.create({
         data: { email: newEmail, tokenHash: hashToken(sessionToken), expiresAt, createdAt: now },
         select: { id: true },
       });
-      return { email: newEmail, sessionToken, sessionId: session.id, expiresAt };
+      return { email: newEmail, sessionToken, sessionId: session.id, expiresAt, checkoutRegistrationIds: [token.registrationId!] };
     });
   } catch (error) {
     if (error instanceof ParentAccessError && ['not_found', 'email_change_conflict'].includes(error.code)) return null;
@@ -218,6 +234,19 @@ export async function consumeParentAccessToken(
       where: { parentEmail: { equals: email, mode: 'insensitive' }, anonymizedAt: null, parentEmailVerifiedAt: null },
       data: { parentEmailVerifiedAt: now },
     });
+    const checkoutRegistrationIds = found.purpose === 'REGISTRATION_VERIFY'
+      ? (await tx.registration.findMany({
+          where: {
+            parentEmail: { equals: email, mode: 'insensitive' }, anonymizedAt: null,
+            parentEmailVerifiedAt: now,
+            OR: [
+              { status: 'PENDING', expiresAt: { gt: now } },
+              { status: { in: ['EXPIRED', 'FAILED'] } },
+            ],
+          },
+          select: { id: true },
+        })).map((registration) => registration.id)
+      : [];
 
     const sessionToken = generateToken();
     const expiresAt = new Date(now.getTime() + PARENT_SESSION_TTL_HOURS * 60 * 60_000);
@@ -225,8 +254,48 @@ export async function consumeParentAccessToken(
       data: { email, tokenHash: hashToken(sessionToken), expiresAt, createdAt: now },
       select: { id: true },
     });
-    return { email, sessionToken, sessionId: session.id, expiresAt };
+    return { email, sessionToken, sessionId: session.id, expiresAt, checkoutRegistrationIds };
   });
+}
+
+export async function sendVerifiedRegistrationCheckouts(
+  deps: AppDeps,
+  registrationIds: string[],
+  now = new Date(),
+): Promise<'not_required' | 'ready' | 'failed'> {
+  if (!registrationIds.length) return 'not_required';
+  let failed = false;
+  for (const registrationId of registrationIds) {
+    let sent = false;
+    try {
+      sent = await sendRecoveredCheckoutContinuation(deps, registrationId, now, {
+        batchId: `checkout:verified:${registrationId}`,
+      });
+    } catch {
+      sent = false;
+    }
+    if (sent) continue;
+    failed = true;
+    try {
+      const registration = await deps.prisma.registration.findFirst({
+        where: { id: registrationId, parentEmailVerifiedAt: { not: null }, anonymizedAt: null },
+        select: { eventId: true, checkoutAttempt: true },
+      });
+      if (registration) await deps.prisma.reviewItem.createMany({
+        data: [{
+          eventId: registration.eventId,
+          registrationId,
+          reason: 'checkout_creation_failed',
+          note: 'Checkout could not be prepared automatically after email verification. The parent session remains active.',
+          dedupeKey: `registration:${registrationId}:checkout_creation_failed:${registration.checkoutAttempt}`,
+        }],
+        skipDuplicates: true,
+      });
+    } catch {
+      deps.log?.warn({ code: 'checkout_review_item_failed', registrationId }, 'checkout_review_item_failed');
+    }
+  }
+  return failed ? 'failed' : 'ready';
 }
 
 export async function expireParentAccessSession(prisma: PrismaClient, token: string): Promise<void> {
@@ -237,7 +306,10 @@ function parentRegistrationDto(
   registration: Prisma.RegistrationGetPayload<{ include: { event: true } }>,
   now: Date,
 ): ParentRegistrationDTO {
-  const locked = registration.event.status !== 'OPEN' || registration.event.checkInClosedAt !== null ||
+  const registrationClosed = registration.event.status !== 'OPEN' ||
+    registration.event.registrationClosedAt !== null ||
+    registration.event.registrationClosesAt.getTime() <= now.getTime();
+  const locked = registrationClosed || registration.event.checkInClosedAt !== null ||
     registration.checkedInAt !== null || registration.bibNumber !== null ||
     !['PENDING', 'PAID'].includes(registration.status);
   return {
@@ -266,7 +338,8 @@ function parentRegistrationDto(
     parentFollowUpSentAt: registration.parentFollowUpSentAt?.toISOString() ?? null,
     canEdit: !locked,
     canWithdraw: !locked,
-    canContinueCheckout: registration.status === 'PENDING' && registration.parentEmailVerifiedAt !== null && registration.expiresAt > now,
+    canContinueCheckout: ['PENDING', 'EXPIRED', 'FAILED'].includes(registration.status) &&
+      registration.parentEmailVerifiedAt !== null,
     ticketPath: registration.status === 'PAID' && registration.qrToken ? `/ticket/${encodeURIComponent(registration.qrToken)}` : null,
     event: {
       id: registration.event.id,
@@ -389,7 +462,10 @@ export async function updateParentRegistration(
           status: { in: ['PENDING', 'PAID'] },
           checkedInAt: null,
           bibNumber: null,
-          event: { is: { status: 'OPEN', checkInClosedAt: null } },
+          event: { is: {
+            status: 'OPEN', checkInClosedAt: null,
+            registrationClosedAt: null, registrationClosesAt: { gt: now },
+          } },
         },
         data: values,
       });
@@ -456,7 +532,10 @@ export async function withdrawParentRegistration(
         checkedInAt: null,
         bibNumber: null,
         checkoutSessionId,
-        event: { is: { status: 'OPEN', checkInClosedAt: null } },
+        event: { is: {
+          status: 'OPEN', checkInClosedAt: null,
+          registrationClosedAt: null, registrationClosesAt: { gt: now },
+        } },
       },
       data: { status: 'WITHDRAWN', checkedInAt: null, checkedInBy: null, bibNumber: null },
     });
@@ -470,6 +549,12 @@ export async function withdrawParentRegistration(
         changeData: { status: { from: current.status, to: 'WITHDRAWN' } },
       },
     });
+    await tx.auditEvent.create({ data: {
+      eventId: current.eventId, registrationId: current.id, actorType: 'PARENT',
+      action: 'REGISTRATION_WITHDRAWN', entityType: 'Registration', entityId: current.id,
+      reason: 'Parent withdrew registration', beforeState: { status: current.status },
+      afterState: { status: 'WITHDRAWN' }, createdAt: now,
+    } });
     return parentRegistrationDto(updated, now);
   });
 }
@@ -480,17 +565,20 @@ export async function continueParentCheckout(
   registrationId: string,
   now = new Date(),
 ): Promise<{ checkoutUrl: string } | { simulationToken: string }> {
-  const registration = await deps.prisma.registration.findFirst({
+  const found = await deps.prisma.registration.findFirst({
     where: {
       id: registrationId,
       parentEmail: { equals: normalizeEmail(email), mode: 'insensitive' },
       parentEmailVerifiedAt: { not: null },
       anonymizedAt: null,
-      status: 'PENDING',
-      expiresAt: { gt: now },
+      status: { in: ['PENDING', 'EXPIRED', 'FAILED'] },
     },
   });
-  if (!registration) throw new ParentAccessError('registration_locked');
+  if (!found) throw new ParentAccessError('registration_locked');
+  const registration = found.status === 'PENDING' && found.expiresAt > now
+    ? found
+    : await recoverRegistrationCheckout(deps, found.id, now);
+  if (!registration) throw new ParentAccessError('checkout_unavailable');
   const checkout = await createRegistrationCheckout(deps, registration, now);
   if (!checkout) throw new ParentAccessError('checkout_unavailable');
   if (deps.env.PAYMENT_PROVIDER === 'fake' && deps.env.APP_ENV === 'testing') {
@@ -568,7 +656,7 @@ export async function confirmParentEmailChange(
     if (updated.count === 0) throw new ParentAccessError('not_found');
     const changedRegistrations = await tx.registration.findMany({
       where: { id: { in: registrationIds }, parentEmail: newEmail, anonymizedAt: null },
-      select: { id: true },
+      select: { id: true, eventId: true },
     });
     await tx.parentAccessToken.deleteMany({
       where: {
@@ -592,6 +680,12 @@ export async function confirmParentEmailChange(
         data: { to: newEmail, idempotencyKey: deliveryIdempotencyKey(delivery.batchId, newEmail) },
       });
     }
+    await tx.auditEvent.createMany({ data: changedRegistrations.map((registration) => ({
+      eventId: registration.eventId, registrationId: registration.id, actorType: 'PARENT',
+      action: 'REGISTRATION_EMAIL_CHANGED', entityType: 'Registration', entityId: registration.id,
+      reason: 'Guardian confirmed a linked-registration email change',
+      beforeState: { parentEmail: current }, afterState: { parentEmail: newEmail }, createdAt: now,
+    })) });
     await tx.registrationChangeLog.createMany({
       data: changedRegistrations.map((registration) => ({
         registrationId: registration.id,
@@ -736,14 +830,16 @@ export async function sendIncompleteRegistrationReminder(
       eventId,
       parentEmailVerifiedAt: { not: null },
       parentFollowUpSentAt: null,
-      status: 'PENDING',
-      expiresAt: { gt: now },
+      OR: [
+        { status: 'PENDING', expiresAt: { gt: now } },
+        { status: { in: ['EXPIRED', 'FAILED'] } },
+      ],
       anonymizedAt: null,
     },
   });
   if (!registration) throw new ParentAccessError('registration_locked');
   const recipientKey = createHash('sha256').update(normalizeEmail(registration.parentEmail)).digest('hex').slice(0, 16);
-  const sent = await sendCheckoutContinuation(deps, registration, now, {
+  const sent = await sendRecoveredCheckoutContinuation(deps, registration.id, now, {
     batchId: `parent-reminder:${registration.id}:${recipientKey}`,
     senderUserId,
   });

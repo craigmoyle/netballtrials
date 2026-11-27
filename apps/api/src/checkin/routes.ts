@@ -19,6 +19,7 @@ import {
   openCheckInSession,
   openAdminCheckInSession,
   resolveCheckInEvent,
+  reopenCheckIn,
   setCheckInPin,
   undoCheckIn,
 } from './service';
@@ -52,7 +53,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
     }
 
     const { id } = req.params as { id: string };
-    const ok = await setCheckInPin(deps.prisma, id, parsed.data.pin, new Date());
+    const ok = await setCheckInPin(deps.prisma, id, parsed.data.pin, new Date(), req.adminUserId);
     if (!ok) {
       return reply.code(404).send({ error: 'not_found' });
     }
@@ -61,7 +62,7 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
 
   app.delete('/api/admin/events/:id/check-in-pin', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const ok = await setCheckInPin(deps.prisma, id, null, new Date());
+    const ok = await setCheckInPin(deps.prisma, id, null, new Date(), req.adminUserId);
     if (!ok) {
       return reply.code(404).send({ error: 'not_found' });
     }
@@ -70,10 +71,19 @@ export function registerCheckInRoutes(app: FastifyInstance, deps: AppDeps): void
 
   app.post('/api/admin/events/:id/check-in/close', { preHandler: requireAdmin(deps) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const ok = await closeCheckIn(deps.prisma, id, new Date());
+    const ok = await closeCheckIn(deps.prisma, id, requestNow(req), req.adminUserId);
     if (!ok) {
       return reply.code(404).send({ error: 'not_found' });
     }
+    return reply.code(204).send();
+  });
+
+  app.post('/api/admin/events/:id/check-in/reopen', { preHandler: requireAdmin(deps) }, async (req, reply) => {
+    const parsed = z.object({ confirmReopen: z.literal(true) }).strict().safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'validation_failed' });
+    const { id } = req.params as { id: string };
+    const ok = await reopenCheckIn(deps.prisma, id, requestNow(req), req.adminUserId!);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
     return reply.code(204).send();
   });
 

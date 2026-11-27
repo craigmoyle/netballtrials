@@ -404,7 +404,7 @@ function CommunicationsPage({ client, eventId }: { client: Client; eventId: stri
         <h2 id="delivery-history-heading">Delivery history</h2>
         {deliveries.length === 0 ? <p>No messages sent for this event yet.</p> : <ul>{deliveries.map((entry) => (
           <li key={entry.id}>
-            {entry.status === 'ANONYMIZED' ? 'Message details removed under retention policy' : entry.subject || '(no subject)'} — {deliveryStatus(entry)}
+            {entry.status === 'ANONYMIZED' ? 'Message details removed under retention policy' : entry.subject || '(no subject)'} — {entry.kind} — {deliveryStatus(entry)}
             {entry.status !== 'ANONYMIZED' ? <details><summary>Delivery details</summary><p>Recipient: {entry.to}</p><p>Created: <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></p>{entry.sentAt ? <p>Sent: <time dateTime={entry.sentAt}>{new Date(entry.sentAt).toLocaleString()}</time></p> : null}<pre>{entry.body}</pre></details> : null}
             {entry.status === 'FAILED' ? <button type="button" disabled={busy} onClick={() => void retryDelivery(entry)}>Retry this delivery</button> : null}
             {entry.status === 'AMBIGUOUS' ? <button type="button" disabled={busy} onClick={() => void retryDelivery(entry, true)}>Retry ambiguous delivery</button> : null}

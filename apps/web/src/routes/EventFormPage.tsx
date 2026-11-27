@@ -5,12 +5,13 @@ import { ApiError, type ApiClient as Client } from '../api/client';
 import { formatTrialDate } from '../formatTrialDate';
 import { useUnsavedSignOut } from '../useUnsavedSignOut';
 import { HelpTip } from '../admin/HelpTip';
+import { defaultRegistrationDeadline, melbourneDateTimeInput } from '../eventDeadline';
 
 type FormState = Record<string, string>;
 
 const EMPTY: FormState = {
   name: '', competitionYear: String(new Date().getFullYear() + 1), division: '', section: 'Ladies',
-  eventDate: '', venue: '', startTime: '08:30', endTime: '12:00', gameStartTime: '09:00',
+  eventDate: '', venue: '', startTime: '08:30', endTime: '12:00', gameStartTime: '09:00', registrationClosesAt: '',
   registrationFeeCents: '0', courts: '1', rank1Min: '2', rank2Min: '1', rank3Min: '1',
   playMinutes: '8', changeoverMinutes: '2', minAge: '5', maxAge: '99', policyUrl: '',
 };
@@ -33,6 +34,7 @@ const FIELD_GROUPS: { legend: string; fields: { name: string; label: string; typ
       { name: 'startTime', label: 'Arrival time', type: 'time' },
       { name: 'gameStartTime', label: 'Start time', type: 'time' },
       { name: 'endTime', label: 'Finish time', type: 'time' },
+      { name: 'registrationClosesAt', label: 'Registration closes (Melbourne time)', type: 'datetime-local' },
       { name: 'registrationFeeCents', label: 'Registration fee (AUD)', type: 'number' },
     ],
   },
@@ -144,6 +146,7 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
           startTime: event.startTime,
           gameStartTime: event.gameStartTime,
           endTime: event.endTime,
+          registrationClosesAt: melbourneDateTimeInput(event.registrationClosesAt),
           registrationFeeCents: (event.registrationFeeCents / 100).toFixed(2),
           courts: String(event.courts),
           rank1Min: String(event.rank1Min),
@@ -175,6 +178,9 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
         const range = defaultAgeRange(value);
         next.minAge = String(range.minAge);
         next.maxAge = String(range.maxAge);
+      }
+      if (!id && (name === 'eventDate' || name === 'startTime')) {
+        next.registrationClosesAt = defaultRegistrationDeadline(next.eventDate, next.startTime);
       }
       return next;
     });
@@ -347,6 +353,7 @@ function EventForm({ client, id }: { client: Client; id: string | undefined }) {
                     id={field.name}
                     name={field.name}
                     type={field.type}
+                    required={field.name !== 'policyUrl'}
                     min={field.name === 'registrationFeeCents' ? '0' : undefined}
                     step={field.name === 'registrationFeeCents' ? '0.01' : undefined}
                     list={field.name === 'division' ? 'trial-divisions' : undefined}

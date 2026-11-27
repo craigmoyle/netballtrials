@@ -23,13 +23,19 @@ const env = loadEnv({
 
 let app: ReturnType<typeof createApp>;
 const gmailRequests: string[] = [];
+const gmailMessages: string[] = [];
 
 beforeEach(async () => {
   await resetDb();
   gmailRequests.length = 0;
-  vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+  gmailMessages.length = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = String(input);
     gmailRequests.push(url);
+    if (url.includes('/messages/send')) {
+      const raw = (JSON.parse(String(init?.body)) as { raw: string }).raw;
+      gmailMessages.push(Buffer.from(raw, 'base64url').toString('utf8'));
+    }
     return new Response(url.includes('/token')
       ? JSON.stringify({ access_token: 'test-access-token', expires_in: 3600 })
       : JSON.stringify({ id: 'test-message' }), {
@@ -93,6 +99,8 @@ describe('hosted test integration access gate', () => {
     });
     expect(adminInvite.statusCode).toBe(202);
     expect(gmailRequests.filter((url) => url.includes('/messages/send'))).toHaveLength(1);
+    expect(gmailMessages[0]).toContain('Subject: [TEST]');
+    expect(gmailMessages[0]).toContain('[TEST] This message came from the TEST environment.');
     const newAdminInvite = await app.inject({
       method: 'POST', url: '/api/admin/staff/invites', headers: { cookie: allowedCookie },
       payload: { email: 'new-admin@example.test' },
@@ -123,7 +131,10 @@ describe('hosted test integration access gate', () => {
       text: 'Open https://test.example/manage-registration#token=synthetic',
     })).toBe('simulated');
     const populatedOutbox = await app.inject({ method: 'GET', url: '/api/admin/test-email-outbox', headers: { cookie: allowedCookie } });
-    expect(populatedOutbox.json()).toMatchObject([{ to: 'parent@example.test', subject: 'Registration verification', body: expect.stringContaining('/manage-registration#token=synthetic') }]);
+    expect(populatedOutbox.json()).toMatchObject([{
+      to: 'parent@example.test', subject: '[TEST] Registration verification',
+      body: expect.stringMatching(/^\[TEST\] This message came from the TEST environment\.[\s\S]*\/manage-registration/),
+    }]);
 
     const denied = await app.inject({ method: 'GET', url: '/api/public/events', headers: { cookie: 'nt_session=not-a-session' } });
     expect(denied.statusCode).toBe(401);

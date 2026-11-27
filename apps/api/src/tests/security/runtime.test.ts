@@ -91,6 +91,34 @@ describe('production runtime boundary', () => {
     }
   });
 
+  it('centrally labels local TEST mail without changing production mail', async () => {
+    const testMailer = createDevMailer([]);
+    const testApp = createApp({ env: env(), mailer: testMailer });
+    await testApp.testDeps.mailer.send({ to: 'family@example.test', subject: 'Details', text: 'Body' });
+    expect(testMailer.sent[0]).toMatchObject({
+      subject: '[TEST] Details',
+      text: '[TEST] This message came from the TEST environment.\n\nBody',
+    });
+    await testApp.close();
+
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const productionMailer = {
+      provider: 'gmail-api' as const,
+      send: async (message: { to: string; subject: string; text: string }) => { sent.push(message); },
+    };
+    const productionApp = createApp({
+      env: env({
+        NODE_ENV: 'production', PAYMENT_PROVIDER: 'stripe', SESSION_COOKIE_SECURE: 'true',
+        WEB_ORIGIN: 'https://trials.example', API_PUBLIC_URL: 'https://trials.example',
+        STRIPE_SECRET_KEY: 'sk_live_configured', STRIPE_WEBHOOK_SECRET: 'whsec_configured',
+      }),
+      mailer: productionMailer,
+    });
+    await productionApp.testDeps.mailer.send({ to: 'family@example.test', subject: 'Details', text: 'Body' });
+    expect(sent).toEqual([{ to: 'family@example.test', subject: 'Details', text: 'Body' }]);
+    await productionApp.close();
+  });
+
   it('allows an explicitly injected fake only in test mode', () => {
     process.env.NODE_ENV = 'test';
     const fake = createFakePaymentProvider();

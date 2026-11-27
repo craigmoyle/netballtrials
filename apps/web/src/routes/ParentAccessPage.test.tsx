@@ -99,9 +99,9 @@ describe('ParentAccessPage', () => {
     render(<MemoryRouter initialEntries={['/manage-registration']}><ParentAccessPage client={api} /></MemoryRouter>);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Withdraw registration' }));
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('No refund will be issued.'));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('No automatic refund will be issued'));
     expect(withdrawParentRegistration).toHaveBeenCalledWith('one');
-    expect(await screen.findByText('Withdrawn. No refund is available.')).toBeInTheDocument();
+    expect((await screen.findAllByText(/No automatic refund was issued/i)).length).toBeGreaterThan(0);
   });
 
   it('distinguishes a failed payment and offers a new attempt while registration is open', async () => {
@@ -112,6 +112,27 @@ describe('ParentAccessPage', () => {
     expect(await screen.findByText('Payment failed. This registration is not complete.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Start a new registration' })).toHaveAttribute('href', '/register/event-one');
     expect(screen.queryByRole('button', { name: 'Continue to Checkout' })).not.toBeInTheDocument();
+  });
+
+  it('shows DUPLICATE as a terminal record rather than pending payment', async () => {
+    const duplicate = { ...registration('one', 'Ada Lovelace'), status: 'DUPLICATE' as const, canEdit: false, canWithdraw: false, canContinueCheckout: false };
+    render(<MemoryRouter initialEntries={['/manage-registration']}><ParentAccessPage client={mockClient({ listParentRegistrations: vi.fn().mockResolvedValue([duplicate]) })} /></MemoryRouter>);
+
+    expect(await screen.findByText('Duplicate registration. The retained registration is the active record.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue to Checkout' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the session open and surfaces automatic Checkout failure', async () => {
+    const api = mockClient({
+      listParentRegistrations: vi.fn().mockResolvedValue([registration('one', 'Ada Lovelace')]),
+      verifyParentAccessToken: vi.fn().mockResolvedValue({ status: 'signed_in', checkout_status: 'failed' }),
+    });
+    render(<MemoryRouter initialEntries={['/manage-registration/verify#token=single-use-token']}><ParentAccessPage client={api} /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm email and continue' }));
+
+    expect(await screen.findByText(/checkout could not be prepared/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace · E2E 15/U Ladies' })).toBeInTheDocument();
   });
 
   it('keeps the portal open when server sign-out fails', async () => {

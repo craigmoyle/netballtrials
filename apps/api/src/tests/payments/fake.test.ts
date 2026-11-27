@@ -25,13 +25,15 @@ describe('fake payment provider', () => {
     };
     const session = await provider.createCheckout(request, 'r1');
     const retry = await provider.createCheckout(request, 'r1');
+    const recovered = await provider.createCheckout(request, 'r1:1');
     const other = await provider.createCheckout({ ...request, registrationId: 'r2' }, 'r2');
     expect(session.url).toMatch(/^https:\/\/checkout\.test\/fake_/);
     expect(session.sessionId).toMatch(/^fake_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     expect(session.url).not.toContain('r1');
     expect(retry).toEqual(session);
+    expect(recovered.sessionId).not.toBe(session.sessionId);
     expect(other.sessionId).not.toBe(session.sessionId);
     expect(other.sessionId).not.toContain('r2');
-    expect(provider.checkouts).toHaveLength(2);
+    expect(provider.checkouts).toHaveLength(3);
   });
 });

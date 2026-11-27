@@ -17,8 +17,7 @@ const workflowGroups: WorkflowGroup[] = [
     label: 'Registration',
     workflows: [
       { id: 'roster', label: 'Roster and export', path: '/roster' },
-      { id: 'review', label: 'Review queue', path: '/review' },
-      { id: 'incomplete', label: 'Incomplete registrations', path: '/incomplete' },
+      { id: 'review', label: 'Needs attention', path: '/review' },
     ],
   },
   {

@@ -47,10 +47,11 @@ describe('RosterPage', () => {
     expect(screen.queryByRole('option', { name: 'Old Association' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Player date of birth'), { target: { value: '2013-04-02' } });
     fireEvent.change(screen.getByLabelText('Member association'), { target: { value: 'Other Association' } });
+    fireEvent.change(screen.getByLabelText('Who confirmed the correction and how?'), { target: { value: 'Confirmed by guardian by phone' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
 
     await waitFor(() => expect(correctRegistration).toHaveBeenCalledWith('event-1', 'reg-1', {
-      dateOfBirth: '2013-04-02', memberAssociation: 'Other Association',
+      dateOfBirth: '2013-04-02', memberAssociation: 'Other Association', reason: 'Confirmed by guardian by phone',
     }));
     expect(await screen.findByRole('status')).toHaveTextContent(/registration details corrected/i);
     expect(screen.getByText(/2013-04-02/)).toBeInTheDocument();
@@ -70,6 +71,7 @@ describe('RosterPage', () => {
     });
     fireEvent.click(await screen.findByRole('button', { name: /correct details for ada lovelace/i }));
     fireEvent.change(await screen.findByLabelText('Player date of birth'), { target: { value: '2013-04-02' } });
+    fireEvent.change(screen.getByLabelText('Who confirmed the correction and how?'), { target: { value: 'Confirmed by guardian by phone' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/already an active registration/i);
@@ -105,6 +107,59 @@ describe('RosterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(await screen.findByText(/no registrations for this event/i)).toBeInTheDocument();
     expect(getRoster).toHaveBeenCalledTimes(2);
+  });
+
+  it('requires removal reasons, makes Other notes explicit, and warns that removal does not refund payment', async () => {
+    const removeRegistration = vi.fn().mockResolvedValue({
+      id: 'reg-1', status: 'WITHDRAWN', planning: { draftPlanId: 'draft-1', gaps: [] },
+    });
+    renderPage({ getRoster: vi.fn().mockResolvedValue(roster), downloadRoster: vi.fn(), removeRegistration });
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove player Ada Lovelace' }));
+
+    expect(screen.getByText(/removing a paid player does not refund the payment/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Removal reason'), { target: { value: 'Other' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm removal' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/note is required/i);
+    fireEvent.change(screen.getByLabelText('Reason note'), { target: { value: 'Confirmed by the family' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm removal' }));
+
+    await waitFor(() => expect(removeRegistration).toHaveBeenCalledWith('event-1', 'reg-1', {
+      reason: 'Other', note: 'Confirmed by the family',
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent(/removed from future planning/i);
+  });
+
+  it('completes a paid late arrival and surfaces planner gaps without hiding the saved attendance', async () => {
+    const lateRoster = { ...roster, registrations: [{ ...roster.registrations[0], checkedInAt: null, bibNumber: null }] };
+    const completeLateArrival = vi.fn().mockResolvedValue({
+      result: 'checked_in', bibNumber: 12,
+      planning: { draftPlanId: null, gaps: [{ code: 'missing_court', message: 'Need one more GS player for court 2.' }] },
+    });
+    renderPage({ getRoster: vi.fn().mockResolvedValue(lateRoster), downloadRoster: vi.fn(), completeLateArrival });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete late arrival for Ada Lovelace' }));
+
+    await waitFor(() => expect(completeLateArrival).toHaveBeenCalledWith('event-1', 'reg-1'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/need one more GS player/i);
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('Checked in')).toBeInTheDocument();
+  });
+
+  it('marks a paid duplicate against the retained event registration', async () => {
+    const duplicateRoster = { ...roster, registrations: [
+      roster.registrations[0],
+      { ...roster.registrations[0], id: 'reg-2', playerName: 'Ada Lovelace', parentEmail: 'other@example.com', bibNumber: 5 },
+    ] };
+    const markRegistrationDuplicate = vi.fn().mockResolvedValue({ id: 'reg-2', status: 'DUPLICATE', planning: { draftPlanId: null, gaps: [] } });
+    renderPage({ getRoster: vi.fn().mockResolvedValue(duplicateRoster), downloadRoster: vi.fn(), markRegistrationDuplicate });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark duplicate for Ada Lovelace (other@example.com)' }));
+    fireEvent.change(screen.getByLabelText('Retained registration'), { target: { value: 'reg-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm duplicate' }));
+
+    await waitFor(() => expect(markRegistrationDuplicate).toHaveBeenCalledWith('event-1', 'reg-2', {
+      duplicateOfRegistrationId: 'reg-1', reason: 'Duplicate', note: '',
+    }));
   });
 
   it('downloads a CSV with the event-scoped filename and reports retention expiry', async () => {

@@ -326,6 +326,7 @@ export async function saveManualRoundRevision(
   round: number,
   input: ManualRoundInputDTO,
   now: Date,
+  audit: { actorUserId?: string; reason?: string } = {},
 ): Promise<ManualRoundResult> {
   return prisma.$transaction(async (tx) => {
     if (!(await lockEvent(tx, eventId))) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
@@ -343,7 +344,7 @@ export async function saveManualRoundRevision(
     }
 
     const registrations = await tx.registration.findMany({
-      where: { eventId, status: 'PAID', checkedInAt: { not: null } },
+      where: { eventId, status: 'PAID', ageFlagged: false, checkedInAt: { not: null } },
       orderBy: { bibNumber: 'asc' },
       select: {
         id: true,
@@ -367,6 +368,11 @@ export async function saveManualRoundRevision(
     }
 
     const plan = await createPublishedRevision(tx, eventId, source, roundResult.slots, snapshots, warnings, now);
+    await tx.auditEvent.create({ data: {
+      eventId, actorType: 'ADMIN', actorUserId: audit.actorUserId, action: 'PLAN_ROUND_MANUALLY_EDITED',
+      entityType: 'RoundPlan', entityId: plan.id, reason: audit.reason ?? `Manually changed round ${round}`,
+      beforeState: { sourcePlanId: source.id, round }, afterState: { planId: plan.id, round }, createdAt: now,
+    } });
     return { ok: true, plan };
   });
 }
@@ -376,6 +382,7 @@ export async function saveManualSuffixRevision(
   eventId: string,
   input: ManualSuffixInputDTO,
   now: Date,
+  audit: { actorUserId?: string; reason?: string } = {},
 ): Promise<ManualRoundResult> {
   return prisma.$transaction(async (tx) => {
     if (!(await lockEvent(tx, eventId))) return { ok: false, reason: 'stale_plan', errors: [], warnings: [] };
@@ -397,7 +404,7 @@ export async function saveManualSuffixRevision(
     }
 
     const registrations = await tx.registration.findMany({
-      where: { eventId, status: 'PAID', checkedInAt: { not: null } },
+      where: { eventId, status: 'PAID', ageFlagged: false, checkedInAt: { not: null } },
       orderBy: { bibNumber: 'asc' },
       select: {
         id: true,
@@ -440,6 +447,12 @@ export async function saveManualSuffixRevision(
       return { ok: false, reason: 'warnings_required', errors: [], warnings };
     }
     const plan = await createPublishedRevision(tx, eventId, source, suffix.slots, snapshots, warnings, now, input.fromRound - 1);
+    await tx.auditEvent.create({ data: {
+      eventId, actorType: 'ADMIN', actorUserId: audit.actorUserId, action: 'PLAN_SUFFIX_MANUALLY_EDITED',
+      entityType: 'RoundPlan', entityId: plan.id, reason: audit.reason ?? `Manually changed rounds from ${input.fromRound}`,
+      beforeState: { sourcePlanId: source.id, fromRound: input.fromRound },
+      afterState: { planId: plan.id, removedRegistrationIds: input.removedRegistrationIds }, createdAt: now,
+    } });
     return { ok: true, plan };
   });
 }
@@ -452,7 +465,7 @@ export async function getGameRoster(prisma: PrismaClient, eventId: string): Prom
     : null;
   const inactive = new Set(currentPlan?.players.filter((player) => !player.active).map((player) => player.registrationId) ?? []);
   const registrations = await prisma.registration.findMany({
-    where: { eventId, status: 'PAID', checkedInAt: { not: null }, bibNumber: { not: null } },
+    where: { eventId, status: 'PAID', ageFlagged: false, checkedInAt: { not: null }, bibNumber: { not: null } },
     orderBy: { bibNumber: 'asc' },
     select: {
       id: true,

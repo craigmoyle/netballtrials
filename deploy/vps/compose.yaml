@@ -1,6 +1,7 @@
 name: netball-trials
 
-# Trials TEST runs in its own Compose project. PostgreSQL and the TLS edge come from the netball-vps platform.
+# Trials TEST only: trials.chisholmnetball.com is a future production destination, not a profile in this Compose file.
+# PostgreSQL and the TLS edge come from the netball-vps platform.
 services:
   trials-api:
     image: netballtrials-api:vps

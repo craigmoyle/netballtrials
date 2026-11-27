@@ -55,7 +55,7 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(registration).toMatchObject({ status: 'PENDING', parentEmail: 'anne@example.com', parentEmailVerifiedAt: null, checkoutSessionId: null });
     expect(payment.checkouts).toHaveLength(0);
     expect(mailer.sent).toHaveLength(1);
-    expect(mailer.sent[0]).toMatchObject({ to: 'anne@example.com', subject: 'Confirm your Netball Trials email' });
+    expect(mailer.sent[0]).toMatchObject({ to: 'anne@example.com', subject: '[TEST] Confirm your Netball Trials email' });
 
     const opened = await app.inject({
       method: 'POST', url: `/api/admin/events/${eventId}/check-in/session`,
@@ -85,13 +85,86 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     { label: 'a DRAFT event', status: 'DRAFT', date: eventDate, closedAt: null },
     { label: 'the previous Melbourne date', status: 'CLOSED', date: new Date('2026-09-11T00:00:00.000Z'), closedAt: null },
     { label: 'the next Melbourne date', status: 'CLOSED', date: new Date('2026-09-13T00:00:00.000Z'), closedAt: null },
-    { label: 'closed check-in', status: 'CLOSED', date: eventDate, closedAt: new Date('2026-09-11T14:00:00.000Z') },
   ])('rejects $label', async ({ status, date, closedAt }) => {
     await prisma.event.update({ where: { id: eventId }, data: { status: status as 'DRAFT' | 'CLOSED', eventDate: date, checkInClosedAt: closedAt } });
     const response = await submit();
     expect(response.statusCode).toBe(409);
     expect(response.json()).toEqual({ error: 'event_unavailable' });
     expect(await prisma.registration.count({ where: { eventId } })).toBe(0);
+    expect(payment.checkouts).toHaveLength(0);
+  });
+
+  it('accepts an Admin-assisted addition after check-in closes while public and PIN check-in stay closed', async () => {
+    await prisma.event.update({ where: { id: eventId }, data: { checkInClosedAt: new Date('2026-09-11T14:00:00.000Z') } });
+
+    const response = await submit();
+
+    expect(response.statusCode).toBe(202);
+    expect(await prisma.registration.findFirstOrThrow({ where: { eventId } })).toMatchObject({
+      status: 'PENDING',
+      adminAssistedAt: now,
+    });
+    expect(await prisma.auditEvent.findFirst({ where: { eventId, action: 'LATE_ADDITION_CREATED' } })).toBeTruthy();
+
+    const publicSubmission = await app.inject({
+      method: 'POST', url: `/api/public/events/${eventId}/registrations`, headers: nowHeader, payload: input,
+    });
+    expect(publicSubmission.statusCode).toBe(404);
+  });
+
+  it('completes a paid late arrival after normal check-in closure with a Number and roster revision', async () => {
+    await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/check-in/close`, cookies: { nt_session: adminCookie }, headers: nowHeader });
+    const registration = await prisma.registration.create({
+      data: registrationFixture(eventId, {
+        status: 'PAID', parentEmailVerifiedAt: now, paidAt: now, paymentIntentId: 'pi_late_arrival',
+        dateOfBirth: new Date('2012-04-02T00:00:00.000Z'), checkedInAt: null, bibNumber: null,
+      }),
+    });
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/registrations/${registration.id}/late-arrival`,
+      cookies: { nt_session: adminCookie }, headers: nowHeader,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ result: 'checked_in', registrationId: registration.id, bibNumber: 1 });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({
+      status: 'PAID', checkedInAt: now, checkedInBy: 'Chisholm Admin', bibNumber: 1,
+    });
+    expect(await prisma.rosterSnapshot.count({ where: { eventId } })).toBe(2);
+    expect(await prisma.auditEvent.findFirst({ where: { eventId, registrationId: registration.id, action: 'LATE_ARRIVAL_COMPLETED' } })).toBeTruthy();
+  });
+
+  it.each([
+    { label: 'unpaid', patch: { status: 'PENDING', paidAt: null, paymentIntentId: null }, status: 409 },
+    { label: 'unverified', patch: { parentEmailVerifiedAt: null }, status: 409 },
+    { label: 'ineligible', patch: { dateOfBirth: new Date('2010-04-02T00:00:00.000Z') }, status: 422 },
+    { label: 'legacy age-flagged', patch: { dateOfBirth: new Date('2012-04-02T00:00:00.000Z'), ageFlagged: true }, status: 422 },
+  ])('refuses a $label late arrival without changing attendance', async ({ patch, status }) => {
+    await prisma.event.update({ where: { id: eventId }, data: { checkInClosedAt: now } });
+    const registration = await prisma.registration.create({
+      data: registrationFixture(eventId, {
+        status: 'PAID', parentEmailVerifiedAt: now, paidAt: now, paymentIntentId: 'pi_late_arrival',
+        ...patch,
+      }),
+    });
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/events/${eventId}/registrations/${registration.id}/late-arrival`,
+      cookies: { nt_session: adminCookie }, headers: nowHeader,
+    });
+
+    expect(response.statusCode).toBe(status);
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).checkedInAt).toBeNull();
+  });
+
+  it('rejects an ineligible player before creating registration or sending email', async () => {
+    const response = await submit({ ...input, dateOfBirth: '2010-04-02' });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toEqual({ error: 'ineligible', competitionYear: 2027, minAge: 12, maxAge: 15 });
+    expect(await prisma.registration.count({ where: { eventId } })).toBe(0);
+    expect(mailer.sent).toHaveLength(0);
     expect(payment.checkouts).toHaveLength(0);
   });
 
@@ -105,14 +178,14 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
   it('retries a duplicate PENDING registration using the stored parent email', async () => {
     const first = await submit();
     const retry = await submit({ ...input, parentEmail: 'different@example.com' });
-    const checkoutEmails = mailer.sent.filter((message) => message.subject === 'Continue your Netball Trials registration');
+    const checkoutEmails = mailer.sent.filter((message) => message.subject.endsWith('Continue your Netball Trials registration'));
 
     expect(first.statusCode).toBe(202);
     expect(retry.statusCode).toBe(202);
     expect(first.json()).toEqual(retry.json());
     expect(payment.checkouts).toHaveLength(0);
     expect(checkoutEmails).toHaveLength(0);
-    expect(mailer.sent.filter((message) => message.subject === 'Confirm your Netball Trials email').map((message) => message.to)).toEqual(['anne@example.com', 'anne@example.com']);
+    expect(mailer.sent.filter((message) => message.subject.endsWith('Confirm your Netball Trials email')).map((message) => message.to)).toEqual(['anne@example.com', 'anne@example.com']);
     expect(await prisma.registration.count({ where: { eventId } })).toBe(1);
   });
 
@@ -144,7 +217,24 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(retried.statusCode).toBe(202);
     expect(retried.json()).toEqual(received);
     expect(payment.checkouts).toHaveLength(0);
-    expect(mailer.sent.some((message) => message.subject === 'Confirm your Netball Trials email')).toBe(true);
+    expect(mailer.sent.some((message) => message.subject.endsWith('Confirm your Netball Trials email'))).toBe(true);
+  });
+
+  it.each(['EXPIRED', 'FAILED'] as const)('recovers an already-verified %s registration', async (status) => {
+    await prisma.registration.create({
+      data: registrationFixture(eventId, {
+        playerFirstName: 'Ada', playerLastName: 'Lovelace', playerNameNormalized: 'ada lovelace',
+        dateOfBirth: new Date('2012-04-02T00:00:00.000Z'), parentEmail: 'anne@example.com',
+        parentEmailVerifiedAt: now, status, expiresAt: new Date('2026-09-10T00:00:00Z'), checkoutSessionId: `cs_old_${status}`,
+      }),
+    });
+
+    const response = await submit();
+
+    expect(response.statusCode).toBe(202);
+    expect(await prisma.registration.findFirstOrThrow({ where: { eventId } })).toMatchObject({ status: 'PENDING', checkoutAttempt: 1 });
+    expect(payment.checkouts).toHaveLength(1);
+    expect(mailer.sent.some((message) => message.subject.endsWith('Continue your Netball Trials registration'))).toBe(true);
   });
 
   it('retries Checkout for an already-verified pending registration', async () => {
@@ -163,7 +253,7 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(retried.statusCode).toBe(202);
     expect(retried.json()).toEqual({ status: 'received', nextStep: 'checkout' });
     expect(payment.checkouts).toHaveLength(1);
-    expect(mailer.sent.some((message) => message.subject === 'Continue your Netball Trials registration')).toBe(true);
+    expect(mailer.sent.some((message) => message.subject.endsWith('Continue your Netball Trials registration'))).toBe(true);
   });
 
   it('retries Checkout email delivery for an already-verified pending registration', async () => {
@@ -183,7 +273,7 @@ describe('POST /api/admin/events/:id/day-of-registration', () => {
     expect(retried.statusCode).toBe(202);
     expect(registration.checkoutSessionId).toMatch(fakeSessionIdPattern);
     expect(await prisma.registration.count({ where: { eventId, status: 'PENDING' } })).toBe(1);
-    const checkoutEmail = mailer.sent.find((message) => message.subject === 'Continue your Netball Trials registration');
+    const checkoutEmail = mailer.sent.find((message) => message.subject.endsWith('Continue your Netball Trials registration'));
     expect(checkoutEmail?.text).toContain(`https://checkout.test/${registration.checkoutSessionId}`);
   });
 });

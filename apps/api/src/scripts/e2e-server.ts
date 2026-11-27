@@ -71,7 +71,7 @@ async function resetFixtures(): Promise<Record<string, string>> {
         rank3Position: sample.rank3Position,
         optInExtraPositions: index < 7,
         status: 'PAID',
-        ageFlagged: index < 2,
+        ageFlagged: false,
         qrToken: sample.isTicketPlayer ? ticketToken : `e2e-main-token-${index}-abcdefghijklmnopqrstuvwxyz`,
         checkedInAt: isWaiting ? null : new Date(),
         checkedInBy: isWaiting ? null : 'E2E volunteer',

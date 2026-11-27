@@ -1,10 +1,18 @@
+import { localDateTimeToUtc } from '../../time/melbourne';
+
 export function eventFixture(overrides: Record<string, unknown> = {}) {
-  return {
+  const event = {
     name: '15/U Ladies', competitionYear: 2027, division: '15/U', section: 'Ladies',
     eventDate: new Date('2026-09-12T00:00:00.000Z'), venue: 'SNC', startTime: '08:30', endTime: '12:00',
     gameStartTime: '09:00', registrationFeeCents: 3500, courts: 5,
     rank1Min: 2, rank2Min: 1, rank3Min: 1, playMinutes: 8, changeoverMinutes: 2,
     minAge: 12, maxAge: 15, ...overrides,
+  };
+  return {
+    ...event,
+    registrationClosesAt: (overrides.registrationClosesAt as Date | string | undefined) ?? new Date(
+      localDateTimeToUtc(event.eventDate as Date, event.startTime as string).getTime() - 24 * 60 * 60_000,
+    ),
   };
 }
 

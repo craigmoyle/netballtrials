@@ -30,8 +30,13 @@ export function EventOperationsPage({ client, eventId }: { client: Client; event
           eventDate={event.eventDate}
           courts={event.courts}
           status={event.status}
+          registrationClosesAt={event.registrationClosesAt}
+          registrationClosedAt={event.registrationClosedAt}
           onStatusChange={(status) => setLoaded((current) => current?.eventId === eventId
             ? { ...current, event: { ...current.event, status } }
+            : current)}
+          onRegistrationChange={(registrationClosesAt, registrationClosedAt) => setLoaded((current) => current?.eventId === eventId
+            ? { ...current, event: { ...current.event, registrationClosesAt, registrationClosedAt } }
             : current)}
         />
       ) : loadError ? (

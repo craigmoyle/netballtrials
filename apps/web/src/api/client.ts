@@ -1,14 +1,20 @@
-import type { AdminRegistrationCorrectionDTO, AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryResultDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RosterRegistrationDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO, AdminStaffListDTO } from '@netball-trials/types';
+import type { AdminRegistrationCorrectionDTO, AnnualCloneInput, AuthUser, BibColorDTO, CheckInResult, CheckInSummary, CommunicationRecipientDTO, EmailLogDTO, EmailTemplateDTO, EventCourtColorDTO, EventDTO, EventInput, GamePlayerDTO, IncompleteRegistrationDTO, LookupResult, ManualRoundInputDTO, ManualSuffixInputDTO, MemberAssociationDTO, ParentCheckoutDTO, ParentRegistrationDTO, ParentRegistrationUpdateDTO, PublicAssociationDTO, PlayerHistoryResultDTO, PlanRevisionSummaryDTO, PlannerGapDTO, PublicEventDTO, RegistrationStatus, ReviewItemDTO, RosterDTO, RosterRegistrationDTO, RoundPlanDTO, PlannerPreviewDTO, PublicTrialDTO, RegistrationChangeDTO, ScheduledMessageDTO, TicketDTO, IntegrationStatusDTO, SiteAssociationCampaignDTO, SiteAssociationCommunicationPreviewDTO, RegistrationOverviewEventDTO, AutomaticEmailSettingsDTO, TestEmailOutboxDTO, AdminStaffListDTO, PlanningChangeDTO } from '@netball-trials/types';
 
 export class ApiError extends Error {
   readonly status: number;
   readonly fields?: string[];
+  readonly competitionYear?: number;
+  readonly minAge?: number;
+  readonly maxAge?: number;
 
-  constructor(status: number, message: string, fields?: string[]) {
+  constructor(status: number, message: string, fields?: string[], details: { competitionYear?: number; minAge?: number; maxAge?: number } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.fields = fields;
+    this.competitionYear = details.competitionYear;
+    this.minAge = details.minAge;
+    this.maxAge = details.maxAge;
   }
 }
 
@@ -39,7 +45,7 @@ async function request<T>(baseUrl: string, path: string, init?: RequestInit): Pr
   const body = await readJson(response);
 
   if (!response.ok) {
-    throw new ApiError(response.status, body?.error ?? 'request_failed', body?.fields);
+    throw new ApiError(response.status, body?.error ?? 'request_failed', body?.fields, body ?? {});
   }
   if (body === undefined) throw new ApiError(response.status, 'invalid_json');
 
@@ -100,7 +106,7 @@ export function apiClient(baseUrl: string) {
     requestParentAccessLink: (email: string) =>
       request<{ status: string }>(baseUrl, '/api/public/parent-access/request-link', { method: 'POST', body: JSON.stringify({ email }) }),
     verifyParentAccessToken: (token: string) =>
-      request<{ status: 'signed_in' }>(baseUrl, '/api/public/parent-access/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+      request<{ status: 'signed_in'; checkout_status: 'not_required' | 'ready' | 'failed' }>(baseUrl, '/api/public/parent-access/verify', { method: 'POST', body: JSON.stringify({ token }) }),
     listParentRegistrations: () => request<ParentRegistrationDTO[]>(baseUrl, '/api/parent/registrations'),
     logoutParent: () => request<unknown>(baseUrl, '/api/parent/logout', { method: 'POST' }),
     updateParentRegistration: (id: string, patch: ParentRegistrationUpdateDTO) =>
@@ -155,13 +161,17 @@ export function apiClient(baseUrl: string) {
     uploadPolicyDocument: (id: string, input: { fileName: string; pdfBase64: string }) =>
       request<{ policyDocumentName: string; policyUrl: string }>(baseUrl, `/api/admin/events/${id}/policy-document`, { method: 'PUT', body: JSON.stringify(input) }),
     deletePolicyDocument: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/policy-document`, { method: 'DELETE' }),
-    openEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/open`, { method: 'POST' }),
+    openEvent: (id: string, reopen?: { registrationClosesAt: string; confirmReopen: true }) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/open`, { method: 'POST', ...(reopen ? { body: JSON.stringify(reopen) } : {}) }),
     closeEvent: (id: string) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/close`, { method: 'POST' }),
+    cloneEvent: (id: string, input: AnnualCloneInput) => request<EventDTO>(baseUrl, `/api/admin/events/${id}/clone`, {
+      method: 'POST', body: JSON.stringify(input),
+    }),
     deleteEvent: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}`, { method: 'DELETE' }),
     checkInSettings: (id: string) => request<{ pinConfigured: boolean; checkInClosedAt: string | null }>(baseUrl, `/api/admin/events/${id}/check-in-settings`),
     setCheckInPin: (id: string, pin: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'PUT', body: JSON.stringify({ pin }) }),
     clearCheckInPin: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in-pin`, { method: 'DELETE' }),
     closeCheckIn: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in/close`, { method: 'POST' }),
+    reopenCheckIn: (id: string) => request<unknown>(baseUrl, `/api/admin/events/${id}/check-in/reopen`, { method: 'POST', body: JSON.stringify({ confirmReopen: true }) }),
     getRoster: (id: string) => request<RosterDTO>(baseUrl, `/api/admin/events/${id}/roster`),
     correctRegistration: (eventId: string, registrationId: string, patch: AdminRegistrationCorrectionDTO) =>
       request<RosterRegistrationDTO>(baseUrl, `/api/admin/events/${eventId}/registrations/${registrationId}`, {
@@ -203,6 +213,16 @@ export function apiClient(baseUrl: string) {
       request<{ status: 'paid' | 'not_completed' }>(baseUrl, '/api/public/fake-checkouts/complete', {
         method: 'POST',
         body: JSON.stringify({ simulationToken }),
+      }),
+    completeLateArrival: (eventId: string, registrationId: string) =>
+      request<CheckInResult & { planning: PlanningChangeDTO }>(baseUrl, `/api/admin/events/${eventId}/registrations/${registrationId}/late-arrival`, { method: 'POST' }),
+    removeRegistration: (eventId: string, registrationId: string, input: { reason: string; note: string }) =>
+      request<{ id: string; status: RegistrationStatus; planning: PlanningChangeDTO }>(baseUrl, `/api/admin/events/${eventId}/registrations/${registrationId}/remove`, {
+        method: 'POST', body: JSON.stringify(input),
+      }),
+    markRegistrationDuplicate: (eventId: string, registrationId: string, input: { duplicateOfRegistrationId: string; reason: 'Duplicate'; note: string }) =>
+      request<{ id: string; status: RegistrationStatus; planning: PlanningChangeDTO }>(baseUrl, `/api/admin/events/${eventId}/registrations/${registrationId}/duplicate`, {
+        method: 'POST', body: JSON.stringify(input),
       }),
     dayOfRegistration: (id: string, input: Record<string, unknown>) =>
       request<{ status: 'received'; nextStep: 'verify-email' | 'checkout' }>(baseUrl, `/api/admin/events/${id}/day-of-registration`, {
@@ -267,6 +287,8 @@ export function apiClient(baseUrl: string) {
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/generate`, { method: 'POST' }),
     publishPlan: (eventId: string, planId: string) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/publish`, { method: 'POST', body: JSON.stringify({ planId }) }),
+    reconcilePlan: (eventId: string) =>
+      planAction(baseUrl, `/api/admin/events/${eventId}/plan/reconcile`, { method: 'POST' }),
     regeneratePlan: (eventId: string, fromRound: number, sourcePlanId: string, removedRegistrationIds?: string[]) =>
       planAction(baseUrl, `/api/admin/events/${eventId}/plan/regenerate`, {
         method: 'POST',
@@ -276,18 +298,23 @@ export function apiClient(baseUrl: string) {
       manualPlanAction(baseUrl, `/api/admin/events/${eventId}/plan/suffix/manual`, input),
     getSheetsHtml: (eventId: string) => requestHtml(baseUrl, `/api/admin/events/${eventId}/sheets`),
     getBlankSheetHtml: (eventId: string) => requestHtml(baseUrl, `/api/admin/events/${eventId}/sheets/blank`),
-    listReview: (eventId: string, includeResolved = false) =>
-      request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/review${includeResolved ? '?includeResolved=true' : ''}`),
-    resolveReview: (eventId: string, itemId: string, note: string) =>
-      request<ReviewItemDTO>(baseUrl, `/api/admin/events/${eventId}/review/${itemId}/resolve`, {
-        method: 'POST',
-        body: JSON.stringify({ note }),
+    listNeedsAttention: (eventId: string, includeResolved = false) =>
+      request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/needs-attention${includeResolved ? '?includeResolved=true' : ''}`),
+    resolveNeedsAttention: (eventId: string, itemId: string, reason: string) =>
+      request<ReviewItemDTO>(baseUrl, `/api/admin/events/${eventId}/needs-attention/${itemId}/resolve`, {
+        method: 'POST', body: JSON.stringify({ reason }),
       }),
-    withdrawRegistration: (eventId: string, registrationId: string) =>
-      request<{ id: string; status: string }>(
+    listReview: (eventId: string, includeResolved = false) =>
+      request<ReviewItemDTO[]>(baseUrl, `/api/admin/events/${eventId}/needs-attention${includeResolved ? '?includeResolved=true' : ''}`),
+    resolveReview: (eventId: string, itemId: string, reason: string) =>
+      request<ReviewItemDTO>(baseUrl, `/api/admin/events/${eventId}/needs-attention/${itemId}/resolve`, {
+        method: 'POST', body: JSON.stringify({ reason }),
+      }),
+    withdrawRegistration: (eventId: string, registrationId: string, input: { reason: string; note: string }) =>
+      request<{ id: string; status: RegistrationStatus; planning: PlanningChangeDTO }>(
         baseUrl,
         `/api/admin/events/${eventId}/registrations/${registrationId}/withdraw`,
-        { method: 'POST' },
+        { method: 'POST', body: JSON.stringify(input) },
       ),
     getCommunicationRecipients: (eventId: string) =>
       request<{ participants: CommunicationRecipientDTO[]; associations: CommunicationRecipientDTO[] }>(baseUrl, `/api/admin/events/${eventId}/communications/recipients`),

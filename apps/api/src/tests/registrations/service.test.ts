@@ -2,28 +2,28 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../db';
 import { resetDb } from '../helpers/db';
 import { eventFixture } from '../helpers/fixtures';
-import { createPendingRegistration, RegistrationConflictError, RegistrationValidationError } from '../../registrations/service';
+import { createPendingRegistration, RegistrationConflictError, RegistrationIneligibleError, RegistrationValidationError } from '../../registrations/service';
 
 let eventId: string;
 
 beforeEach(async () => {
   await resetDb();
-  const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
+  const event = await prisma.event.create({ data: { ...eventFixture({ eventDate: new Date('2099-09-12T00:00:00.000Z') }), status: 'OPEN' } });
   eventId = event.id;
   await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
 });
 
 const input = {
-  playerFirstName: 'Ada', playerLastName: 'Lovelace', dateOfBirth: '2011-04-02',
+  playerFirstName: 'Ada', playerLastName: 'Lovelace', dateOfBirth: '2012-04-02',
   parentName: 'Anne', parentEmail: 'anne@example.com', parentMobile: '0400000000',
   memberAssociation: 'MENA', rank1Position: 'GS' as const, optInExtraPositions: false, parentAuthorityConfirmed: true as const, eligibilityConfirmed: true as const,
 };
 
 describe('createPendingRegistration', () => {
-  it('flags an out-of-range age without rejecting', async () => {
-    const reg = await createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2018-04-02' }, new Date());
-    expect(reg.ageFlagged).toBe(true);
-    expect(reg.status).toBe('PENDING');
+  it('rejects an out-of-range age before creating a registration', async () => {
+    await expect(createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2018-04-02' }, new Date()))
+      .rejects.toBeInstanceOf(RegistrationIneligibleError);
+    expect(await prisma.registration.count({ where: { eventId } })).toBe(0);
   });
   it('refuses a duplicate unexpired pending registration', async () => {
     await createPendingRegistration(prisma, eventId, input, new Date());
@@ -42,16 +42,25 @@ describe('createPendingRegistration', () => {
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
   });
-  it('allows a new registration after the previous pending one expires', async () => {
+  it('does not create a second public registration after the previous pending one expires', async () => {
     const first = await createPendingRegistration(prisma, eventId, input, new Date());
     await prisma.registration.update({ where: { id: first.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
-    const replacement = await createPendingRegistration(prisma, eventId, input, new Date());
-    expect(replacement.id).not.toBe(first.id);
-    expect((await prisma.registration.findUniqueOrThrow({ where: { id: first.id } })).status).toBe('EXPIRED');
+
+    await expect(createPendingRegistration(prisma, eventId, input, new Date()))
+      .rejects.toMatchObject({ reason: 'duplicate', existing: expect.objectContaining({ id: first.id }) });
+
+    expect(await prisma.registration.count({ where: { eventId } })).toBe(1);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: first.id } })).toMatchObject({ status: 'PENDING' });
   });
-  it('accepts a date of birth that is today in Melbourne before UTC midnight', async () => {
-    const registration = await createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2026-10-10' }, new Date('2026-10-09T14:00:00Z'));
-    expect(registration.dateOfBirth.toISOString()).toContain('2026-10-10');
+  it('records the immutable snapshot URL on a new registration', async () => {
+    const registration = await createPendingRegistration(prisma, eventId, input, new Date(), 'http://api.test');
+
+    expect(registration.policyReference).toBe(`http://api.test/api/public/events/${eventId}/policy-snapshots/1`);
+  });
+
+  it('accepts today as a calendar date and then applies strict eligibility', async () => {
+    await expect(createPendingRegistration(prisma, eventId, { ...input, dateOfBirth: '2026-10-10' }, new Date('2026-10-09T14:00:00Z')))
+      .rejects.toBeInstanceOf(RegistrationIneligibleError);
   });
 
   it('rejects a date of birth in the future', async () => {

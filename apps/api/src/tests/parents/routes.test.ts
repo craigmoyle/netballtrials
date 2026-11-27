@@ -28,7 +28,9 @@ const env = {
 
 beforeEach(async () => {
   await resetDb();
-  const event = await prisma.event.create({ data: { ...eventFixture(), status: 'OPEN' } });
+  const event = await prisma.event.create({ data: {
+    ...eventFixture({ eventDate: new Date('2029-09-12T00:00:00.000Z') }), status: 'OPEN',
+  } });
   eventId = event.id;
   await prisma.memberAssociation.create({ data: { name: 'MENA', active: true } });
   mailer = createDevMailer([]);
@@ -112,6 +114,48 @@ describe('parent registration access', () => {
     const replay = await app.inject({ method: 'POST', url: '/api/public/parent-access/verify', payload: { token } });
     expect(replay.statusCode).toBe(400);
     expect((await app.inject({ method: 'GET', url: '/api/parent/registrations' })).statusCode).toBe(401);
+  });
+
+  it('returns DUPLICATE as a terminal parent-visible status instead of pending', async () => {
+    const duplicate = await addRegistration('Ada', 'Lovelace', 'parent@example.test', {
+      status: 'DUPLICATE', removedAt: new Date(), removalReason: 'Duplicate',
+    });
+    const cookie = await parentSession('parent@example.test');
+
+    const listed = await app.inject({ method: 'GET', url: '/api/parent/registrations', cookies: { nt_parent: cookie } });
+
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toContainEqual(expect.objectContaining({
+      id: duplicate.id, status: 'DUPLICATE', canContinueCheckout: false, canWithdraw: false, canEdit: false,
+    }));
+  });
+
+  it('recovers an expired registration during automatic email verification', async () => {
+    const registration = await addRegistration('Ada', 'Lovelace', 'recover@example.test', {
+      parentEmailVerifiedAt: null,
+      status: 'EXPIRED',
+      expiresAt: new Date('2026-09-01T00:00:00Z'),
+      checkoutSessionId: 'cs_expired_before_verification',
+    });
+    const token = 'expired-registration-verification-token';
+    await prisma.parentAccessToken.create({ data: {
+      email: registration.parentEmail,
+      purpose: 'REGISTRATION_VERIFY',
+      registrationId: registration.id,
+      tokenHash: hashToken(token),
+      expiresAt: new Date(Date.now() + 60_000),
+    } });
+
+    const response = await app.inject({
+      method: 'POST', url: '/api/public/parent-access/verify', payload: { token },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ status: 'signed_in', checkout_status: 'ready' });
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toMatchObject({
+      status: 'PENDING', checkoutAttempt: 1,
+    });
+    expect(payment.checkouts).toHaveLength(1);
   });
 
   it('returns the neutral access-link response without waiting on the mail provider', async () => {
@@ -225,7 +269,7 @@ describe('parent registration access', () => {
     const cookies = { nt_parent: cookie };
     const requested = await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family@example.test' } });
     expect(requested.statusCode).toBe(202);
-    const confirmation = mailer.sent.find((message) => message.subject === 'Confirm your new Netball Trials email');
+    const confirmation = mailer.sent.find((message) => message.subject.endsWith('Confirm your new Netball Trials email'));
     expect(confirmation?.to).toBe('family@example.test');
     const token = rawToken(confirmation!.text);
 
@@ -245,7 +289,7 @@ describe('parent registration access', () => {
       where: { eventId, kind: 'email-change', to: 'parent@example.test' },
     });
     expect(notification).toMatchObject({ status: 'PENDING', attempts: 0 });
-    expect(mailer.sent.some((message) => message.subject === 'Your Netball Trials email was changed')).toBe(false);
+    expect(mailer.sent.some((message) => message.subject.endsWith('Your Netball Trials email was changed'))).toBe(false);
 
     vi.spyOn(mailer, 'send').mockRejectedValueOnce(new GmailDeliveryError('rejected', 403));
     const firstRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:30:00Z'));
@@ -256,7 +300,7 @@ describe('parent registration access', () => {
     expect(secondRun).toMatchObject({ sent: 0, simulated: 1, failed: 0, ambiguous: 0 });
     const thirdRun = await sendDueReminders({ prisma, mailer }, new Date('2026-09-10T22:32:00Z'));
     expect(thirdRun).toMatchObject({ sent: 0 });
-    expect(mailer.sent.filter((message) => message.to === 'parent@example.test' && message.subject === 'Your Netball Trials email was changed')).toHaveLength(1);
+    expect(mailer.sent.filter((message) => message.to === 'parent@example.test' && message.subject.endsWith('Your Netball Trials email was changed'))).toHaveLength(1);
   });
 
   it('rebinds pending confirmation and checkout mail after a parent email change', async () => {
@@ -278,7 +322,7 @@ describe('parent registration access', () => {
     const cookie = await parentSession('parent@example.test');
     const cookies = { nt_parent: cookie };
     await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family@example.test' } });
-    const verification = mailer.sent.find((message) => message.subject === 'Confirm your new Netball Trials email');
+    const verification = mailer.sent.find((message) => message.subject.endsWith('Confirm your new Netball Trials email'));
     const changed = await app.inject({ method: 'POST', url: '/api/parent/email-change/confirm', cookies, payload: { token: rawToken(verification!.text) } });
 
     expect(changed.statusCode).toBe(200);
@@ -349,7 +393,7 @@ describe('parent registration access', () => {
     });
     expect(corrected.statusCode).toBe(202);
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).parentEmail).toBe('typo@example.test');
-    const email = mailer.sent.find((message) => message.subject === 'Confirm your Netball Trials email' && message.to === 'correct@example.test');
+    const email = mailer.sent.find((message) => message.subject.endsWith('Confirm your Netball Trials email') && message.to === 'correct@example.test');
     expect(email).toBeDefined();
     const token = rawToken(email!.text);
 
@@ -365,7 +409,7 @@ describe('parent registration access', () => {
       payload: { email: 'correct@example.test', familyConfirmed: true },
     });
     expect(siblingCorrection.statusCode).toBe(202);
-    const siblingEmail = [...mailer.sent].reverse().find((message) => message.subject === 'Confirm your Netball Trials email' && message.to === 'correct@example.test');
+    const siblingEmail = [...mailer.sent].reverse().find((message) => message.subject.endsWith('Confirm your Netball Trials email') && message.to === 'correct@example.test');
     const siblingToken = rawToken(siblingEmail!.text);
     const siblingVerified = await app.inject({ method: 'POST', url: '/api/public/parent-access/verify', payload: { token: siblingToken } });
     expect(siblingVerified.statusCode).toBe(200);
@@ -388,7 +432,7 @@ describe('parent registration access', () => {
       },
     });
     await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family@example.test' } });
-    const confirmation = mailer.sent.find((message) => message.subject === 'Confirm your new Netball Trials email');
+    const confirmation = mailer.sent.find((message) => message.subject.endsWith('Confirm your new Netball Trials email'));
     const token = rawToken(confirmation!.text);
 
     const changed = await app.inject({ method: 'POST', url: '/api/parent/email-change/confirm', cookies, payload: { token } });
@@ -404,7 +448,7 @@ describe('parent registration access', () => {
     const cookie = await parentSession('parent@example.test');
     const cookies = { nt_parent: cookie };
     await app.inject({ method: 'POST', url: '/api/parent/email-change', cookies, payload: { email: 'family@example.test' } });
-    const confirmation = mailer.sent.find((message) => message.subject === 'Confirm your new Netball Trials email');
+    const confirmation = mailer.sent.find((message) => message.subject.endsWith('Confirm your new Netball Trials email'));
     const token = rawToken(confirmation!.text);
 
     const result = await app.inject({ method: 'POST', url: '/api/parent/email-change/confirm', cookies, payload: { token } });
@@ -459,7 +503,10 @@ describe('parent registration access', () => {
     const reminder = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/incomplete-registrations/${pending.id}/reminder`, cookies: { nt_session: adminCookie } });
     expect(reminder.statusCode).toBe(200);
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: pending.id } })).parentFollowUpSentAt).toBeInstanceOf(Date);
-    expect(mailer.sent.some((message) => message.to === 'verified@example.test' && message.subject === 'Continue your Netball Trials registration')).toBe(true);
+    const recovered = await app.inject({ method: 'POST', url: `/api/admin/events/${eventId}/incomplete-registrations/${expired.id}/reminder`, cookies: { nt_session: adminCookie } });
+    expect(recovered.statusCode).toBe(200);
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: expired.id } })).toMatchObject({ status: 'PENDING', checkoutAttempt: 1 });
+    expect(mailer.sent.some((message) => message.to === 'verified@example.test' && message.subject.endsWith('Continue your Netball Trials registration'))).toBe(true);
     const listAfter = await app.inject({ method: 'GET', url: `/api/admin/events/${eventId}/incomplete-registrations`, cookies: { nt_session: adminCookie } });
     expect(listAfter.json().find((registration: { id: string }) => registration.id === pending.id).followUpSentAt).toBeTruthy();
   });

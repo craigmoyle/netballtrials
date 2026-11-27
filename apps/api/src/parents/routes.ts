@@ -18,6 +18,7 @@ import {
   requestParentEmailChange,
   requestIncompleteEmailCorrection,
   sendIncompleteRegistrationReminder,
+  sendVerifiedRegistrationCheckouts,
   updateParentRegistration,
   withdrawParentRegistration,
 } from './service';
@@ -62,8 +63,10 @@ export function registerParentAccessRoutes(app: FastifyInstance, deps: AppDeps):
   app.post('/api/public/parent-access/verify', async (request, reply) => {
     const parsed = tokenSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'link_invalid' });
-    const result = await consumeParentAccessToken(deps.prisma, parsed.data.token, new Date());
+    const now = new Date();
+    const result = await consumeParentAccessToken(deps.prisma, parsed.data.token, now);
     if (!result) return reply.code(400).send({ error: 'link_invalid' });
+    const checkoutStatus = await sendVerifiedRegistrationCheckouts(deps, result.checkoutRegistrationIds, now);
     reply.setCookie(PARENT_SESSION_COOKIE, result.sessionToken, {
       httpOnly: true,
       sameSite: 'lax',
@@ -71,7 +74,7 @@ export function registerParentAccessRoutes(app: FastifyInstance, deps: AppDeps):
       secure: deps.env.SESSION_COOKIE_SECURE,
       maxAge: PARENT_SESSION_TTL_HOURS * 60 * 60,
     });
-    return reply.code(200).send({ status: 'signed_in' });
+    return reply.code(200).send({ status: 'signed_in', checkout_status: checkoutStatus });
   });
 
   app.get('/api/parent/registrations', { preHandler: requireParent(deps) }, async (request) => {
@@ -164,6 +167,12 @@ export function registerParentAccessRoutes(app: FastifyInstance, deps: AppDeps):
     const { id, registrationId } = request.params as { id: string; registrationId: string };
     try {
       await requestIncompleteEmailCorrection(deps, id, registrationId, parsed.data.email, new Date());
+      await deps.prisma.auditEvent.create({ data: {
+        eventId: id, registrationId, actorType: 'ADMIN', actorUserId: request.adminUserId,
+        action: 'REGISTRATION_EMAIL_CORRECTION_REQUESTED', entityType: 'Registration', entityId: registrationId,
+        reason: 'Admin corrected an unverified email after family confirmation',
+        afterState: { requestedEmail: parsed.data.email },
+      } });
       return reply.code(202).send({ status: 'sent' });
     } catch (error) {
       if (error instanceof ParentAccessError) return parentError(reply, error);

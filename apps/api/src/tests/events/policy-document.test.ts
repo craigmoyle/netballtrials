@@ -14,7 +14,7 @@ const pdf = Buffer.from('%PDF-1.4\npolicy\n%%EOF');
 beforeEach(async () => {
   await resetDb();
   adminCookie = await signInAsNewAdmin(app, 'admin@example.com');
-  eventId = (await prisma.event.create({ data: eventFixture({ status: 'OPEN' }) })).id;
+  eventId = (await prisma.event.create({ data: eventFixture({ status: 'DRAFT' }) })).id;
 });
 
 describe('event policy documents', () => {
@@ -27,6 +27,7 @@ describe('event policy documents', () => {
     });
     expect(upload.statusCode).toBe(200);
     expect(upload.json().policyDocumentName).toBe('Selection policy.pdf');
+    await prisma.event.update({ where: { id: eventId }, data: { status: 'OPEN' } });
 
     const publicEvent = await app.inject({ method: 'GET', url: `/api/public/events/${eventId}` });
     expect(publicEvent.json().policyUrl).toBe(`http://localhost:3000/api/public/events/${eventId}/policy-document`);
@@ -59,6 +60,7 @@ describe('event policy documents', () => {
     expect(cleared.json()).toMatchObject({ policyUrl: DEFAULT_POLICY_URL, policyDocumentName: 'Selection policy.pdf' });
     const stored = await prisma.eventPolicyDocument.findUniqueOrThrow({ where: { eventId } });
     expect(Buffer.from(stored.bytes)).toEqual(pdf);
+    await prisma.event.update({ where: { id: eventId }, data: { status: 'OPEN' } });
     const document = await app.inject({ method: 'GET', url: `/api/public/events/${eventId}/policy-document` });
     expect(document.statusCode).toBe(200);
     expect(document.body).toBe(pdf.toString());

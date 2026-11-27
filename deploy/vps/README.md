@@ -2,7 +2,7 @@
 
 Trials TEST runs at `https://trials-test.statsball.net` from this directory. It is deployed separately from Stats: its own Compose project (`netball-trials`), its own images, its own env file and its own systemd timers. The shared PostgreSQL and TLS edge come from the `netball-vps` platform repo, which must be running first.
 
-There is no Trials production deployment. The TEST deployment uses `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, the `netballtrials_test` database, and restricted Admin access.
+There is no Trials production deployment. The TEST deployment uses `NODE_ENV=production`, `APP_ENV=testing`, HTTPS and secure cookies, the `netballtrials_test` database, and restricted Admin access. `https://trials.chisholmnetball.com` is the future production destination only: these files neither target nor activate it. No production Compose profile is provided, and TEST data, sessions and operational history must not be copied into a future production deployment.
 
 ## Host layout
 
@@ -23,7 +23,7 @@ sudo ./deploy.sh
 
 `deploy.sh` validates root ownership, mode, provider configuration, hex-only database passwords, platform/env agreement, Compose files, platform networks and the running database; serializes migrations and jobs; builds the images; applies the idempotent runtime-role grants; runs migrations; checks internal edge routing; and waits for API/web health before enabling both timers. It verifies that both timers are active. A failure before API/schema mutation automatically restarts the prior timers. After mutation starts, failed deployments deliberately leave jobs paused for operator diagnosis. The role-upgrade script can still be run manually and never prints passwords.
 
-Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. `VITE_API_URL` stays empty so browser requests use the same-origin `/api` route. Local development stays on fake payments and in-memory email; never enable hosted integrations locally.
+Verify `https://trials-test.statsball.net/` and `/api/health` after a deployment. Keep `TRIALS_DOMAIN` on that TEST hostname; `trials.chisholmnetball.com` is not an alternate value for this profile. `VITE_API_URL` stays empty so browser requests use the same-origin `/api` route. Local development stays on fake payments and in-memory email; never enable hosted integrations locally.
 
 ## Request path
 

@@ -79,11 +79,11 @@ export function RegistrationPendingPage({
     );
   }
 
-  if (status === 'WITHDRAWN') {
+  if (status === 'WITHDRAWN' || status === 'DUPLICATE') {
     return (
       <section className="public-page">
         <h1>Registration not active</h1>
-        <p>This registration is no longer active. Contact the club if you need help.</p>
+        <p>This registration is no longer active{status === 'DUPLICATE' ? ' because another event-local registration is retained' : ''}. Contact the club if you need help.</p>
       </section>
     );
   }

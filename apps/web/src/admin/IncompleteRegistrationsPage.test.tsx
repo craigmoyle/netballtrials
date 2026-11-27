@@ -48,7 +48,9 @@ describe('IncompleteRegistrationsPage', () => {
     expect(unverifiedRow).toHaveTextContent(/no reminder sent to unverified address/i);
     expect(expiredRow).toHaveTextContent('Checkout expired');
     expect(failedRow).toHaveTextContent('Payment failed');
-    expect(within(table).getAllByRole('button', { name: 'Send payment reminder' })).toHaveLength(1);
+    expect(within(table).getAllByRole('button', { name: 'Send payment reminder' })).toHaveLength(3);
+    expect(within(expiredRow).getByRole('button', { name: 'Send payment reminder' })).toBeInTheDocument();
+    expect(within(failedRow).getByRole('button', { name: 'Send payment reminder' })).toBeInTheDocument();
 
     fireEvent.click(within(paymentRow).getByRole('button', { name: 'Send payment reminder' }));
     expect(client.sendIncompleteRegistrationReminder).toHaveBeenCalledWith('event-1', 'verified-pending');

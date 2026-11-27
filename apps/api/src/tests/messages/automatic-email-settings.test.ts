@@ -29,12 +29,12 @@ describe('automatic email settings', () => {
     const input = {
       ...DEFAULT_AUTOMATIC_EMAIL_SETTINGS,
       confirmationSubject: 'Welcome {{playerName}} — {{eventName}}',
-      reminderLeadHours: 48,
+      reminderLeadHours: 24,
     };
     const response = await app.inject({ method: 'PUT', url: '/api/admin/settings/automatic-email', cookies: { nt_session: cookie }, payload: input });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ ...input, updatedAt: expect.any(String) });
-    expect(await prisma.automaticEmailSettings.findUnique({ where: { id: 'automatic' } })).toMatchObject({ reminderLeadHours: 48 });
+    expect(await prisma.automaticEmailSettings.findUnique({ where: { id: 'automatic' } })).toMatchObject({ reminderLeadHours: 24 });
   });
 
   it('rejects unknown or missing template fields and invalid lead times', async () => {
@@ -47,7 +47,7 @@ describe('automatic email settings', () => {
     expect(missingRequired.statusCode).toBe(400);
     expect(missingRequired.json().fields).toContain('reminderBody');
 
-    const invalidHours = await app.inject({ method: 'PUT', url: '/api/admin/settings/automatic-email', cookies: { nt_session: cookie }, payload: { ...DEFAULT_AUTOMATIC_EMAIL_SETTINGS, reminderLeadHours: 169 } });
+    const invalidHours = await app.inject({ method: 'PUT', url: '/api/admin/settings/automatic-email', cookies: { nt_session: cookie }, payload: { ...DEFAULT_AUTOMATIC_EMAIL_SETTINGS, reminderLeadHours: 48 } });
     expect(invalidHours.statusCode).toBe(400);
     expect(await prisma.automaticEmailSettings.findUnique({ where: { id: 'automatic' } })).toBeNull();
   });

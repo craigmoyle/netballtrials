@@ -106,6 +106,12 @@ export async function confirmPayment(
                 }],
               });
               outcome = 'paid';
+              await tx.auditEvent.create({ data: {
+                eventId: registration.eventId, registrationId: registration.id, actorType: 'SYSTEM',
+                action: 'PAYMENT_CONFIRMED', entityType: 'Registration', entityId: registration.id,
+                reason: 'Stripe amount and currency confirmed', beforeState: { status: registration.status },
+                afterState: { status: 'PAID', amountCents: registration.amountCents, currency: registration.currency }, createdAt: now,
+              } });
             } else {
               const current = await tx.registration.findUnique({ where: { id: registration.id } });
               if (current?.checkoutSessionId === event.sessionId && !current.anonymizedAt) {
@@ -133,6 +139,13 @@ export async function confirmPayment(
           });
           if (claimedRegistration.count === 1) {
             outcome = event.kind === 'checkout_expired' ? 'expired' : 'failed';
+            await tx.auditEvent.create({ data: {
+              eventId: registration.eventId, registrationId: registration.id, actorType: 'SYSTEM',
+              action: outcome === 'expired' ? 'CHECKOUT_EXPIRED' : 'CHECKOUT_FAILED',
+              entityType: 'Registration', entityId: registration.id,
+              reason: outcome === 'expired' ? 'Stripe Checkout expired' : 'Stripe Checkout failed',
+              beforeState: { status: registration.status }, afterState: { status }, createdAt: now,
+            } });
           }
         }
       } else if (
@@ -153,6 +166,13 @@ export async function confirmPayment(
           ? 'the parent email was not verified before payment'
           : `the registration was ${registration.status.toLowerCase()}`;
         await flagOrphanedPayment(tx, registration, event, reason);
+        outcome = 'orphaned';
+      } else if (
+        registration && registration.checkoutAttempt > 0 &&
+        registration.checkoutSessionId !== event.sessionId &&
+        event.kind === 'checkout_completed' && isSettledPayment(event)
+      ) {
+        await flagOrphanedPayment(tx, registration, event, 'a previous Checkout session completed after recovery');
         outcome = 'orphaned';
       }
 
@@ -246,14 +266,18 @@ async function flagOrphanedPayment(
   event: { paymentIntentId?: string | null; sessionId: string; amountCents: number; currency: string },
   why: string,
 ): Promise<void> {
+  const note = `Stripe payment ${event.paymentIntentId ?? '(no payment intent)'} for checkout ${event.sessionId} ` +
+    `(${event.amountCents} ${event.currency.toUpperCase()}) was not applied because ${why}. Refund or reinstate manually.`;
   await tx.reviewItem.createMany({
     skipDuplicates: true,
     data: [{
-      eventId: registration.eventId,
-      registrationId: registration.id,
-      reason: ORPHANED_PAYMENT_REVIEW_REASON,
-      note: `Stripe payment ${event.paymentIntentId ?? '(no payment intent)'} for checkout ${event.sessionId} ` +
-        `(${event.amountCents} ${event.currency.toUpperCase()}) was not applied because ${why}. Refund or reinstate manually.`,
+      eventId: registration.eventId, registrationId: registration.id, dedupeKey: `payment:${event.sessionId}`,
+      reason: ORPHANED_PAYMENT_REVIEW_REASON, note,
     }],
   });
+  await tx.auditEvent.create({ data: {
+    eventId: registration.eventId, registrationId: registration.id, actorType: 'SYSTEM',
+    action: 'PAYMENT_REVIEW_REQUIRED', entityType: 'Registration', entityId: registration.id,
+    reason: 'Stripe payment requires Admin review', afterState: { note },
+  } });
 }

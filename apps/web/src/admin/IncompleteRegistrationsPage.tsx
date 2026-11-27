@@ -87,7 +87,8 @@ export function IncompleteRegistrationsPage({ client, eventId }: { client: Clien
               <caption>Registration attempts for the last 30 days</caption>
               <thead><tr><th scope="col">Player</th><th scope="col">Parent email</th><th scope="col">Started</th><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Follow-up</th></tr></thead>
               <tbody>{registrations.map((registration) => {
-                const canRemind = registration.parentEmailVerified && registration.stage === 'PAYMENT' && !registration.followUpSentAt;
+                const canRemind = registration.parentEmailVerified &&
+                  ['PAYMENT', 'PAYMENT_EXPIRED'].includes(registration.stage) && !registration.followUpSentAt;
                 return (
                   <tr key={registration.id}>
                     <th scope="row">{registration.playerName}</th>

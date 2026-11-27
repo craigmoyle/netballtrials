@@ -38,6 +38,17 @@ function renderPage(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CommunicationsPage', () => {
+  it('shows automatic delivery kinds in communications history', async () => {
+    renderPage({ listCommunicationDeliveries: vi.fn().mockResolvedValue([{
+      id: 'delivery-1', registrationId: 'p1', associationId: null, senderUserId: null, batchId: 'payment-24h:event:family',
+      to: 'ada@example.test', subject: 'Complete payment', body: 'Payment is incomplete.', kind: 'payment-24h',
+      status: 'SENT', simulated: false, attempts: 1, createdAt: '2026-11-20T00:00:00Z', lastAttemptAt: '2026-11-20T00:00:00Z',
+      sentAt: '2026-11-20T00:00:00Z', failedAt: null, error: null,
+    }]) });
+
+    expect(await screen.findByText(/Complete payment — payment-24h — sent/i)).toBeInTheDocument();
+  });
+
   it('filters participants, shows the player Number, and only makes verified incomplete registrations eligible', async () => {
     renderPage();
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();

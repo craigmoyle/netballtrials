@@ -57,6 +57,8 @@ export interface EventDTO {
   startTime: string;
   endTime: string;
   gameStartTime: string;
+  registrationClosesAt: string;
+  registrationClosedAt: string | null;
   registrationFeeCents: number;
   courts: number;
   rank1Min: number;
@@ -110,7 +112,13 @@ export interface EventCourtColorDTO {
   teamBColor: BibColorDTO | null;
 }
 
-export type EventInput = Omit<EventDTO, 'id' | 'status' | 'policyDocumentName'>;
+export type EventInput = Omit<EventDTO, 'id' | 'status' | 'policyDocumentName' | 'registrationClosedAt'>;
+
+export interface AnnualCloneInput {
+  competitionYear: number;
+  eventDate: string;
+  registrationClosesAt: string;
+}
 
 export interface PublicEventDTO {
   id: string;
@@ -129,6 +137,8 @@ export interface PublicEventDTO {
   maxAge: number;
   courts: number;
   status: EventStatus;
+  registrationClosesAt: string;
+  registrationClosedAt: string | null;
 }
 
 export interface PublicTrialDTO {
@@ -143,6 +153,8 @@ export interface PublicTrialDTO {
   registrationFeeCents: number;
   currency: string;
   status: 'OPEN' | 'CLOSED';
+  registrationClosesAt: string;
+  registrationClosedAt: string | null;
 }
 
 export type RegistrationStatus =
@@ -150,7 +162,47 @@ export type RegistrationStatus =
   | 'PAID'
   | 'EXPIRED'
   | 'FAILED'
-  | 'WITHDRAWN';
+  | 'WITHDRAWN'
+  | 'DUPLICATE';
+
+export interface EventPolicySnapshotDTO {
+  id: string;
+  eventId: string;
+  version: number;
+  policyReference: string;
+  competitionYear: number;
+  minAge: number;
+  maxAge: number;
+  policyUrl: string | null;
+  policyDocumentName: string | null;
+  policyDocumentHash: string | null;
+  capturedAt: string;
+}
+
+export interface RosterSnapshotDTO {
+  id: string;
+  eventId: string;
+  revision: number;
+  reconstructed: boolean;
+  data: unknown;
+  createdAt: string;
+}
+
+export interface AuditEventDTO {
+  id: string;
+  eventId: string | null;
+  registrationId: string | null;
+  actorType: string;
+  actorUserId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  reason: string | null;
+  beforeState: unknown | null;
+  afterState: unknown | null;
+  metadata: unknown | null;
+  createdAt: string;
+}
 
 export interface TicketDTO {
   playerName: string;
@@ -161,7 +213,7 @@ export interface TicketDTO {
 
 export interface CheckInResult {
   result: 'checked_in' | 'already' | 'refused';
-  reason?: 'not_paid' | 'unknown';
+  reason?: 'not_paid' | 'ineligible' | 'unknown';
   registrationId?: string;
   playerName?: string;
   bibNumber?: number;
@@ -293,6 +345,10 @@ export interface ReviewItemDTO {
   id: string;
   reason: string;
   note: string | null;
+  emailLogId: string | null;
+  dedupeKey: string | null;
+  delivery: { id: string; status: string; attempts: number; to: string } | null;
+  createdAt: string;
   resolvedAt: string | null;
   resolvedByUserId: string | null;
   resolutionHistory?: unknown | null;
@@ -301,7 +357,13 @@ export interface ReviewItemDTO {
     playerName: string;
     bibNumber: number | null;
     ageFlagged: boolean;
-  };
+  } | null;
+  link: { path: string; label: string };
+}
+
+export interface PlanningChangeDTO {
+  draftPlanId: string | null;
+  gaps: PlannerGapDTO[];
 }
 
 export interface RosterRegistrationDTO {
@@ -322,11 +384,17 @@ export interface RosterRegistrationDTO {
   currency: string;
   bibNumber: number | null;
   checkedInAt: string | null;
+  adminAssistedAt: string | null;
+  duplicateOfRegistrationId: string | null;
+  removedAt: string | null;
+  removalReason: string | null;
+  removalNote: string | null;
 }
 
 export interface AdminRegistrationCorrectionDTO {
   dateOfBirth?: string;
   memberAssociation?: string;
+  reason: string;
 }
 
 export interface RosterDTO {
