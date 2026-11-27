@@ -117,8 +117,9 @@ describe('parent registration access', () => {
   });
 
   it('returns DUPLICATE as a terminal parent-visible status instead of pending', async () => {
+    const retained = await addRegistration('Retained', 'Player', 'parent@example.test', { status: 'PAID' });
     const duplicate = await addRegistration('Ada', 'Lovelace', 'parent@example.test', {
-      status: 'DUPLICATE', removedAt: new Date(), removalReason: 'Duplicate',
+      status: 'DUPLICATE', removedAt: new Date(), removalReason: 'Duplicate', duplicateOfRegistrationId: retained.id,
     });
     const cookie = await parentSession('parent@example.test');
 
